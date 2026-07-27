@@ -19,6 +19,7 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedClientesRouteImport } from './routes/_authenticated/clientes'
 import { Route as AuthenticatedAuraIaRouteImport } from './routes/_authenticated/aura-ia'
 import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
+import { Route as AuthenticatedServicosIdRouteImport } from './routes/_authenticated/servicos.$id'
 import { Route as AuthenticatedClientesIdRouteImport } from './routes/_authenticated/clientes.$id'
 
 const AuthRoute = AuthRouteImport.update({
@@ -70,6 +71,11 @@ const AuthenticatedAgendaRoute = AuthenticatedAgendaRouteImport.update({
   path: '/agenda',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedServicosIdRoute = AuthenticatedServicosIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AuthenticatedServicosRoute,
+} as any)
 const AuthenticatedClientesIdRoute = AuthenticatedClientesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -85,8 +91,9 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/estoque': typeof AuthenticatedEstoqueRoute
   '/mais': typeof AuthenticatedMaisRoute
-  '/servicos': typeof AuthenticatedServicosRoute
+  '/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
+  '/servicos/$id': typeof AuthenticatedServicosIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -97,8 +104,9 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/estoque': typeof AuthenticatedEstoqueRoute
   '/mais': typeof AuthenticatedMaisRoute
-  '/servicos': typeof AuthenticatedServicosRoute
+  '/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
+  '/servicos/$id': typeof AuthenticatedServicosIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -111,8 +119,9 @@ export interface FileRoutesById {
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/estoque': typeof AuthenticatedEstoqueRoute
   '/_authenticated/mais': typeof AuthenticatedMaisRoute
-  '/_authenticated/servicos': typeof AuthenticatedServicosRoute
+  '/_authenticated/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/_authenticated/clientes/$id': typeof AuthenticatedClientesIdRoute
+  '/_authenticated/servicos/$id': typeof AuthenticatedServicosIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -127,6 +136,7 @@ export interface FileRouteTypes {
     | '/mais'
     | '/servicos'
     | '/clientes/$id'
+    | '/servicos/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -139,6 +149,7 @@ export interface FileRouteTypes {
     | '/mais'
     | '/servicos'
     | '/clientes/$id'
+    | '/servicos/$id'
   id:
     | '__root__'
     | '/'
@@ -152,6 +163,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mais'
     | '/_authenticated/servicos'
     | '/_authenticated/clientes/$id'
+    | '/_authenticated/servicos/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -232,6 +244,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAgendaRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/servicos/$id': {
+      id: '/_authenticated/servicos/$id'
+      path: '/$id'
+      fullPath: '/servicos/$id'
+      preLoaderRoute: typeof AuthenticatedServicosIdRouteImport
+      parentRoute: typeof AuthenticatedServicosRoute
+    }
     '/_authenticated/clientes/$id': {
       id: '/_authenticated/clientes/$id'
       path: '/$id'
@@ -255,6 +274,19 @@ const AuthenticatedClientesRouteWithChildren =
     AuthenticatedClientesRouteChildren,
   )
 
+interface AuthenticatedServicosRouteChildren {
+  AuthenticatedServicosIdRoute: typeof AuthenticatedServicosIdRoute
+}
+
+const AuthenticatedServicosRouteChildren: AuthenticatedServicosRouteChildren = {
+  AuthenticatedServicosIdRoute: AuthenticatedServicosIdRoute,
+}
+
+const AuthenticatedServicosRouteWithChildren =
+  AuthenticatedServicosRoute._addFileChildren(
+    AuthenticatedServicosRouteChildren,
+  )
+
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAgendaRoute: typeof AuthenticatedAgendaRoute
   AuthenticatedAuraIaRoute: typeof AuthenticatedAuraIaRoute
@@ -262,7 +294,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedEstoqueRoute: typeof AuthenticatedEstoqueRoute
   AuthenticatedMaisRoute: typeof AuthenticatedMaisRoute
-  AuthenticatedServicosRoute: typeof AuthenticatedServicosRoute
+  AuthenticatedServicosRoute: typeof AuthenticatedServicosRouteWithChildren
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -272,7 +304,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedEstoqueRoute: AuthenticatedEstoqueRoute,
   AuthenticatedMaisRoute: AuthenticatedMaisRoute,
-  AuthenticatedServicosRoute: AuthenticatedServicosRoute,
+  AuthenticatedServicosRoute: AuthenticatedServicosRouteWithChildren,
 }
 
 const AuthenticatedRouteRouteWithChildren =
