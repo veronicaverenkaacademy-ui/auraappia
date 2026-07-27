@@ -13,7 +13,7 @@ const items = [
   { title: "Clientes", url: "/clientes", icon: Users },
   { title: "Serviços", url: "/servicos", icon: Sparkles },
   { title: "Estoque", url: "/estoque", icon: Package },
-  { title: "Financeiro", url: "/financeiro", icon: DollarSign, soon: true },
+  { title: "Financeiro", url: "/financeiro", icon: DollarSign },
 ];
 
 export function AppSidebar() {
