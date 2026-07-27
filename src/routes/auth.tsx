@@ -11,6 +11,9 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
+  validateSearch: (search: Record<string, unknown>) => ({
+    next: typeof search.next === "string" ? search.next : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Entrar — AURA" },
@@ -23,22 +26,43 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
+  const search = Route.useSearch();
   const [step, setStep] = useState<"phone" | "otp">("phone");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const getDestination = () => {
+    const storedNext = window.sessionStorage.getItem("aura_auth_next");
+    const rawNext = search.next ?? storedNext;
+    if (!rawNext) return "/dashboard";
+
+    try {
+      const url = new URL(rawNext, window.location.origin);
+      if (url.origin !== window.location.origin || url.pathname === "/auth") return "/dashboard";
+      return `${url.pathname}${url.search}${url.hash}`;
+    } catch {
+      return "/dashboard";
+    }
+  };
+
+  const navigateAfterAuth = () => {
+    const destination = getDestination();
+    window.sessionStorage.removeItem("aura_auth_next");
+    navigate({ to: destination, replace: true });
+  };
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/dashboard", replace: true });
+      if (data.session) navigateAfterAuth();
     });
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session) {
-        navigate({ to: "/dashboard", replace: true });
+        navigateAfterAuth();
       }
     });
     return () => sub.subscription.unsubscribe();
-  }, [navigate]);
+  }, [navigate, search.next]);
 
   const normalized = (raw: string) => {
     const digits = raw.replace(/\D/g, "");
@@ -67,10 +91,11 @@ function AuthPage() {
     const { error } = await supabase.auth.verifyOtp({ phone: normalized(phone), token: code, type: "sms" });
     setLoading(false);
     if (error) return toast.error("Código inválido");
-    navigate({ to: "/dashboard", replace: true });
+    navigateAfterAuth();
   };
 
   const google = async () => {
+    window.sessionStorage.setItem("aura_auth_next", getDestination());
     const res = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin + "/auth" });
     if (res.error) toast.error("Não foi possível entrar com Google");
   };
