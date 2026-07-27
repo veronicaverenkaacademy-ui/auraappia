@@ -13,6 +13,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedServicosRouteImport } from './routes/_authenticated/servicos'
+import { Route as AuthenticatedMarketingRouteImport } from './routes/_authenticated/marketing'
 import { Route as AuthenticatedMaisRouteImport } from './routes/_authenticated/mais'
 import { Route as AuthenticatedFinanceiroRouteImport } from './routes/_authenticated/financeiro'
 import { Route as AuthenticatedEstoqueRouteImport } from './routes/_authenticated/estoque'
@@ -45,6 +46,11 @@ const IndexRoute = IndexRouteImport.update({
 const AuthenticatedServicosRoute = AuthenticatedServicosRouteImport.update({
   id: '/servicos',
   path: '/servicos',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedMarketingRoute = AuthenticatedMarketingRouteImport.update({
+  id: '/marketing',
+  path: '/marketing',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedMaisRoute = AuthenticatedMaisRouteImport.update({
@@ -132,6 +138,7 @@ export interface FileRoutesByFullPath {
   '/estoque': typeof AuthenticatedEstoqueRouteWithChildren
   '/financeiro': typeof AuthenticatedFinanceiroRouteWithChildren
   '/mais': typeof AuthenticatedMaisRoute
+  '/marketing': typeof AuthenticatedMarketingRoute
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
@@ -150,6 +157,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/estoque': typeof AuthenticatedEstoqueRouteWithChildren
   '/mais': typeof AuthenticatedMaisRoute
+  '/marketing': typeof AuthenticatedMarketingRoute
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
@@ -171,6 +179,7 @@ export interface FileRoutesById {
   '/_authenticated/estoque': typeof AuthenticatedEstoqueRouteWithChildren
   '/_authenticated/financeiro': typeof AuthenticatedFinanceiroRouteWithChildren
   '/_authenticated/mais': typeof AuthenticatedMaisRoute
+  '/_authenticated/marketing': typeof AuthenticatedMarketingRoute
   '/_authenticated/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/_authenticated/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/_authenticated/estoque/$id': typeof AuthenticatedEstoqueIdRoute
@@ -192,6 +201,7 @@ export interface FileRouteTypes {
     | '/estoque'
     | '/financeiro'
     | '/mais'
+    | '/marketing'
     | '/servicos'
     | '/clientes/$id'
     | '/estoque/$id'
@@ -210,6 +220,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/estoque'
     | '/mais'
+    | '/marketing'
     | '/servicos'
     | '/clientes/$id'
     | '/estoque/$id'
@@ -230,6 +241,7 @@ export interface FileRouteTypes {
     | '/_authenticated/estoque'
     | '/_authenticated/financeiro'
     | '/_authenticated/mais'
+    | '/_authenticated/marketing'
     | '/_authenticated/servicos'
     | '/_authenticated/clientes/$id'
     | '/_authenticated/estoque/$id'
@@ -274,6 +286,13 @@ declare module '@tanstack/react-router' {
       path: '/servicos'
       fullPath: '/servicos'
       preLoaderRoute: typeof AuthenticatedServicosRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/marketing': {
+      id: '/_authenticated/marketing'
+      path: '/marketing'
+      fullPath: '/marketing'
+      preLoaderRoute: typeof AuthenticatedMarketingRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/mais': {
@@ -442,6 +461,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedEstoqueRoute: typeof AuthenticatedEstoqueRouteWithChildren
   AuthenticatedFinanceiroRoute: typeof AuthenticatedFinanceiroRouteWithChildren
   AuthenticatedMaisRoute: typeof AuthenticatedMaisRoute
+  AuthenticatedMarketingRoute: typeof AuthenticatedMarketingRoute
   AuthenticatedServicosRoute: typeof AuthenticatedServicosRouteWithChildren
 }
 
@@ -453,6 +473,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedEstoqueRoute: AuthenticatedEstoqueRouteWithChildren,
   AuthenticatedFinanceiroRoute: AuthenticatedFinanceiroRouteWithChildren,
   AuthenticatedMaisRoute: AuthenticatedMaisRoute,
+  AuthenticatedMarketingRoute: AuthenticatedMarketingRoute,
   AuthenticatedServicosRoute: AuthenticatedServicosRouteWithChildren,
 }
 
