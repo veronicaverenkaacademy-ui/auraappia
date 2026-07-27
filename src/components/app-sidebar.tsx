@@ -10,7 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 const items = [
   { title: "Hoje", url: "/dashboard", icon: LayoutDashboard },
   { title: "Agenda", url: "/agenda", icon: Calendar },
-  { title: "Clientes", url: "/clientes", icon: Users, soon: true },
+  { title: "Clientes", url: "/clientes", icon: Users },
   { title: "Protocolos", url: "/protocolos", icon: Sparkles, soon: true },
   { title: "Estoque", url: "/estoque", icon: Package, soon: true },
   { title: "Financeiro", url: "/financeiro", icon: DollarSign, soon: true },

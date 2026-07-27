@@ -14,6 +14,203 @@ export type Database = {
   }
   public: {
     Tables: {
+      appointments: {
+        Row: {
+          client_id: string
+          created_at: string
+          ends_at: string
+          id: string
+          notes: string | null
+          owner_id: string
+          price: number
+          service_id: string | null
+          service_name: string | null
+          starts_at: string
+          status: Database["public"]["Enums"]["appointment_status"]
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          ends_at: string
+          id?: string
+          notes?: string | null
+          owner_id: string
+          price?: number
+          service_id?: string | null
+          service_name?: string | null
+          starts_at: string
+          status?: Database["public"]["Enums"]["appointment_status"]
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          ends_at?: string
+          id?: string
+          notes?: string | null
+          owner_id?: string
+          price?: number
+          service_id?: string | null
+          service_name?: string | null
+          starts_at?: string
+          status?: Database["public"]["Enums"]["appointment_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointments_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointments_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_anamnesis: {
+        Row: {
+          allergies: string | null
+          client_id: string
+          contraindications: string | null
+          medications: string | null
+          notes: string | null
+          owner_id: string
+          pregnant: boolean | null
+          restrictions: string | null
+          skin_type: string | null
+          updated_at: string
+        }
+        Insert: {
+          allergies?: string | null
+          client_id: string
+          contraindications?: string | null
+          medications?: string | null
+          notes?: string | null
+          owner_id: string
+          pregnant?: boolean | null
+          restrictions?: string | null
+          skin_type?: string | null
+          updated_at?: string
+        }
+        Update: {
+          allergies?: string | null
+          client_id?: string
+          contraindications?: string | null
+          medications?: string | null
+          notes?: string | null
+          owner_id?: string
+          pregnant?: boolean | null
+          restrictions?: string | null
+          skin_type?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_anamnesis_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: true
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_photos: {
+        Row: {
+          appointment_id: string | null
+          caption: string | null
+          client_id: string
+          created_at: string
+          id: string
+          kind: string
+          owner_id: string
+          storage_path: string
+        }
+        Insert: {
+          appointment_id?: string | null
+          caption?: string | null
+          client_id: string
+          created_at?: string
+          id?: string
+          kind?: string
+          owner_id: string
+          storage_path: string
+        }
+        Update: {
+          appointment_id?: string | null
+          caption?: string | null
+          client_id?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          owner_id?: string
+          storage_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_photos_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_photos_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      clients: {
+        Row: {
+          avatar_url: string | null
+          birthday: string | null
+          created_at: string
+          email: string | null
+          full_name: string
+          id: string
+          notes: string | null
+          owner_id: string
+          phone: string | null
+          tags: string[]
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          birthday?: string | null
+          created_at?: string
+          email?: string | null
+          full_name: string
+          id?: string
+          notes?: string | null
+          owner_id: string
+          phone?: string | null
+          tags?: string[]
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          birthday?: string | null
+          created_at?: string
+          email?: string | null
+          full_name?: string
+          id?: string
+          notes?: string | null
+          owner_id?: string
+          phone?: string | null
+          tags?: string[]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -47,6 +244,45 @@ export type Database = {
         }
         Relationships: []
       }
+      services: {
+        Row: {
+          active: boolean
+          color: string | null
+          created_at: string
+          description: string | null
+          duration_min: number
+          id: string
+          name: string
+          owner_id: string
+          price: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          duration_min?: number
+          id?: string
+          name: string
+          owner_id: string
+          price?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          duration_min?: number
+          id?: string
+          name?: string
+          owner_id?: string
+          price?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -55,7 +291,12 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      appointment_status:
+        | "pending"
+        | "confirmed"
+        | "completed"
+        | "cancelled"
+        | "no_show"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -182,6 +423,14 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      appointment_status: [
+        "pending",
+        "confirmed",
+        "completed",
+        "cancelled",
+        "no_show",
+      ],
+    },
   },
 } as const
