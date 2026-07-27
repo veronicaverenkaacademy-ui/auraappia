@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/app-sidebar";
+import { AppShell } from "@/components/app-shell";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -53,97 +52,76 @@ function Agenda() {
   const monthLabel = days[0].toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-background">
-        <AppSidebar />
-        <div className="flex-1 flex flex-col min-w-0">
-          <header className="h-14 flex items-center gap-3 px-4 md:px-8 border-b border-border/50">
-            <SidebarTrigger />
-            <div className="text-xs text-muted-foreground uppercase tracking-wider">Agenda</div>
-            <div className="ml-auto flex items-center gap-1">
-              <button onClick={() => setWeekOffset((v) => v - 1)} className="w-8 h-8 rounded-full hover:bg-secondary flex items-center justify-center">
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button onClick={() => setWeekOffset(0)} className="text-xs px-3 h-8 rounded-full hover:bg-secondary">
-                Hoje
-              </button>
-              <button onClick={() => setWeekOffset((v) => v + 1)} className="w-8 h-8 rounded-full hover:bg-secondary flex items-center justify-center">
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </header>
+    <AppShell title="Agenda" className="flex flex-col pb-24 md:pb-0">
+      <div className="px-4 md:px-8 pt-6 pb-4 flex items-end justify-between shrink-0">
+        <div>
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">Semana</p>
+          <h1 className="text-2xl md:text-3xl font-display font-medium tracking-tight capitalize">{monthLabel}</h1>
+        </div>
+        <Button size="sm" className="rounded-full h-9 gap-1.5">
+          <Plus className="w-4 h-4" /> Novo
+        </Button>
+      </div>
 
-          <div className="px-4 md:px-8 pt-6 pb-4 flex items-end justify-between">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase tracking-wider">Semana</p>
-              <h1 className="text-2xl md:text-3xl font-display font-medium tracking-tight capitalize">{monthLabel}</h1>
-            </div>
-            <Button size="sm" className="rounded-full h-9 gap-1.5">
-              <Plus className="w-4 h-4" /> Novo
-            </Button>
+      <main className="flex-1 overflow-auto px-4 md:px-8 pb-8">
+        <div className="min-w-[720px]">
+          {/* Day header */}
+          <div className="grid grid-cols-[56px_repeat(6,1fr)] gap-2 mb-2 sticky top-0 bg-background z-10 pb-2">
+            <div />
+            {days.map((d, i) => {
+              const isToday = d.toDateString() === new Date().toDateString();
+              return (
+                <div key={i} className="text-center">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                    {d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")}
+                  </div>
+                  <div className={`mt-1 mx-auto w-8 h-8 flex items-center justify-center rounded-full text-sm tabular-nums ${isToday ? "bg-primary text-primary-foreground font-medium" : ""}`}>
+                    {d.getDate()}
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
-          <main className="flex-1 overflow-auto px-4 md:px-8 pb-8">
-            <div className="min-w-[720px]">
-              {/* Day header */}
-              <div className="grid grid-cols-[56px_repeat(6,1fr)] gap-2 mb-2 sticky top-0 bg-background z-10 pb-2">
-                <div />
-                {days.map((d, i) => {
-                  const isToday = d.toDateString() === new Date().toDateString();
-                  return (
-                    <div key={i} className="text-center">
-                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                        {d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")}
-                      </div>
-                      <div className={`mt-1 mx-auto w-8 h-8 flex items-center justify-center rounded-full text-sm tabular-nums ${isToday ? "bg-primary text-primary-foreground font-medium" : ""}`}>
-                        {d.getDate()}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Grid */}
-              <div className="grid grid-cols-[56px_repeat(6,1fr)] gap-2">
-                {/* Hours column */}
-                <div className="relative">
-                  {HOURS.map((h) => (
-                    <div key={h} style={{ height: HOUR_H }} className="text-[10px] text-muted-foreground text-right pr-2 -translate-y-1.5 tabular-nums">
-                      {h}:00
+          {/* Grid */}
+          <div className="grid grid-cols-[56px_repeat(6,1fr)] gap-2">
+            {/* Hours column */}
+            <div className="relative">
+              {HOURS.map((h) => (
+                <div key={h} style={{ height: HOUR_H }} className="text-[10px] text-muted-foreground text-right pr-2 -translate-y-1.5 tabular-nums">
+                  {h}:00
+                </div>
+              ))}
+            </div>
+            {/* Day columns */}
+            {days.map((_, dayIdx) => {
+              const dayAppts = week.filter((a) => a.day === dayIdx);
+              return (
+                <div key={dayIdx} className="relative rounded-xl bg-secondary/30 border border-border/40" style={{ height: HOUR_H * HOURS.length }}>
+                  {/* Hour lines */}
+                  {HOURS.slice(1).map((h) => (
+                    <div key={h} style={{ top: (h - HOURS[0]) * HOUR_H }} className="absolute inset-x-0 border-t border-border/30" />
+                  ))}
+                  {/* Appointments */}
+                  {dayAppts.map((a, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        top: (a.start - HOURS[0]) * HOUR_H + 2,
+                        height: a.duration * HOUR_H - 4,
+                      }}
+                      className="absolute inset-x-1 rounded-lg bg-card border border-primary/20 shadow-sm px-2 py-1.5 overflow-hidden cursor-pointer hover:border-primary/40 transition"
+                    >
+                      <div className="text-[11px] font-medium truncate">{a.name}</div>
+                      <div className="text-[10px] text-muted-foreground truncate">{a.service}</div>
                     </div>
                   ))}
                 </div>
-                {/* Day columns */}
-                {days.map((_, dayIdx) => {
-                  const dayAppts = week.filter((a) => a.day === dayIdx);
-                  return (
-                    <div key={dayIdx} className="relative rounded-xl bg-secondary/30 border border-border/40" style={{ height: HOUR_H * HOURS.length }}>
-                      {/* Hour lines */}
-                      {HOURS.slice(1).map((h) => (
-                        <div key={h} style={{ top: (h - HOURS[0]) * HOUR_H }} className="absolute inset-x-0 border-t border-border/30" />
-                      ))}
-                      {/* Appointments */}
-                      {dayAppts.map((a, i) => (
-                        <div
-                          key={i}
-                          style={{
-                            top: (a.start - HOURS[0]) * HOUR_H + 2,
-                            height: a.duration * HOUR_H - 4,
-                          }}
-                          className="absolute inset-x-1 rounded-lg bg-card border border-primary/20 shadow-sm px-2 py-1.5 overflow-hidden cursor-pointer hover:border-primary/40 transition"
-                        >
-                          <div className="text-[11px] font-medium truncate">{a.name}</div>
-                          <div className="text-[10px] text-muted-foreground truncate">{a.service}</div>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </main>
+              );
+            })}
+          </div>
         </div>
-      </div>
-    </SidebarProvider>
+      </main>
+    </AppShell>
   );
 }

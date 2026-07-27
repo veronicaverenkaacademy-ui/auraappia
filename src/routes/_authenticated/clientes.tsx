@@ -1,8 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/app-sidebar";
+import { AppShell } from "@/components/app-shell";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Plus, Search, ChevronRight } from "lucide-react";
@@ -46,80 +45,74 @@ function ClientsPage() {
   }, [filtered]);
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-background">
-        <AppSidebar />
-        <div className="flex-1 flex flex-col min-w-0">
-          <header className="h-14 flex items-center gap-3 px-4 md:px-8 border-b border-border/50">
-            <SidebarTrigger />
-            <div className="text-xs text-muted-foreground uppercase tracking-wider">Clientes</div>
-          </header>
-
-          <main className="flex-1 px-4 md:px-8 py-8 md:py-12 max-w-4xl w-full mx-auto">
-            <div className="mb-8 flex items-end justify-between gap-4">
-              <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">
-                  {clients.length} {clients.length === 1 ? "cliente" : "clientes"}
-                </p>
-                <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight">Clientes</h1>
-              </div>
-              <Button onClick={() => setOpen(true)} className="rounded-full h-10 gap-1.5">
-                <Plus className="w-4 h-4" /> Nova
-              </Button>
-            </div>
-
-            <div className="relative mb-6">
-              <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Buscar por nome, telefone ou tag…"
-                className="h-12 pl-11 rounded-2xl bg-secondary border-0"
-              />
-            </div>
-
-            {isLoading ? (
-              <div className="text-sm text-muted-foreground">Carregando…</div>
-            ) : clients.length === 0 ? (
-              <EmptyState onNew={() => setOpen(true)} />
-            ) : filtered.length === 0 ? (
-              <div className="text-center py-16 text-sm text-muted-foreground">Nenhuma cliente encontrada.</div>
-            ) : (
-              <div className="space-y-8">
-                {grouped.map(([letter, list]) => (
-                  <section key={letter}>
-                    <div className="text-[11px] uppercase tracking-widest text-muted-foreground mb-2 px-1">{letter}</div>
-                    <div className="space-y-1">
-                      {list.map((c) => (
-                        <Link
-                          key={c.id}
-                          to="/clientes/$id"
-                          params={{ id: c.id }}
-                          className="group flex items-center gap-4 p-3 pr-4 rounded-2xl hover:bg-secondary/60 transition"
-                        >
-                          <div className="w-11 h-11 rounded-full bg-accent/40 flex items-center justify-center text-sm font-medium text-accent-foreground shrink-0">
-                            {initials(c.full_name)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate">{c.full_name}</div>
-                            <div className="text-xs text-muted-foreground truncate">
-                              {c.phone ?? "—"}
-                              {c.tags.length > 0 && <span> · {c.tags.join(" · ")}</span>}
-                            </div>
-                          </div>
-                          <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition" />
-                        </Link>
-                      ))}
-                    </div>
-                  </section>
-                ))}
-              </div>
-            )}
-          </main>
+    <AppShell
+      title="Clientes"
+      right={
+        <Button onClick={() => setOpen(true)} size="sm" className="rounded-full h-9 gap-1.5">
+          <Plus className="w-4 h-4" /> Nova
+        </Button>
+      }
+      className="px-4 md:px-8 py-8 md:py-12 max-w-4xl mx-auto pb-24 md:pb-12"
+    >
+      <div className="mb-8 flex items-end justify-between gap-4">
+        <div>
+          <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">
+            {clients.length} {clients.length === 1 ? "cliente" : "clientes"}
+          </p>
+          <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight">Clientes</h1>
         </div>
       </div>
+
+      <div className="relative mb-6">
+        <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Buscar por nome, telefone ou tag…"
+          className="h-12 pl-11 rounded-2xl bg-secondary border-0"
+        />
+      </div>
+
+      {isLoading ? (
+        <div className="text-sm text-muted-foreground">Carregando…</div>
+      ) : clients.length === 0 ? (
+        <EmptyState onNew={() => setOpen(true)} />
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-16 text-sm text-muted-foreground">Nenhuma cliente encontrada.</div>
+      ) : (
+        <div className="space-y-8">
+          {grouped.map(([letter, list]) => (
+            <section key={letter}>
+              <div className="text-[11px] uppercase tracking-widest text-muted-foreground mb-2 px-1">{letter}</div>
+              <div className="space-y-1">
+                {list.map((c) => (
+                  <Link
+                    key={c.id}
+                    to="/clientes/$id"
+                    params={{ id: c.id }}
+                    className="group flex items-center gap-4 p-3 pr-4 rounded-2xl hover:bg-secondary/60 transition"
+                  >
+                    <div className="w-11 h-11 rounded-full bg-accent/40 flex items-center justify-center text-sm font-medium text-accent-foreground shrink-0">
+                      {initials(c.full_name)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{c.full_name}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {c.phone ?? "—"}
+                        {c.tags.length > 0 && <span> · {c.tags.join(" · ")}</span>}
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition" />
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+
       <ClientFormDialog open={open} onOpenChange={setOpen} />
-    </SidebarProvider>
+    </AppShell>
   );
 }
 

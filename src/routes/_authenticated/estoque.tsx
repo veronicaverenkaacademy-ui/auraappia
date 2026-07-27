@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/app-sidebar";
+import { AppShell } from "@/components/app-shell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { listProducts, upsertProduct, deleteProduct, registerPurchase, UNITS, formatBRL, type Product } from "@/lib/catalog";
 import { useState } from "react";
@@ -33,99 +32,92 @@ function Estoque() {
   const low = products.filter((p) => Number(p.stock) <= Number(p.min_stock) && p.min_stock > 0);
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-background">
-        <AppSidebar />
-        <div className="flex-1 flex flex-col min-w-0">
-          <header className="h-14 flex items-center gap-3 px-4 md:px-8 border-b border-border/50">
-            <SidebarTrigger />
-            <div className="text-xs text-muted-foreground uppercase tracking-wider flex-1">Estoque</div>
-            <Button size="sm" onClick={() => { setEditing(null); setOpen(true); }}>
-              <Plus className="w-4 h-4 mr-1" /> Produto
-            </Button>
-          </header>
+    <AppShell
+      title="Estoque"
+      right={
+        <Button size="sm" onClick={() => { setEditing(null); setOpen(true); }}>
+          <Plus className="w-4 h-4 mr-1" /> Produto
+        </Button>
+      }
+      className="px-4 md:px-8 py-8 md:py-12 max-w-5xl mx-auto pb-24 md:pb-12"
+    >
+      <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight mb-8">Estoque</h1>
 
-          <main className="flex-1 px-4 md:px-8 py-8 md:py-12 max-w-5xl w-full mx-auto">
-            <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight mb-8">Estoque</h1>
+      {low.length > 0 && (
+        <div className="mb-8 p-5 rounded-2xl bg-secondary/60 border border-border/50">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Sugestão de compra</p>
+              <p className="text-sm mb-3">
+                {low.length} produto{low.length > 1 ? "s" : ""} abaixo do mínimo.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {low.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => setBuying(p)}
+                    className="text-xs px-3 py-1.5 rounded-full bg-background border border-border hover:border-primary/50 transition"
+                  >
+                    {p.name} · {Number(p.stock)}/{Number(p.min_stock)} {p.unit}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-            {low.length > 0 && (
-              <div className="mb-8 p-5 rounded-2xl bg-secondary/60 border border-border/50">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Sugestão de compra</p>
-                    <p className="text-sm mb-3">
-                      {low.length} produto{low.length > 1 ? "s" : ""} abaixo do mínimo.
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {low.map((p) => (
-                        <button
-                          key={p.id}
-                          onClick={() => setBuying(p)}
-                          className="text-xs px-3 py-1.5 rounded-full bg-background border border-border hover:border-primary/50 transition"
-                        >
-                          {p.name} · {Number(p.stock)}/{Number(p.min_stock)} {p.unit}
-                        </button>
-                      ))}
-                    </div>
+      {products.length === 0 ? (
+        <EmptyState onAdd={() => { setEditing(null); setOpen(true); }} />
+      ) : (
+        <div className="space-y-2">
+          {products.map((p) => {
+            const isLow = Number(p.stock) <= Number(p.min_stock) && p.min_stock > 0;
+            return (
+              <div key={p.id} className="group flex items-center gap-4 p-4 rounded-2xl bg-card border border-border/50 hover:border-border transition">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isLow ? "bg-primary/10" : "bg-secondary"}`}>
+                  <Package className={`w-4 h-4 ${isLow ? "text-primary" : "text-muted-foreground"}`} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">{p.name}</div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {p.brand ? `${p.brand} · ` : ""}{formatBRL(Number(p.cost_per_unit))}/{p.unit}
                   </div>
                 </div>
+                <div className="text-right">
+                  <div className={`text-sm tabular-nums ${isLow ? "text-primary font-medium" : ""}`}>
+                    {Number(p.stock)} {p.unit}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                    mín {Number(p.min_stock)}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                  <Button size="icon" variant="ghost" onClick={() => setBuying(p)} title="Registrar compra">
+                    <ShoppingCart className="w-4 h-4" />
+                  </Button>
+                  <Button size="icon" variant="ghost" onClick={() => { setEditing(p); setOpen(true); }}>
+                    <Pencil className="w-4 h-4" />
+                  </Button>
+                  <Button size="icon" variant="ghost" onClick={async () => {
+                    if (!confirm(`Excluir ${p.name}?`)) return;
+                    await deleteProduct(p.id);
+                    qc.invalidateQueries({ queryKey: ["products"] });
+                    toast.success("Produto excluído");
+                  }}>
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
-            )}
-
-            {products.length === 0 ? (
-              <EmptyState onAdd={() => { setEditing(null); setOpen(true); }} />
-            ) : (
-              <div className="space-y-2">
-                {products.map((p) => {
-                  const isLow = Number(p.stock) <= Number(p.min_stock) && p.min_stock > 0;
-                  return (
-                    <div key={p.id} className="group flex items-center gap-4 p-4 rounded-2xl bg-card border border-border/50 hover:border-border transition">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isLow ? "bg-primary/10" : "bg-secondary"}`}>
-                        <Package className={`w-4 h-4 ${isLow ? "text-primary" : "text-muted-foreground"}`} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate">{p.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {p.brand ? `${p.brand} · ` : ""}{formatBRL(Number(p.cost_per_unit))}/{p.unit}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className={`text-sm tabular-nums ${isLow ? "text-primary font-medium" : ""}`}>
-                          {Number(p.stock)} {p.unit}
-                        </div>
-                        <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                          mín {Number(p.min_stock)}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
-                        <Button size="icon" variant="ghost" onClick={() => setBuying(p)} title="Registrar compra">
-                          <ShoppingCart className="w-4 h-4" />
-                        </Button>
-                        <Button size="icon" variant="ghost" onClick={() => { setEditing(p); setOpen(true); }}>
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                        <Button size="icon" variant="ghost" onClick={async () => {
-                          if (!confirm(`Excluir ${p.name}?`)) return;
-                          await deleteProduct(p.id);
-                          qc.invalidateQueries({ queryKey: ["products"] });
-                          toast.success("Produto excluído");
-                        }}>
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </main>
+            );
+          })}
         </div>
-      </div>
+      )}
 
       <ProductDialog open={open} onOpenChange={setOpen} product={editing} />
       <PurchaseDialog product={buying} onClose={() => setBuying(null)} />
-    </SidebarProvider>
+    </AppShell>
   );
 }
 
