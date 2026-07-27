@@ -1,7 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
-import { ArrowUpRight, Clock, Users, DollarSign, Sparkles, ChevronRight } from "lucide-react";
+import { Clock, Users, DollarSign, Sparkles, ChevronRight, Package, AlertCircle } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { listProducts, formatBRL } from "@/lib/catalog";
+import { Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
@@ -14,17 +18,44 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
   component: Dashboard,
 });
 
-const todayAppts = [
-  { time: "09:00", name: "Marina Costa", service: "Volume Brasileiro", price: 220, status: "confirmed" },
-  { time: "11:30", name: "Beatriz Almeida", service: "Manutenção", price: 130, status: "confirmed" },
-  { time: "14:00", name: "Carolina Reis", service: "Design de sobrancelhas", price: 90, status: "pending" },
-  { time: "16:30", name: "Julia Mendes", service: "Volume Russo", price: 260, status: "confirmed" },
-];
+type TodayAppt = {
+  id: string;
+  starts_at: string;
+  service_name: string | null;
+  price: number;
+  status: string;
+  clients: { full_name: string } | null;
+};
+
+async function fetchToday(): Promise<TodayAppt[]> {
+  const start = new Date(); start.setHours(0, 0, 0, 0);
+  const end = new Date(); end.setHours(23, 59, 59, 999);
+  const { data, error } = await supabase
+    .from("appointments")
+    .select("id, starts_at, service_name, price, status, clients(full_name)")
+    .gte("starts_at", start.toISOString())
+    .lte("starts_at", end.toISOString())
+    .order("starts_at");
+  if (error) throw error;
+  return (data ?? []) as unknown as TodayAppt[];
+}
 
 function Dashboard() {
   const now = new Date();
   const dayLabel = now.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
-  const total = todayAppts.reduce((s, a) => s + a.price, 0);
+  const { data: todayAppts = [] } = useQuery({ queryKey: ["today-appts"], queryFn: fetchToday });
+  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: listProducts });
+
+  const total = todayAppts.reduce((s, a) => s + Number(a.price ?? 0), 0);
+  const uniqueClients = new Set(todayAppts.map((a) => a.clients?.full_name)).size;
+  const low = products.filter((p) => Number(p.stock) <= Number(p.min_stock) && p.min_stock > 0);
+  const pending = todayAppts.filter((a) => a.status === "pending");
+
+  const insight = todayAppts.length === 0
+    ? "Nenhum atendimento hoje. Que tal enviar uma campanha de reativação para clientes antigas?"
+    : pending.length > 0
+    ? `Você tem ${todayAppts.length} atendimento${todayAppts.length > 1 ? "s" : ""} hoje. ${pending.length} ainda ${pending.length > 1 ? "estão pendentes" : "está pendente"} de confirmação.`
+    : `Tudo confirmado para hoje. ${todayAppts.length} atendimento${todayAppts.length > 1 ? "s" : ""} com previsão de ${formatBRL(total)}.`;
 
   return (
     <SidebarProvider>
@@ -54,49 +85,65 @@ function Dashboard() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Assistente AURA</p>
-                  <p className="text-sm leading-relaxed text-foreground">
-                    Você tem <span className="font-medium">4 atendimentos</span> hoje. A Carolina ainda não confirmou às 14:00 — quer que eu envie um lembrete?
-                  </p>
-                  <button className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
-                    Enviar lembrete <ArrowUpRight className="w-3 h-3" />
-                  </button>
+                  <p className="text-sm leading-relaxed text-foreground">{insight}</p>
                 </div>
               </div>
             </div>
 
+            {low.length > 0 && (
+              <Link to="/estoque" className="mb-8 flex items-center gap-3 p-4 rounded-2xl bg-card border border-border/50 hover:border-border transition">
+                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                  <AlertCircle className="w-4 h-4 text-primary" />
+                </div>
+                <div className="flex-1 text-sm">
+                  <span className="font-medium">{low.length}</span> produto{low.length > 1 ? "s" : ""} abaixo do estoque mínimo
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              </Link>
+            )}
+
             {/* Stats */}
             <div className="grid grid-cols-3 gap-3 md:gap-4 mb-10">
               <StatCard icon={Clock} label="Atendimentos" value={String(todayAppts.length)} />
-              <StatCard icon={Users} label="Clientes" value="3" />
-              <StatCard icon={DollarSign} label="Previsão" value={`R$ ${total}`} />
+              <StatCard icon={Users} label="Clientes" value={String(uniqueClients)} />
+              <StatCard icon={DollarSign} label="Previsão" value={formatBRL(total)} />
             </div>
 
             {/* Today schedule */}
             <section>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Próximos</h2>
-                <button className="text-xs text-muted-foreground hover:text-foreground transition">Ver agenda</button>
+                <Link to="/agenda" className="text-xs text-muted-foreground hover:text-foreground transition">Ver agenda</Link>
               </div>
-              <div className="space-y-2">
-                {todayAppts.map((a) => (
-                  <div key={a.time} className="group flex items-center gap-4 p-4 rounded-2xl bg-card border border-border/50 hover:border-border transition cursor-pointer">
-                    <div className="w-14 text-sm font-medium tabular-nums">{a.time}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">{a.name}</div>
-                      <div className="text-xs text-muted-foreground truncate">{a.service}</div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <div className="text-sm tabular-nums">R$ {a.price}</div>
-                        <div className={`text-[10px] uppercase tracking-wider ${a.status === "confirmed" ? "text-muted-foreground" : "text-primary"}`}>
-                          {a.status === "confirmed" ? "Confirmado" : "Pendente"}
+              {todayAppts.length === 0 ? (
+                <div className="text-center py-16 border border-dashed border-border rounded-2xl text-sm text-muted-foreground">
+                  Nenhum atendimento hoje
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {todayAppts.map((a) => {
+                    const time = new Date(a.starts_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+                    return (
+                      <div key={a.id} className="group flex items-center gap-4 p-4 rounded-2xl bg-card border border-border/50 hover:border-border transition cursor-pointer">
+                        <div className="w-14 text-sm font-medium tabular-nums">{time}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">{a.clients?.full_name ?? "Cliente"}</div>
+                          <div className="text-xs text-muted-foreground truncate">{a.service_name ?? "—"}</div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <div className="text-sm tabular-nums">{formatBRL(Number(a.price))}</div>
+                            <div className={`text-[10px] uppercase tracking-wider ${a.status === "confirmed" ? "text-muted-foreground" : "text-primary"}`}>
+                              {a.status === "confirmed" ? "Confirmado" : a.status === "completed" ? "Concluído" : "Pendente"}
+                            </div>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition" />
                         </div>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition" />
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </section>
           </main>
         </div>
