@@ -211,6 +211,147 @@ export type Database = {
         }
         Relationships: []
       }
+      finance_goals: {
+        Row: {
+          active: boolean
+          amount: number
+          created_at: string
+          ends_at: string | null
+          id: string
+          owner_id: string
+          period: string
+          scope: string
+          scope_ref: string | null
+          starts_at: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          amount?: number
+          created_at?: string
+          ends_at?: string | null
+          id?: string
+          owner_id: string
+          period: string
+          scope?: string
+          scope_ref?: string | null
+          starts_at?: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          amount?: number
+          created_at?: string
+          ends_at?: string | null
+          id?: string
+          owner_id?: string
+          period?: string
+          scope?: string
+          scope_ref?: string | null
+          starts_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      finance_settings: {
+        Row: {
+          commission_default_pct: number
+          fixed_costs_monthly: number
+          owner_id: string
+          prolabore_monthly: number
+          tax_pct: number
+          tax_regime: string | null
+          updated_at: string
+        }
+        Insert: {
+          commission_default_pct?: number
+          fixed_costs_monthly?: number
+          owner_id: string
+          prolabore_monthly?: number
+          tax_pct?: number
+          tax_regime?: string | null
+          updated_at?: string
+        }
+        Update: {
+          commission_default_pct?: number
+          fixed_costs_monthly?: number
+          owner_id?: string
+          prolabore_monthly?: number
+          tax_pct?: number
+          tax_regime?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      finance_transactions: {
+        Row: {
+          amount: number
+          appointment_id: string | null
+          auto: boolean
+          category: string | null
+          client_id: string | null
+          created_at: string
+          description: string | null
+          due_date: string | null
+          id: string
+          installment_index: number | null
+          installments: number
+          kind: string
+          method: string | null
+          owner_id: string
+          paid_at: string | null
+          parent_id: string | null
+          service_id: string | null
+          status: string
+          tags: string[]
+          updated_at: string
+        }
+        Insert: {
+          amount?: number
+          appointment_id?: string | null
+          auto?: boolean
+          category?: string | null
+          client_id?: string | null
+          created_at?: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          installment_index?: number | null
+          installments?: number
+          kind: string
+          method?: string | null
+          owner_id: string
+          paid_at?: string | null
+          parent_id?: string | null
+          service_id?: string | null
+          status?: string
+          tags?: string[]
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          appointment_id?: string | null
+          auto?: boolean
+          category?: string | null
+          client_id?: string | null
+          created_at?: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          installment_index?: number | null
+          installments?: number
+          kind?: string
+          method?: string | null
+          owner_id?: string
+          paid_at?: string | null
+          parent_id?: string | null
+          service_id?: string | null
+          status?: string
+          tags?: string[]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       product_batches: {
         Row: {
           batch_number: string | null
