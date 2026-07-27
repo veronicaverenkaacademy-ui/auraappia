@@ -1,6 +1,6 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { getAutomation, AVAILABLE_VARIABLES, CHANNEL_LABEL, type Channel } from "@/lib/marketing";
+import { getAutomation, AVAILABLE_VARIABLES, CHANNEL_LABEL, type Channel, type Automation } from "@/lib/marketing";
 import { ChevronLeft, Send, Copy, BarChart3, TestTube2, Sparkles } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,7 +17,7 @@ export const Route = createFileRoute("/_authenticated/marketing/$id")({
 const CHANNELS: Channel[] = ["whatsapp", "sms", "email", "push"];
 
 function AutomationDetail() {
-  const a = Route.useLoaderData();
+  const a = Route.useLoaderData() as Automation;
   const [message, setMessage] = useState(a.message);
   const [channel, setChannel] = useState<Channel>(a.channel);
   const [active, setActive] = useState(a.active);

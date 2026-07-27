@@ -24,6 +24,7 @@ import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedMarketingIndexRouteImport } from './routes/_authenticated/marketing.index'
 import { Route as AuthenticatedFinanceiroIndexRouteImport } from './routes/_authenticated/financeiro.index'
 import { Route as AuthenticatedServicosIdRouteImport } from './routes/_authenticated/servicos.$id'
+import { Route as AuthenticatedMarketingIdRouteImport } from './routes/_authenticated/marketing.$id'
 import { Route as AuthenticatedFinanceiroFluxoRouteImport } from './routes/_authenticated/financeiro.fluxo'
 import { Route as AuthenticatedFinanceiroCfoRouteImport } from './routes/_authenticated/financeiro.cfo'
 import { Route as AuthenticatedEstoquePreditivoRouteImport } from './routes/_authenticated/estoque.preditivo'
@@ -106,6 +107,12 @@ const AuthenticatedServicosIdRoute = AuthenticatedServicosIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AuthenticatedServicosRoute,
 } as any)
+const AuthenticatedMarketingIdRoute =
+  AuthenticatedMarketingIdRouteImport.update({
+    id: '/$id',
+    path: '/$id',
+    getParentRoute: () => AuthenticatedMarketingRoute,
+  } as any)
 const AuthenticatedFinanceiroFluxoRoute =
   AuthenticatedFinanceiroFluxoRouteImport.update({
     id: '/fluxo',
@@ -152,6 +159,7 @@ export interface FileRoutesByFullPath {
   '/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
   '/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
   '/financeiro/fluxo': typeof AuthenticatedFinanceiroFluxoRoute
+  '/marketing/$id': typeof AuthenticatedMarketingIdRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
   '/financeiro/': typeof AuthenticatedFinanceiroIndexRoute
   '/marketing/': typeof AuthenticatedMarketingIndexRoute
@@ -171,6 +179,7 @@ export interface FileRoutesByTo {
   '/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
   '/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
   '/financeiro/fluxo': typeof AuthenticatedFinanceiroFluxoRoute
+  '/marketing/$id': typeof AuthenticatedMarketingIdRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
   '/financeiro': typeof AuthenticatedFinanceiroIndexRoute
   '/marketing': typeof AuthenticatedMarketingIndexRoute
@@ -194,6 +203,7 @@ export interface FileRoutesById {
   '/_authenticated/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
   '/_authenticated/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
   '/_authenticated/financeiro/fluxo': typeof AuthenticatedFinanceiroFluxoRoute
+  '/_authenticated/marketing/$id': typeof AuthenticatedMarketingIdRoute
   '/_authenticated/servicos/$id': typeof AuthenticatedServicosIdRoute
   '/_authenticated/financeiro/': typeof AuthenticatedFinanceiroIndexRoute
   '/_authenticated/marketing/': typeof AuthenticatedMarketingIndexRoute
@@ -217,6 +227,7 @@ export interface FileRouteTypes {
     | '/estoque/preditivo'
     | '/financeiro/cfo'
     | '/financeiro/fluxo'
+    | '/marketing/$id'
     | '/servicos/$id'
     | '/financeiro/'
     | '/marketing/'
@@ -236,6 +247,7 @@ export interface FileRouteTypes {
     | '/estoque/preditivo'
     | '/financeiro/cfo'
     | '/financeiro/fluxo'
+    | '/marketing/$id'
     | '/servicos/$id'
     | '/financeiro'
     | '/marketing'
@@ -258,6 +270,7 @@ export interface FileRouteTypes {
     | '/_authenticated/estoque/preditivo'
     | '/_authenticated/financeiro/cfo'
     | '/_authenticated/financeiro/fluxo'
+    | '/_authenticated/marketing/$id'
     | '/_authenticated/servicos/$id'
     | '/_authenticated/financeiro/'
     | '/_authenticated/marketing/'
@@ -376,6 +389,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedServicosIdRouteImport
       parentRoute: typeof AuthenticatedServicosRoute
     }
+    '/_authenticated/marketing/$id': {
+      id: '/_authenticated/marketing/$id'
+      path: '/$id'
+      fullPath: '/marketing/$id'
+      preLoaderRoute: typeof AuthenticatedMarketingIdRouteImport
+      parentRoute: typeof AuthenticatedMarketingRoute
+    }
     '/_authenticated/financeiro/fluxo': {
       id: '/_authenticated/financeiro/fluxo'
       path: '/fluxo'
@@ -459,11 +479,13 @@ const AuthenticatedFinanceiroRouteWithChildren =
   )
 
 interface AuthenticatedMarketingRouteChildren {
+  AuthenticatedMarketingIdRoute: typeof AuthenticatedMarketingIdRoute
   AuthenticatedMarketingIndexRoute: typeof AuthenticatedMarketingIndexRoute
 }
 
 const AuthenticatedMarketingRouteChildren: AuthenticatedMarketingRouteChildren =
   {
+    AuthenticatedMarketingIdRoute: AuthenticatedMarketingIdRoute,
     AuthenticatedMarketingIndexRoute: AuthenticatedMarketingIndexRoute,
   }
 
