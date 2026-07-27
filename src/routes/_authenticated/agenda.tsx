@@ -209,7 +209,7 @@ function Agenda() {
         </div>
 
         {/* View tabs */}
-        <div className="mt-5 -mx-1 overflow-x-auto no-scrollbar">
+        <div className="mt-5 -mx-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="flex items-center gap-1 px-1">
             {(["day", "week", "list", "timeline"] as ViewMode[]).map((v) => (
               <button
