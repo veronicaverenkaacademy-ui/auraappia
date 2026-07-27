@@ -25,6 +25,7 @@ import { Route as AuthenticatedMarketingIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedFinanceiroIndexRouteImport } from './routes/_authenticated/financeiro.index'
 import { Route as AuthenticatedServicosIdRouteImport } from './routes/_authenticated/servicos.$id'
 import { Route as AuthenticatedMarketingJornadasRouteImport } from './routes/_authenticated/marketing.jornadas'
+import { Route as AuthenticatedMarketingIaRouteImport } from './routes/_authenticated/marketing.ia'
 import { Route as AuthenticatedMarketingIdRouteImport } from './routes/_authenticated/marketing.$id'
 import { Route as AuthenticatedFinanceiroFluxoRouteImport } from './routes/_authenticated/financeiro.fluxo'
 import { Route as AuthenticatedFinanceiroCfoRouteImport } from './routes/_authenticated/financeiro.cfo'
@@ -114,6 +115,12 @@ const AuthenticatedMarketingJornadasRoute =
     path: '/jornadas',
     getParentRoute: () => AuthenticatedMarketingRoute,
   } as any)
+const AuthenticatedMarketingIaRoute =
+  AuthenticatedMarketingIaRouteImport.update({
+    id: '/ia',
+    path: '/ia',
+    getParentRoute: () => AuthenticatedMarketingRoute,
+  } as any)
 const AuthenticatedMarketingIdRoute =
   AuthenticatedMarketingIdRouteImport.update({
     id: '/$id',
@@ -167,6 +174,7 @@ export interface FileRoutesByFullPath {
   '/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
   '/financeiro/fluxo': typeof AuthenticatedFinanceiroFluxoRoute
   '/marketing/$id': typeof AuthenticatedMarketingIdRoute
+  '/marketing/ia': typeof AuthenticatedMarketingIaRoute
   '/marketing/jornadas': typeof AuthenticatedMarketingJornadasRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
   '/financeiro/': typeof AuthenticatedFinanceiroIndexRoute
@@ -188,6 +196,7 @@ export interface FileRoutesByTo {
   '/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
   '/financeiro/fluxo': typeof AuthenticatedFinanceiroFluxoRoute
   '/marketing/$id': typeof AuthenticatedMarketingIdRoute
+  '/marketing/ia': typeof AuthenticatedMarketingIaRoute
   '/marketing/jornadas': typeof AuthenticatedMarketingJornadasRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
   '/financeiro': typeof AuthenticatedFinanceiroIndexRoute
@@ -213,6 +222,7 @@ export interface FileRoutesById {
   '/_authenticated/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
   '/_authenticated/financeiro/fluxo': typeof AuthenticatedFinanceiroFluxoRoute
   '/_authenticated/marketing/$id': typeof AuthenticatedMarketingIdRoute
+  '/_authenticated/marketing/ia': typeof AuthenticatedMarketingIaRoute
   '/_authenticated/marketing/jornadas': typeof AuthenticatedMarketingJornadasRoute
   '/_authenticated/servicos/$id': typeof AuthenticatedServicosIdRoute
   '/_authenticated/financeiro/': typeof AuthenticatedFinanceiroIndexRoute
@@ -238,6 +248,7 @@ export interface FileRouteTypes {
     | '/financeiro/cfo'
     | '/financeiro/fluxo'
     | '/marketing/$id'
+    | '/marketing/ia'
     | '/marketing/jornadas'
     | '/servicos/$id'
     | '/financeiro/'
@@ -259,6 +270,7 @@ export interface FileRouteTypes {
     | '/financeiro/cfo'
     | '/financeiro/fluxo'
     | '/marketing/$id'
+    | '/marketing/ia'
     | '/marketing/jornadas'
     | '/servicos/$id'
     | '/financeiro'
@@ -283,6 +295,7 @@ export interface FileRouteTypes {
     | '/_authenticated/financeiro/cfo'
     | '/_authenticated/financeiro/fluxo'
     | '/_authenticated/marketing/$id'
+    | '/_authenticated/marketing/ia'
     | '/_authenticated/marketing/jornadas'
     | '/_authenticated/servicos/$id'
     | '/_authenticated/financeiro/'
@@ -409,6 +422,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMarketingJornadasRouteImport
       parentRoute: typeof AuthenticatedMarketingRoute
     }
+    '/_authenticated/marketing/ia': {
+      id: '/_authenticated/marketing/ia'
+      path: '/ia'
+      fullPath: '/marketing/ia'
+      preLoaderRoute: typeof AuthenticatedMarketingIaRouteImport
+      parentRoute: typeof AuthenticatedMarketingRoute
+    }
     '/_authenticated/marketing/$id': {
       id: '/_authenticated/marketing/$id'
       path: '/$id'
@@ -500,6 +520,7 @@ const AuthenticatedFinanceiroRouteWithChildren =
 
 interface AuthenticatedMarketingRouteChildren {
   AuthenticatedMarketingIdRoute: typeof AuthenticatedMarketingIdRoute
+  AuthenticatedMarketingIaRoute: typeof AuthenticatedMarketingIaRoute
   AuthenticatedMarketingJornadasRoute: typeof AuthenticatedMarketingJornadasRoute
   AuthenticatedMarketingIndexRoute: typeof AuthenticatedMarketingIndexRoute
 }
@@ -507,6 +528,7 @@ interface AuthenticatedMarketingRouteChildren {
 const AuthenticatedMarketingRouteChildren: AuthenticatedMarketingRouteChildren =
   {
     AuthenticatedMarketingIdRoute: AuthenticatedMarketingIdRoute,
+    AuthenticatedMarketingIaRoute: AuthenticatedMarketingIaRoute,
     AuthenticatedMarketingJornadasRoute: AuthenticatedMarketingJornadasRoute,
     AuthenticatedMarketingIndexRoute: AuthenticatedMarketingIndexRoute,
   }
@@ -564,3 +586,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
