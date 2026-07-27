@@ -20,6 +20,7 @@ import { Route as AuthenticatedClientesRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAuraIaRouteImport } from './routes/_authenticated/aura-ia'
 import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
 import { Route as AuthenticatedServicosIdRouteImport } from './routes/_authenticated/servicos.$id'
+import { Route as AuthenticatedEstoquePreditivoRouteImport } from './routes/_authenticated/estoque.preditivo'
 import { Route as AuthenticatedEstoqueIdRouteImport } from './routes/_authenticated/estoque.$id'
 import { Route as AuthenticatedClientesIdRouteImport } from './routes/_authenticated/clientes.$id'
 
@@ -77,6 +78,12 @@ const AuthenticatedServicosIdRoute = AuthenticatedServicosIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AuthenticatedServicosRoute,
 } as any)
+const AuthenticatedEstoquePreditivoRoute =
+  AuthenticatedEstoquePreditivoRouteImport.update({
+    id: '/preditivo',
+    path: '/preditivo',
+    getParentRoute: () => AuthenticatedEstoqueRoute,
+  } as any)
 const AuthenticatedEstoqueIdRoute = AuthenticatedEstoqueIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -100,6 +107,7 @@ export interface FileRoutesByFullPath {
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
+  '/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
 }
 export interface FileRoutesByTo {
@@ -114,6 +122,7 @@ export interface FileRoutesByTo {
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
+  '/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
 }
 export interface FileRoutesById {
@@ -130,6 +139,7 @@ export interface FileRoutesById {
   '/_authenticated/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/_authenticated/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/_authenticated/estoque/$id': typeof AuthenticatedEstoqueIdRoute
+  '/_authenticated/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
   '/_authenticated/servicos/$id': typeof AuthenticatedServicosIdRoute
 }
 export interface FileRouteTypes {
@@ -146,6 +156,7 @@ export interface FileRouteTypes {
     | '/servicos'
     | '/clientes/$id'
     | '/estoque/$id'
+    | '/estoque/preditivo'
     | '/servicos/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -160,6 +171,7 @@ export interface FileRouteTypes {
     | '/servicos'
     | '/clientes/$id'
     | '/estoque/$id'
+    | '/estoque/preditivo'
     | '/servicos/$id'
   id:
     | '__root__'
@@ -175,6 +187,7 @@ export interface FileRouteTypes {
     | '/_authenticated/servicos'
     | '/_authenticated/clientes/$id'
     | '/_authenticated/estoque/$id'
+    | '/_authenticated/estoque/preditivo'
     | '/_authenticated/servicos/$id'
   fileRoutesById: FileRoutesById
 }
@@ -263,6 +276,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedServicosIdRouteImport
       parentRoute: typeof AuthenticatedServicosRoute
     }
+    '/_authenticated/estoque/preditivo': {
+      id: '/_authenticated/estoque/preditivo'
+      path: '/preditivo'
+      fullPath: '/estoque/preditivo'
+      preLoaderRoute: typeof AuthenticatedEstoquePreditivoRouteImport
+      parentRoute: typeof AuthenticatedEstoqueRoute
+    }
     '/_authenticated/estoque/$id': {
       id: '/_authenticated/estoque/$id'
       path: '/$id'
@@ -295,10 +315,12 @@ const AuthenticatedClientesRouteWithChildren =
 
 interface AuthenticatedEstoqueRouteChildren {
   AuthenticatedEstoqueIdRoute: typeof AuthenticatedEstoqueIdRoute
+  AuthenticatedEstoquePreditivoRoute: typeof AuthenticatedEstoquePreditivoRoute
 }
 
 const AuthenticatedEstoqueRouteChildren: AuthenticatedEstoqueRouteChildren = {
   AuthenticatedEstoqueIdRoute: AuthenticatedEstoqueIdRoute,
+  AuthenticatedEstoquePreditivoRoute: AuthenticatedEstoquePreditivoRoute,
 }
 
 const AuthenticatedEstoqueRouteWithChildren =
