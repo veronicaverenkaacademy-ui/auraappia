@@ -49,7 +49,7 @@ function AuraIA() {
   };
 
   return (
-    <AppShell title="AURA IA" className="flex flex-col bg-ai-card text-ai-card-foreground md:bg-background md:text-foreground">
+    <AppShell title="AURA IA" className="flex flex-col bg-ai-card text-ai-card-foreground md:bg-background md:text-foreground pb-24 md:pb-0">
       <div className="flex-1 flex flex-col max-w-3xl mx-auto w-full">
         <div className="flex-1 overflow-auto px-4 py-6 md:py-10" ref={scrollRef}>
           <div className="flex items-center gap-3 mb-8">

@@ -31,7 +31,7 @@ const items = [
 
 function Mais() {
   return (
-    <AppShell title="Mais" className="px-4 md:px-8 py-8 md:py-12 max-w-5xl mx-auto">
+    <AppShell title="Mais" className="px-4 md:px-8 py-8 md:py-12 max-w-5xl mx-auto pb-24 md:pb-12">
       <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight mb-2">Tudo em um lugar</h1>
       <p className="text-sm text-muted-foreground mb-8">Acesse todas as áreas do seu negócio.</p>
 
