@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.record_appointment_revenue() FROM PUBLIC, anon, authenticated;
