@@ -86,8 +86,9 @@ export async function upsertSettings(input: Partial<FinanceSettings>): Promise<v
 
 export async function upsertTx(input: Partial<FinanceTx> & { kind: TxKind; amount: number }): Promise<FinanceTx> {
   const owner_id = await uid();
-  const row = { ...input, owner_id } as Record<string, unknown>;
-  const { data, error } = await supabase.from("finance_transactions").upsert(row).select().single();
+  const row = { ...input, owner_id };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await supabase.from("finance_transactions").upsert(row as any).select().single();
   if (error) throw error;
   return data as FinanceTx;
 }
