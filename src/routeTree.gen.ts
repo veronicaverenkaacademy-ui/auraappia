@@ -14,7 +14,6 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedServicosRouteImport } from './routes/_authenticated/servicos'
 import { Route as AuthenticatedMaisRouteImport } from './routes/_authenticated/mais'
-import { Route as AuthenticatedEstoqueRouteImport } from './routes/_authenticated/estoque'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedClientesRouteImport } from './routes/_authenticated/clientes'
 import { Route as AuthenticatedAuraIaRouteImport } from './routes/_authenticated/aura-ia'
@@ -44,11 +43,6 @@ const AuthenticatedServicosRoute = AuthenticatedServicosRouteImport.update({
 const AuthenticatedMaisRoute = AuthenticatedMaisRouteImport.update({
   id: '/mais',
   path: '/mais',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedEstoqueRoute = AuthenticatedEstoqueRouteImport.update({
-  id: '/estoque',
-  path: '/estoque',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
@@ -89,7 +83,6 @@ export interface FileRoutesByFullPath {
   '/aura-ia': typeof AuthenticatedAuraIaRoute
   '/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/estoque': typeof AuthenticatedEstoqueRoute
   '/mais': typeof AuthenticatedMaisRoute
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
@@ -102,7 +95,6 @@ export interface FileRoutesByTo {
   '/aura-ia': typeof AuthenticatedAuraIaRoute
   '/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/estoque': typeof AuthenticatedEstoqueRoute
   '/mais': typeof AuthenticatedMaisRoute
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
@@ -117,7 +109,6 @@ export interface FileRoutesById {
   '/_authenticated/aura-ia': typeof AuthenticatedAuraIaRoute
   '/_authenticated/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
-  '/_authenticated/estoque': typeof AuthenticatedEstoqueRoute
   '/_authenticated/mais': typeof AuthenticatedMaisRoute
   '/_authenticated/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/_authenticated/clientes/$id': typeof AuthenticatedClientesIdRoute
@@ -132,7 +123,6 @@ export interface FileRouteTypes {
     | '/aura-ia'
     | '/clientes'
     | '/dashboard'
-    | '/estoque'
     | '/mais'
     | '/servicos'
     | '/clientes/$id'
@@ -145,7 +135,6 @@ export interface FileRouteTypes {
     | '/aura-ia'
     | '/clientes'
     | '/dashboard'
-    | '/estoque'
     | '/mais'
     | '/servicos'
     | '/clientes/$id'
@@ -159,7 +148,6 @@ export interface FileRouteTypes {
     | '/_authenticated/aura-ia'
     | '/_authenticated/clientes'
     | '/_authenticated/dashboard'
-    | '/_authenticated/estoque'
     | '/_authenticated/mais'
     | '/_authenticated/servicos'
     | '/_authenticated/clientes/$id'
@@ -207,13 +195,6 @@ declare module '@tanstack/react-router' {
       path: '/mais'
       fullPath: '/mais'
       preLoaderRoute: typeof AuthenticatedMaisRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/estoque': {
-      id: '/_authenticated/estoque'
-      path: '/estoque'
-      fullPath: '/estoque'
-      preLoaderRoute: typeof AuthenticatedEstoqueRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/dashboard': {
@@ -292,7 +273,6 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAuraIaRoute: typeof AuthenticatedAuraIaRoute
   AuthenticatedClientesRoute: typeof AuthenticatedClientesRouteWithChildren
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
-  AuthenticatedEstoqueRoute: typeof AuthenticatedEstoqueRoute
   AuthenticatedMaisRoute: typeof AuthenticatedMaisRoute
   AuthenticatedServicosRoute: typeof AuthenticatedServicosRouteWithChildren
 }
@@ -302,7 +282,6 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAuraIaRoute: AuthenticatedAuraIaRoute,
   AuthenticatedClientesRoute: AuthenticatedClientesRouteWithChildren,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
-  AuthenticatedEstoqueRoute: AuthenticatedEstoqueRoute,
   AuthenticatedMaisRoute: AuthenticatedMaisRoute,
   AuthenticatedServicosRoute: AuthenticatedServicosRouteWithChildren,
 }
