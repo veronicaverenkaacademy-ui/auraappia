@@ -1,5 +1,5 @@
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Calendar, Users, Package, DollarSign, Sparkles, Settings, LogOut } from "lucide-react";
+import { LayoutDashboard, Calendar, Users, Package, DollarSign, Sparkles, Settings, LogOut, Megaphone } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarMenu,
   SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, useSidebar,
@@ -14,6 +14,7 @@ const items: { title: string; url: string; icon: typeof LayoutDashboard; soon?: 
   { title: "Serviços", url: "/servicos", icon: Sparkles },
   { title: "Estoque", url: "/estoque", icon: Package },
   { title: "Financeiro", url: "/financeiro", icon: DollarSign },
+  { title: "Marketing", url: "/marketing", icon: Megaphone },
 ];
 
 export function AppSidebar() {

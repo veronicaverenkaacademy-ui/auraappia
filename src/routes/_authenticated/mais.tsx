@@ -23,7 +23,7 @@ const items = [
   { to: "/estoque", label: "Estoque", icon: Package, desc: "Produtos e compras" },
   { to: "/financeiro", label: "Financeiro", icon: DollarSign, desc: "Caixa, DRE e CFO IA" },
   { to: "/relatorios", label: "Relatórios", icon: BarChart3, desc: "Indicadores do negócio", soon: true },
-  { to: "/campanhas", label: "Campanhas", icon: Megaphone, desc: "Marketing automático", soon: true },
+  { to: "/marketing", label: "Marketing", icon: Megaphone, desc: "Automações e jornadas" },
   { to: "/venda-rapida", label: "Venda rápida", icon: ShoppingBag, desc: "Pacotes e produtos", soon: true },
   { to: "/anamnese", label: "Anamnese", icon: FileText, desc: "Ficha de avaliação", soon: true },
   { to: "/perfil", label: "Perfil", icon: Settings, desc: "Dados da profissional", soon: true },
