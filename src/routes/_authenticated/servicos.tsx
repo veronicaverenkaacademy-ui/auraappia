@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/app-sidebar";
+import { AppShell } from "@/components/app-shell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listServices, upsertService, deleteService,
@@ -37,54 +36,47 @@ function Servicos() {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-background">
-        <AppSidebar />
-        <div className="flex-1 flex flex-col min-w-0">
-          <header className="h-14 flex items-center gap-3 px-4 md:px-8 border-b border-border/50">
-            <SidebarTrigger />
-            <div className="text-xs text-muted-foreground uppercase tracking-wider flex-1">Serviços</div>
-            <Button size="sm" onClick={() => { setEditing(null); setOpen(true); }}>
-              <Plus className="w-4 h-4 mr-1" /> Serviço
-            </Button>
-          </header>
+    <AppShell
+      title="Serviços"
+      right={
+        <Button size="sm" onClick={() => { setEditing(null); setOpen(true); }}>
+          <Plus className="w-4 h-4 mr-1" /> Serviço
+        </Button>
+      }
+      className="px-4 md:px-8 py-8 md:py-12 max-w-5xl mx-auto pb-24 md:pb-12"
+    >
+      <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight mb-2">Protocolos</h1>
+      <p className="text-sm text-muted-foreground mb-8">Cada serviço tem sua ficha técnica. Os materiais são descontados do estoque automaticamente ao concluir o atendimento.</p>
 
-          <main className="flex-1 px-4 md:px-8 py-8 md:py-12 max-w-5xl w-full mx-auto">
-            <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight mb-2">Protocolos</h1>
-            <p className="text-sm text-muted-foreground mb-8">Cada serviço tem sua ficha técnica. Os materiais são descontados do estoque automaticamente ao concluir o atendimento.</p>
-
-            {services.length === 0 ? (
-              <div className="text-center py-20 border border-dashed border-border rounded-2xl">
-                <Sparkles className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground mb-4">Nenhum serviço ainda</p>
-                <Button onClick={() => { setEditing(null); setOpen(true); }}><Plus className="w-4 h-4 mr-1" />Criar serviço</Button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {services.map((s) => (
-                  <ServiceRow
-                    key={s.id}
-                    service={s}
-                    products={products}
-                    expanded={expanded === s.id}
-                    onToggle={() => setExpanded(expanded === s.id ? null : s.id)}
-                    onEdit={() => { setEditing(s); setOpen(true); }}
-                    onDelete={async () => {
-                      if (!confirm(`Excluir ${s.name}?`)) return;
-                      await deleteService(s.id);
-                      qc.invalidateQueries({ queryKey: ["services"] });
-                      toast.success("Serviço excluído");
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </main>
+      {services.length === 0 ? (
+        <div className="text-center py-20 border border-dashed border-border rounded-2xl">
+          <Sparkles className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground mb-4">Nenhum serviço ainda</p>
+          <Button onClick={() => { setEditing(null); setOpen(true); }}><Plus className="w-4 h-4 mr-1" />Criar serviço</Button>
         </div>
-      </div>
+      ) : (
+        <div className="space-y-2">
+          {services.map((s) => (
+            <ServiceRow
+              key={s.id}
+              service={s}
+              products={products}
+              expanded={expanded === s.id}
+              onToggle={() => setExpanded(expanded === s.id ? null : s.id)}
+              onEdit={() => { setEditing(s); setOpen(true); }}
+              onDelete={async () => {
+                if (!confirm(`Excluir ${s.name}?`)) return;
+                await deleteService(s.id);
+                qc.invalidateQueries({ queryKey: ["services"] });
+                toast.success("Serviço excluído");
+              }}
+            />
+          ))}
+        </div>
+      )}
 
       <ServiceDialog open={open} onOpenChange={setOpen} service={editing} />
-    </SidebarProvider>
+    </AppShell>
   );
 }
 

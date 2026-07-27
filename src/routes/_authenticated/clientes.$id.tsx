@@ -1,9 +1,8 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/app-sidebar";
+import { AppShell } from "@/components/app-shell";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,7 +14,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
-  ArrowLeft, Phone, Mail, Cake, Pencil, Trash2, Upload, Calendar as CalIcon, X, Sparkles, Loader2,
+  Phone, Mail, Cake, Pencil, Trash2, Upload, Calendar as CalIcon, X, Sparkles, Loader2,
 } from "lucide-react";
 import {
   getClient, getAnamnesis, upsertAnamnesis, listAppointments, listPhotos,
@@ -57,101 +56,93 @@ function ClientDetail() {
     },
   });
 
-  if (isLoading) return <SidebarProvider><div className="p-8 text-sm text-muted-foreground">Carregando…</div></SidebarProvider>;
-  if (!client) return <SidebarProvider><div className="p-8 text-sm text-muted-foreground">Cliente não encontrada.</div></SidebarProvider>;
+  if (isLoading) return <AppShell title="Ficha" className="p-8 text-sm text-muted-foreground">Carregando…</AppShell>;
+  if (!client) return <AppShell title="Ficha" className="p-8 text-sm text-muted-foreground">Cliente não encontrada.</AppShell>;
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-background">
-        <AppSidebar />
-        <div className="flex-1 flex flex-col min-w-0">
-          <header className="h-14 flex items-center gap-3 px-4 md:px-8 border-b border-border/50">
-            <SidebarTrigger />
-            <Link to="/clientes" className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition">
-              <ArrowLeft className="w-3.5 h-3.5" /> Clientes
-            </Link>
-          </header>
-
-          <main className="flex-1 px-4 md:px-8 py-8 md:py-12 max-w-4xl w-full mx-auto">
-            {/* Header */}
-            <div className="flex items-start gap-5 mb-8">
-              <div className="w-20 h-20 rounded-full bg-accent/40 flex items-center justify-center text-2xl font-display font-medium text-accent-foreground shrink-0">
-                {initials(client.full_name)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <h1 className="text-2xl md:text-3xl font-display font-medium tracking-tight truncate">{client.full_name}</h1>
-                {client.tags.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {client.tags.map((t) => (
-                      <span key={t} className="h-6 px-2.5 inline-flex items-center rounded-full bg-secondary text-[11px]">{t}</span>
-                    ))}
-                  </div>
-                )}
-                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
-                  {client.phone && <span className="inline-flex items-center gap-1.5"><Phone className="w-3 h-3" />{client.phone}</span>}
-                  {client.email && <span className="inline-flex items-center gap-1.5"><Mail className="w-3 h-3" />{client.email}</span>}
-                  {client.birthday && <span className="inline-flex items-center gap-1.5"><Cake className="w-3 h-3" />{formatDate(client.birthday)}</span>}
-                </div>
-              </div>
-              <div className="flex gap-1">
-                <Button variant="ghost" size="icon" onClick={() => setEditOpen(true)} className="rounded-full h-9 w-9">
-                  <Pencil className="w-4 h-4" />
-                </Button>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-destructive hover:text-destructive">
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent className="rounded-2xl">
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Remover cliente?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Esta ação apaga a cliente, o histórico, a anamnese e as fotos. Não pode ser desfeita.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => del.mutate()} className="bg-destructive text-destructive-foreground">
-                        Remover
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
+    <AppShell
+      title="Ficha"
+      right={
+        <div className="flex gap-1">
+          <Button variant="ghost" size="icon" onClick={() => setEditOpen(true)} className="rounded-full h-9 w-9">
+            <Pencil className="w-4 h-4" />
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 text-destructive hover:text-destructive">
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="rounded-2xl">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Remover cliente?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Esta ação apaga a cliente, o histórico, a anamnese e as fotos. Não pode ser desfeita.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={() => del.mutate()} className="bg-destructive text-destructive-foreground">
+                  Remover
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      }
+      className="px-4 md:px-8 py-8 md:py-12 max-w-4xl mx-auto pb-24 md:pb-12"
+    >
+      {/* Header */}
+      <div className="flex items-start gap-5 mb-8">
+        <div className="w-20 h-20 rounded-full bg-accent/40 flex items-center justify-center text-2xl font-display font-medium text-accent-foreground shrink-0">
+          {initials(client.full_name)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl md:text-3xl font-display font-medium tracking-tight truncate">{client.full_name}</h1>
+          {client.tags.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {client.tags.map((t) => (
+                <span key={t} className="h-6 px-2.5 inline-flex items-center rounded-full bg-secondary text-[11px]">{t}</span>
+              ))}
             </div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-3 gap-3 mb-8">
-              <Stat label="Atendimentos" value={String(past.filter((a) => a.status === "completed").length)} />
-              <Stat label="Gasto total" value={`R$ ${totalSpent.toFixed(0)}`} />
-              <Stat label="Próximos" value={String(future.length)} />
-            </div>
-
-            <Tabs defaultValue="futuros" className="w-full">
-              <TabsList className="bg-transparent p-0 h-auto gap-1 mb-6 flex-wrap">
-                <TabItem value="futuros">Próximos</TabItem>
-                <TabItem value="historico">Histórico</TabItem>
-                <TabItem value="anamnese">Anamnese</TabItem>
-                <TabItem value="fotos">Fotos</TabItem>
-                <TabItem value="notas">Notas</TabItem>
-              </TabsList>
-
-              <TabsContent value="futuros"><FutureAppts appts={future} /></TabsContent>
-              <TabsContent value="historico"><HistoryAppts appts={past} /></TabsContent>
-              <TabsContent value="anamnese"><AnamnesisTab clientId={id} /></TabsContent>
-              <TabsContent value="fotos"><PhotosTab clientId={id} /></TabsContent>
-              <TabsContent value="notas">
-                <div className="p-5 rounded-2xl bg-secondary/60 text-sm whitespace-pre-wrap leading-relaxed">
-                  {client.notes || <span className="text-muted-foreground">Sem observações. Toque em editar para adicionar.</span>}
-                </div>
-              </TabsContent>
-            </Tabs>
-          </main>
+          )}
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
+            {client.phone && <span className="inline-flex items-center gap-1.5"><Phone className="w-3 h-3" />{client.phone}</span>}
+            {client.email && <span className="inline-flex items-center gap-1.5"><Mail className="w-3 h-3" />{client.email}</span>}
+            {client.birthday && <span className="inline-flex items-center gap-1.5"><Cake className="w-3 h-3" />{formatDate(client.birthday)}</span>}
+          </div>
         </div>
       </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-3 mb-8">
+        <Stat label="Atendimentos" value={String(past.filter((a) => a.status === "completed").length)} />
+        <Stat label="Gasto total" value={`R$ ${totalSpent.toFixed(0)}`} />
+        <Stat label="Próximos" value={String(future.length)} />
+      </div>
+
+      <Tabs defaultValue="futuros" className="w-full">
+        <TabsList className="bg-transparent p-0 h-auto gap-1 mb-6 flex-wrap">
+          <TabItem value="futuros">Próximos</TabItem>
+          <TabItem value="historico">Histórico</TabItem>
+          <TabItem value="anamnese">Anamnese</TabItem>
+          <TabItem value="fotos">Fotos</TabItem>
+          <TabItem value="notas">Notas</TabItem>
+        </TabsList>
+
+        <TabsContent value="futuros"><FutureAppts appts={future} /></TabsContent>
+        <TabsContent value="historico"><HistoryAppts appts={past} /></TabsContent>
+        <TabsContent value="anamnese"><AnamnesisTab clientId={id} /></TabsContent>
+        <TabsContent value="fotos"><PhotosTab clientId={id} /></TabsContent>
+        <TabsContent value="notas">
+          <div className="p-5 rounded-2xl bg-secondary/60 text-sm whitespace-pre-wrap leading-relaxed">
+            {client.notes || <span className="text-muted-foreground">Sem observações. Toque em editar para adicionar.</span>}
+          </div>
+        </TabsContent>
+      </Tabs>
+
       <ClientFormDialog open={editOpen} onOpenChange={setEditOpen} client={client} />
-    </SidebarProvider>
+    </AppShell>
   );
 }
 
