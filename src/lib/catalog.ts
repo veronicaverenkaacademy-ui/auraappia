@@ -22,6 +22,18 @@ export type Product = {
   supplier: string | null;
   notes: string | null;
   active: boolean;
+  category: string | null;
+  subcategory: string | null;
+  sku: string | null;
+  barcode: string | null;
+  internal_code: string | null;
+  ideal_stock: number | null;
+  max_stock: number | null;
+  location: string | null;
+  image_url: string | null;
+  description: string | null;
+  yield_per_unit: number | null;
+  supplier_id: string | null;
 };
 
 export type Service = {

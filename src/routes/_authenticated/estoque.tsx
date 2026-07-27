@@ -1,176 +1,318 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { listProducts, upsertProduct, deleteProduct, registerPurchase, UNITS, formatBRL, type Product } from "@/lib/catalog";
-import { useState } from "react";
-import { Plus, Package, AlertCircle, ShoppingCart, Trash2, Pencil } from "lucide-react";
+import { listProducts, upsertProduct, registerPurchase, UNITS, formatBRL, type Product } from "@/lib/catalog";
+import { computeSummary, computePredictions, listExpiringBatches, listSuppliers, categoryEmoji, formatDaysBadge } from "@/lib/inventory";
+import { useMemo, useState } from "react";
+import { Plus, Search, AlertTriangle, Hourglass, Sparkles, ChevronRight, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/estoque")({
   head: () => ({
     meta: [
       { title: "Estoque — AURA" },
-      { name: "description", content: "Produtos, custos e alertas de compra." },
+      { name: "description", content: "Estoque inteligente com previsão automática, lotes e alertas de compra." },
       { name: "robots", content: "noindex" },
     ],
   }),
-  component: Estoque,
+  component: EstoquePage,
 });
 
-function Estoque() {
-  const qc = useQueryClient();
-  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: listProducts });
-  const [editing, setEditing] = useState<Product | null>(null);
-  const [open, setOpen] = useState(false);
-  const [buying, setBuying] = useState<Product | null>(null);
+function EstoquePage() {
+  const [q, setQ] = useState("");
+  const [category, setCategory] = useState<string>("__all");
+  const [openNew, setOpenNew] = useState(false);
 
-  const low = products.filter((p) => Number(p.stock) <= Number(p.min_stock) && p.min_stock > 0);
+  const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: listProducts });
+  const { data: summary } = useQuery({ queryKey: ["inv-summary"], queryFn: computeSummary });
+  const { data: predictions = [] } = useQuery({ queryKey: ["inv-predictions"], queryFn: computePredictions });
+  const { data: expiring = [] } = useQuery({ queryKey: ["inv-expiring"], queryFn: () => listExpiringBatches(30) });
+
+  const categories = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of products) {
+      const c = (p.category ?? "Sem categoria").trim();
+      map.set(c, (map.get(c) ?? 0) + 1);
+    }
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+  }, [products]);
+
+  const predByProduct = useMemo(() => new Map(predictions.map((p) => [p.product.id, p])), [predictions]);
+
+  const filtered = useMemo(() => {
+    const query = q.trim().toLowerCase();
+    return products
+      .filter((p) => (category === "__all" ? true : (p.category ?? "Sem categoria") === category))
+      .filter((p) => {
+        if (!query) return true;
+        return [p.name, p.brand, p.category, p.sku, p.barcode, p.location]
+          .filter(Boolean)
+          .some((v) => String(v).toLowerCase().includes(query));
+      });
+  }, [products, q, category]);
+
+  const criticalAlerts = predictions.filter((p) => p.status === "critical" || (p.daysRemaining !== null && p.daysRemaining <= 7)).slice(0, 3);
 
   return (
     <AppShell
       title="Estoque"
       right={
-        <Button size="sm" onClick={() => { setEditing(null); setOpen(true); }}>
-          <Plus className="w-4 h-4 mr-1" /> Produto
+        <Button size="sm" variant="ghost" asChild>
+          <Link to="/estoque/preditivo"><Sparkles className="w-4 h-4 mr-1" />Preditivo</Link>
         </Button>
       }
-      className="px-4 md:px-8 py-8 md:py-12 max-w-5xl mx-auto pb-24 md:pb-12"
+      className="px-4 md:px-8 py-6 md:py-10 max-w-4xl mx-auto pb-28 md:pb-12"
     >
-      <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight mb-8">Estoque</h1>
+      <div className="flex items-end justify-between mb-6">
+        <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight">Estoque</h1>
+        <Button size="icon" onClick={() => setOpenNew(true)} className="rounded-full h-11 w-11 shadow-md">
+          <Plus className="w-5 h-5" />
+        </Button>
+      </div>
 
-      {low.length > 0 && (
-        <div className="mb-8 p-5 rounded-2xl bg-secondary/60 border border-border/50">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Sugestão de compra</p>
-              <p className="text-sm mb-3">
-                {low.length} produto{low.length > 1 ? "s" : ""} abaixo do mínimo.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {low.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => setBuying(p)}
-                    className="text-xs px-3 py-1.5 rounded-full bg-background border border-border hover:border-primary/50 transition"
-                  >
-                    {p.name} · {Number(p.stock)}/{Number(p.min_stock)} {p.unit}
-                  </button>
-                ))}
+      {/* Search */}
+      <div className="relative mb-5">
+        <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Buscar produto, categoria ou lote"
+          className="h-12 pl-11 rounded-2xl bg-secondary/50 border-transparent"
+        />
+      </div>
+
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        <KpiCard label="Valor em estoque" value={summary ? formatBRL(summary.totalValue) : "—"} hint={summary ? `${summary.activeCount} produtos ativos` : ""} />
+        <KpiCard label="Custo por atendimento" value={summary ? formatBRL(summary.avgCostPerAppointment) : "—"} hint="média do mês" />
+        <KpiCard
+          label="Acabando"
+          value={summary ? `${summary.runningLow} ${summary.runningLow === 1 ? "item" : "itens"}` : "—"}
+          hint="reposição sugerida"
+          tone="warn"
+        />
+        <KpiCard
+          label="Desperdício"
+          value={summary ? `${summary.wasteDeltaPct >= 0 ? "↑" : "↓"} ${Math.abs(Math.round(summary.wasteDeltaPct))}%` : "—"}
+          hint="vs mês anterior"
+          tone={summary && summary.wasteDeltaPct > 0 ? "critical" : "ok"}
+        />
+      </div>
+
+      {/* Alerts */}
+      {(criticalAlerts.length > 0 || expiring.length > 0) && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-medium">Alertas</h2>
+            <Link to="/estoque/preditivo" className="text-xs text-muted-foreground hover:text-foreground transition">
+              Ver todos
+            </Link>
+          </div>
+          <div className="space-y-2">
+            {criticalAlerts.map((pred) => (
+              <div key={pred.product.id} className="flex items-start gap-3 p-4 rounded-2xl border border-amber-500/30 bg-amber-500/5">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">
+                    {pred.product.name} acaba em {pred.daysRemaining ?? "—"} dias
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {pred.atendimentosRestantes !== null
+                      ? `Suficiente para ~${pred.atendimentosRestantes} atendimentos`
+                      : `Nível atual ${Number(pred.product.stock)} ${pred.product.unit}`}
+                  </div>
+                </div>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/estoque/$id" params={{ id: pred.product.id }}>Comprar</Link>
+                </Button>
               </div>
-            </div>
+            ))}
+            {expiring.slice(0, 2).map((b) => (
+              <div key={b.id} className="flex items-start gap-3 p-4 rounded-2xl border border-border/60 bg-secondary/40">
+                <Hourglass className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">
+                    Lote de {b.product?.name ?? "produto"} vence em {daysUntil(b.expires_at)} dias
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {b.batch_number ? `Lote #${b.batch_number} · ` : ""}{Number(b.remaining_quantity)} unidades
+                  </div>
+                </div>
+                {b.product && (
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link to="/estoque/$id" params={{ id: b.product.id }}>Ver</Link>
+                  </Button>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {products.length === 0 ? (
-        <EmptyState onAdd={() => { setEditing(null); setOpen(true); }} />
-      ) : (
-        <div className="space-y-2">
-          {products.map((p) => {
-            const isLow = Number(p.stock) <= Number(p.min_stock) && p.min_stock > 0;
-            return (
-              <div key={p.id} className="group flex items-center gap-4 p-4 rounded-2xl bg-card border border-border/50 hover:border-border transition">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isLow ? "bg-primary/10" : "bg-secondary"}`}>
-                  <Package className={`w-4 h-4 ${isLow ? "text-primary" : "text-muted-foreground"}`} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">{p.name}</div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    {p.brand ? `${p.brand} · ` : ""}{formatBRL(Number(p.cost_per_unit))}/{p.unit}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className={`text-sm tabular-nums ${isLow ? "text-primary font-medium" : ""}`}>
-                    {Number(p.stock)} {p.unit}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                    mín {Number(p.min_stock)}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
-                  <Button size="icon" variant="ghost" onClick={() => setBuying(p)} title="Registrar compra">
-                    <ShoppingCart className="w-4 h-4" />
-                  </Button>
-                  <Button size="icon" variant="ghost" onClick={() => { setEditing(p); setOpen(true); }}>
-                    <Pencil className="w-4 h-4" />
-                  </Button>
-                  <Button size="icon" variant="ghost" onClick={async () => {
-                    if (!confirm(`Excluir ${p.name}?`)) return;
-                    await deleteProduct(p.id);
-                    qc.invalidateQueries({ queryKey: ["products"] });
-                    toast.success("Produto excluído");
-                  }}>
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
+      {/* Category chips */}
+      {categories.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-3 mb-4 -mx-1 px-1 scrollbar-none">
+          <CatChip active={category === "__all"} onClick={() => setCategory("__all")} label={`Todos · ${products.length}`} />
+          {categories.map(([name, count]) => (
+            <CatChip
+              key={name}
+              active={category === name}
+              onClick={() => setCategory(name)}
+              label={`${name} · ${count}`}
+            />
+          ))}
         </div>
       )}
 
-      <ProductDialog open={open} onOpenChange={setOpen} product={editing} />
-      <PurchaseDialog product={buying} onClose={() => setBuying(null)} />
+      {/* Product list */}
+      {filtered.length === 0 ? (
+        <div className="text-center py-16 border border-dashed border-border rounded-2xl">
+          <Package className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground mb-4">
+            {products.length === 0 ? "Nenhum produto cadastrado ainda" : "Nenhum produto encontrado"}
+          </p>
+          {products.length === 0 && (
+            <Button onClick={() => setOpenNew(true)}><Plus className="w-4 h-4 mr-1" />Adicionar produto</Button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((p) => (
+            <ProductRow key={p.id} product={p} prediction={predByProduct.get(p.id)} />
+          ))}
+        </div>
+      )}
+
+      <NewProductDialog open={openNew} onOpenChange={setOpenNew} />
     </AppShell>
   );
 }
 
-function EmptyState({ onAdd }: { onAdd: () => void }) {
+function KpiCard({ label, value, hint, tone = "default" }: { label: string; value: string; hint?: string; tone?: "default" | "warn" | "critical" | "ok" }) {
+  const toneCls =
+    tone === "warn" ? "text-amber-600"
+    : tone === "critical" ? "text-red-600"
+    : tone === "ok" ? "text-emerald-600"
+    : "";
   return (
-    <div className="text-center py-20 border border-dashed border-border rounded-2xl">
-      <Package className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-      <p className="text-sm text-muted-foreground mb-4">Nenhum produto cadastrado ainda</p>
-      <Button onClick={onAdd}><Plus className="w-4 h-4 mr-1" />Adicionar produto</Button>
+    <div className="p-4 rounded-2xl bg-card border border-border/50">
+      <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">{label}</div>
+      <div className={cn("text-xl md:text-2xl font-medium tabular-nums", toneCls)}>{value}</div>
+      {hint && <div className="text-[11px] text-muted-foreground mt-1">{hint}</div>}
     </div>
   );
 }
 
-function ProductDialog({ open, onOpenChange, product }: { open: boolean; onOpenChange: (v: boolean) => void; product: Product | null }) {
-  const qc = useQueryClient();
-  const [form, setForm] = useState<Partial<Product>>({});
-  const isNew = !product;
+function CatChip({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "shrink-0 text-xs px-4 py-2 rounded-full border transition whitespace-nowrap",
+        active ? "bg-foreground text-background border-foreground" : "bg-background border-border hover:border-foreground/30",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
 
-  // reset when opening
-  useState(() => setForm(product ?? { unit: "un", stock: 0, min_stock: 0, cost_per_unit: 0 }));
-  const openChange = (v: boolean) => {
-    if (v) setForm(product ?? { unit: "un", stock: 0, min_stock: 0, cost_per_unit: 0 });
-    onOpenChange(v);
-  };
+function ProductRow({ product, prediction }: { product: Product; prediction?: ReturnType<typeof Map.prototype.get> extends infer T ? T : never }) {
+  const p = product;
+  const days = prediction && typeof prediction === "object" && "daysRemaining" in prediction ? (prediction as { daysRemaining: number | null }).daysRemaining : null;
+  const badge = formatDaysBadge(days);
+  const isLow = Number(p.stock) <= Number(p.min_stock) && p.min_stock > 0;
+  return (
+    <Link
+      to="/estoque/$id"
+      params={{ id: p.id }}
+      className="group flex items-center gap-4 p-4 rounded-2xl bg-card border border-border/50 hover:border-border transition"
+    >
+      <div className={cn(
+        "w-11 h-11 rounded-xl flex items-center justify-center text-lg shrink-0",
+        isLow ? "bg-amber-500/10" : "bg-secondary",
+      )}>
+        <span>{categoryEmoji(p.category)}</span>
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium truncate">{p.name}</div>
+        <div className="text-xs text-muted-foreground truncate">
+          {p.category ? `${p.category}` : "Sem categoria"}
+          {p.brand ? ` · ${p.brand}` : ""}
+          {" · "}{formatBRL(Number(p.cost_per_unit))}/{p.unit}
+        </div>
+      </div>
+      <div className="text-right shrink-0">
+        <div className={cn("text-sm tabular-nums", isLow && "text-amber-600 font-medium")}>
+          {Number(p.stock)} {p.unit}
+        </div>
+        <div className={cn(
+          "text-[10px] uppercase tracking-wider mt-0.5",
+          badge.tone === "critical" && "text-red-600",
+          badge.tone === "warn" && "text-amber-600",
+          badge.tone === "ok" && "text-emerald-600/80",
+          badge.tone === "muted" && "text-muted-foreground",
+        )}>
+          {badge.label}
+        </div>
+      </div>
+      <ChevronRight className="w-4 h-4 text-muted-foreground/50 shrink-0 group-hover:text-foreground transition" />
+    </Link>
+  );
+}
+
+function daysUntil(iso: string | null): number {
+  if (!iso) return 0;
+  const d = new Date(iso).getTime();
+  return Math.max(0, Math.round((d - Date.now()) / 86400000));
+}
+
+function NewProductDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: listSuppliers });
+  const [form, setForm] = useState<Partial<Product>>({ unit: "un", stock: 0, min_stock: 0, cost_per_unit: 0 });
 
   const save = useMutation({
     mutationFn: async () => {
       if (!form.name) throw new Error("Nome obrigatório");
-      const payload: Partial<Product> & { name: string } = {
-        ...(product?.id ? { id: product.id } : {}),
+      const created = await upsertProduct({
         name: form.name,
         brand: form.brand ?? null,
+        category: form.category ?? null,
         unit: form.unit ?? "un",
         stock: Number(form.stock ?? 0),
         min_stock: Number(form.min_stock ?? 0),
+        ideal_stock: form.ideal_stock ? Number(form.ideal_stock) : null,
+        max_stock: form.max_stock ? Number(form.max_stock) : null,
         cost_per_unit: Number(form.cost_per_unit ?? 0),
-        supplier: form.supplier ?? null,
-        notes: form.notes ?? null,
-      };
-      return upsertProduct(payload);
+        location: form.location ?? null,
+        supplier_id: form.supplier_id ?? null,
+        yield_per_unit: form.yield_per_unit ? Number(form.yield_per_unit) : null,
+      });
+      return created;
     },
-    onSuccess: () => {
+    onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ["products"] });
-      toast.success(isNew ? "Produto criado" : "Produto atualizado");
+      qc.invalidateQueries({ queryKey: ["inv-summary"] });
+      toast.success("Produto criado");
       onOpenChange(false);
+      setForm({ unit: "un", stock: 0, min_stock: 0, cost_per_unit: 0 });
+      navigate({ to: "/estoque/$id", params: { id: created.id } });
     },
     onError: (e: Error) => toast.error(e.message),
   });
 
   return (
-    <Dialog open={open} onOpenChange={openChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>{isNew ? "Novo produto" : "Editar produto"}</DialogTitle></DialogHeader>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>Novo produto</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div>
             <Label>Nome</Label>
@@ -178,9 +320,15 @@ function ProductDialog({ open, onOpenChange, product }: { open: boolean; onOpenC
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <Label>Categoria</Label>
+              <Input placeholder="Adesivos, Fios..." value={form.category ?? ""} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} />
+            </div>
+            <div>
               <Label>Marca</Label>
               <Input value={form.brand ?? ""} onChange={(e) => setForm((f) => ({ ...f, brand: e.target.value }))} />
             </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Unidade</Label>
               <Select value={form.unit ?? "un"} onValueChange={(v) => setForm((f) => ({ ...f, unit: v }))}>
@@ -190,79 +338,53 @@ function ProductDialog({ open, onOpenChange, product }: { open: boolean; onOpenC
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label>Fornecedor</Label>
+              <Select value={form.supplier_id ?? "__none"} onValueChange={(v) => setForm((f) => ({ ...f, supplier_id: v === "__none" ? null : v }))}>
+                <SelectTrigger><SelectValue placeholder="Nenhum" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">Nenhum</SelectItem>
+                  {suppliers.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-4 gap-3">
             <div>
               <Label>Estoque</Label>
               <Input type="number" step="0.01" value={form.stock ?? 0} onChange={(e) => setForm((f) => ({ ...f, stock: Number(e.target.value) }))} />
             </div>
             <div>
-              <Label>Mínimo</Label>
+              <Label>Mín.</Label>
               <Input type="number" step="0.01" value={form.min_stock ?? 0} onChange={(e) => setForm((f) => ({ ...f, min_stock: Number(e.target.value) }))} />
             </div>
             <div>
-              <Label>Custo/un</Label>
+              <Label>Ideal</Label>
+              <Input type="number" step="0.01" value={form.ideal_stock ?? ""} onChange={(e) => setForm((f) => ({ ...f, ideal_stock: Number(e.target.value) }))} />
+            </div>
+            <div>
+              <Label>Máx.</Label>
+              <Input type="number" step="0.01" value={form.max_stock ?? ""} onChange={(e) => setForm((f) => ({ ...f, max_stock: Number(e.target.value) }))} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Custo/un (R$)</Label>
               <Input type="number" step="0.01" value={form.cost_per_unit ?? 0} onChange={(e) => setForm((f) => ({ ...f, cost_per_unit: Number(e.target.value) }))} />
+            </div>
+            <div>
+              <Label>Rende por un. (atendimentos)</Label>
+              <Input type="number" step="0.01" value={form.yield_per_unit ?? ""} onChange={(e) => setForm((f) => ({ ...f, yield_per_unit: Number(e.target.value) }))} />
             </div>
           </div>
           <div>
-            <Label>Fornecedor</Label>
-            <Input value={form.supplier ?? ""} onChange={(e) => setForm((f) => ({ ...f, supplier: e.target.value }))} />
+            <Label>Localização</Label>
+            <Input placeholder="Armário A · Gaveta 2" value={form.location ?? ""} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} />
           </div>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending}>Salvar</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function PurchaseDialog({ product, onClose }: { product: Product | null; onClose: () => void }) {
-  const qc = useQueryClient();
-  const [qty, setQty] = useState(0);
-  const [total, setTotal] = useState(0);
-
-  const buy = useMutation({
-    mutationFn: async () => {
-      if (!product) return;
-      if (qty <= 0) throw new Error("Quantidade inválida");
-      await registerPurchase(product.id, qty, total);
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["products"] });
-      toast.success("Compra registrada");
-      setQty(0); setTotal(0); onClose();
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  return (
-    <Dialog open={!!product} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>Registrar compra</DialogTitle></DialogHeader>
-        {product && (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">{product.name}</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Quantidade ({product.unit})</Label>
-                <Input type="number" step="0.01" value={qty || ""} onChange={(e) => setQty(Number(e.target.value))} />
-              </div>
-              <div>
-                <Label>Valor total (R$)</Label>
-                <Input type="number" step="0.01" value={total || ""} onChange={(e) => setTotal(Number(e.target.value))} />
-              </div>
-            </div>
-            {qty > 0 && total > 0 && (
-              <p className="text-xs text-muted-foreground">Custo médio recalculado: {formatBRL(total / qty)}/{product.unit}</p>
-            )}
-          </div>
-        )}
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-          <Button onClick={() => buy.mutate()} disabled={buy.isPending}>Confirmar</Button>
+          <Button onClick={() => save.mutate()} disabled={save.isPending}>Criar</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
