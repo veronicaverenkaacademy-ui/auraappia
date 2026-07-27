@@ -14,12 +14,16 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedServicosRouteImport } from './routes/_authenticated/servicos'
 import { Route as AuthenticatedMaisRouteImport } from './routes/_authenticated/mais'
+import { Route as AuthenticatedFinanceiroRouteImport } from './routes/_authenticated/financeiro'
 import { Route as AuthenticatedEstoqueRouteImport } from './routes/_authenticated/estoque'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedClientesRouteImport } from './routes/_authenticated/clientes'
 import { Route as AuthenticatedAuraIaRouteImport } from './routes/_authenticated/aura-ia'
 import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
+import { Route as AuthenticatedFinanceiroIndexRouteImport } from './routes/_authenticated/financeiro.index'
 import { Route as AuthenticatedServicosIdRouteImport } from './routes/_authenticated/servicos.$id'
+import { Route as AuthenticatedFinanceiroFluxoRouteImport } from './routes/_authenticated/financeiro.fluxo'
+import { Route as AuthenticatedFinanceiroCfoRouteImport } from './routes/_authenticated/financeiro.cfo'
 import { Route as AuthenticatedEstoquePreditivoRouteImport } from './routes/_authenticated/estoque.preditivo'
 import { Route as AuthenticatedEstoqueIdRouteImport } from './routes/_authenticated/estoque.$id'
 import { Route as AuthenticatedClientesIdRouteImport } from './routes/_authenticated/clientes.$id'
@@ -48,6 +52,11 @@ const AuthenticatedMaisRoute = AuthenticatedMaisRouteImport.update({
   path: '/mais',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedFinanceiroRoute = AuthenticatedFinanceiroRouteImport.update({
+  id: '/financeiro',
+  path: '/financeiro',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedEstoqueRoute = AuthenticatedEstoqueRouteImport.update({
   id: '/estoque',
   path: '/estoque',
@@ -73,11 +82,29 @@ const AuthenticatedAgendaRoute = AuthenticatedAgendaRouteImport.update({
   path: '/agenda',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedFinanceiroIndexRoute =
+  AuthenticatedFinanceiroIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedFinanceiroRoute,
+  } as any)
 const AuthenticatedServicosIdRoute = AuthenticatedServicosIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => AuthenticatedServicosRoute,
 } as any)
+const AuthenticatedFinanceiroFluxoRoute =
+  AuthenticatedFinanceiroFluxoRouteImport.update({
+    id: '/fluxo',
+    path: '/fluxo',
+    getParentRoute: () => AuthenticatedFinanceiroRoute,
+  } as any)
+const AuthenticatedFinanceiroCfoRoute =
+  AuthenticatedFinanceiroCfoRouteImport.update({
+    id: '/cfo',
+    path: '/cfo',
+    getParentRoute: () => AuthenticatedFinanceiroRoute,
+  } as any)
 const AuthenticatedEstoquePreditivoRoute =
   AuthenticatedEstoquePreditivoRouteImport.update({
     id: '/preditivo',
@@ -103,12 +130,16 @@ export interface FileRoutesByFullPath {
   '/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/estoque': typeof AuthenticatedEstoqueRouteWithChildren
+  '/financeiro': typeof AuthenticatedFinanceiroRouteWithChildren
   '/mais': typeof AuthenticatedMaisRoute
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
+  '/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
+  '/financeiro/fluxo': typeof AuthenticatedFinanceiroFluxoRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
+  '/financeiro/': typeof AuthenticatedFinanceiroIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -123,7 +154,10 @@ export interface FileRoutesByTo {
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
+  '/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
+  '/financeiro/fluxo': typeof AuthenticatedFinanceiroFluxoRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
+  '/financeiro': typeof AuthenticatedFinanceiroIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -135,12 +169,16 @@ export interface FileRoutesById {
   '/_authenticated/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/estoque': typeof AuthenticatedEstoqueRouteWithChildren
+  '/_authenticated/financeiro': typeof AuthenticatedFinanceiroRouteWithChildren
   '/_authenticated/mais': typeof AuthenticatedMaisRoute
   '/_authenticated/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/_authenticated/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/_authenticated/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/_authenticated/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
+  '/_authenticated/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
+  '/_authenticated/financeiro/fluxo': typeof AuthenticatedFinanceiroFluxoRoute
   '/_authenticated/servicos/$id': typeof AuthenticatedServicosIdRoute
+  '/_authenticated/financeiro/': typeof AuthenticatedFinanceiroIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -152,12 +190,16 @@ export interface FileRouteTypes {
     | '/clientes'
     | '/dashboard'
     | '/estoque'
+    | '/financeiro'
     | '/mais'
     | '/servicos'
     | '/clientes/$id'
     | '/estoque/$id'
     | '/estoque/preditivo'
+    | '/financeiro/cfo'
+    | '/financeiro/fluxo'
     | '/servicos/$id'
+    | '/financeiro/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -172,7 +214,10 @@ export interface FileRouteTypes {
     | '/clientes/$id'
     | '/estoque/$id'
     | '/estoque/preditivo'
+    | '/financeiro/cfo'
+    | '/financeiro/fluxo'
     | '/servicos/$id'
+    | '/financeiro'
   id:
     | '__root__'
     | '/'
@@ -183,12 +228,16 @@ export interface FileRouteTypes {
     | '/_authenticated/clientes'
     | '/_authenticated/dashboard'
     | '/_authenticated/estoque'
+    | '/_authenticated/financeiro'
     | '/_authenticated/mais'
     | '/_authenticated/servicos'
     | '/_authenticated/clientes/$id'
     | '/_authenticated/estoque/$id'
     | '/_authenticated/estoque/preditivo'
+    | '/_authenticated/financeiro/cfo'
+    | '/_authenticated/financeiro/fluxo'
     | '/_authenticated/servicos/$id'
+    | '/_authenticated/financeiro/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -234,6 +283,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMaisRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/financeiro': {
+      id: '/_authenticated/financeiro'
+      path: '/financeiro'
+      fullPath: '/financeiro'
+      preLoaderRoute: typeof AuthenticatedFinanceiroRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/estoque': {
       id: '/_authenticated/estoque'
       path: '/estoque'
@@ -269,12 +325,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAgendaRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/financeiro/': {
+      id: '/_authenticated/financeiro/'
+      path: '/'
+      fullPath: '/financeiro/'
+      preLoaderRoute: typeof AuthenticatedFinanceiroIndexRouteImport
+      parentRoute: typeof AuthenticatedFinanceiroRoute
+    }
     '/_authenticated/servicos/$id': {
       id: '/_authenticated/servicos/$id'
       path: '/$id'
       fullPath: '/servicos/$id'
       preLoaderRoute: typeof AuthenticatedServicosIdRouteImport
       parentRoute: typeof AuthenticatedServicosRoute
+    }
+    '/_authenticated/financeiro/fluxo': {
+      id: '/_authenticated/financeiro/fluxo'
+      path: '/fluxo'
+      fullPath: '/financeiro/fluxo'
+      preLoaderRoute: typeof AuthenticatedFinanceiroFluxoRouteImport
+      parentRoute: typeof AuthenticatedFinanceiroRoute
+    }
+    '/_authenticated/financeiro/cfo': {
+      id: '/_authenticated/financeiro/cfo'
+      path: '/cfo'
+      fullPath: '/financeiro/cfo'
+      preLoaderRoute: typeof AuthenticatedFinanceiroCfoRouteImport
+      parentRoute: typeof AuthenticatedFinanceiroRoute
     }
     '/_authenticated/estoque/preditivo': {
       id: '/_authenticated/estoque/preditivo'
@@ -326,6 +403,24 @@ const AuthenticatedEstoqueRouteChildren: AuthenticatedEstoqueRouteChildren = {
 const AuthenticatedEstoqueRouteWithChildren =
   AuthenticatedEstoqueRoute._addFileChildren(AuthenticatedEstoqueRouteChildren)
 
+interface AuthenticatedFinanceiroRouteChildren {
+  AuthenticatedFinanceiroCfoRoute: typeof AuthenticatedFinanceiroCfoRoute
+  AuthenticatedFinanceiroFluxoRoute: typeof AuthenticatedFinanceiroFluxoRoute
+  AuthenticatedFinanceiroIndexRoute: typeof AuthenticatedFinanceiroIndexRoute
+}
+
+const AuthenticatedFinanceiroRouteChildren: AuthenticatedFinanceiroRouteChildren =
+  {
+    AuthenticatedFinanceiroCfoRoute: AuthenticatedFinanceiroCfoRoute,
+    AuthenticatedFinanceiroFluxoRoute: AuthenticatedFinanceiroFluxoRoute,
+    AuthenticatedFinanceiroIndexRoute: AuthenticatedFinanceiroIndexRoute,
+  }
+
+const AuthenticatedFinanceiroRouteWithChildren =
+  AuthenticatedFinanceiroRoute._addFileChildren(
+    AuthenticatedFinanceiroRouteChildren,
+  )
+
 interface AuthenticatedServicosRouteChildren {
   AuthenticatedServicosIdRoute: typeof AuthenticatedServicosIdRoute
 }
@@ -345,6 +440,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedClientesRoute: typeof AuthenticatedClientesRouteWithChildren
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedEstoqueRoute: typeof AuthenticatedEstoqueRouteWithChildren
+  AuthenticatedFinanceiroRoute: typeof AuthenticatedFinanceiroRouteWithChildren
   AuthenticatedMaisRoute: typeof AuthenticatedMaisRoute
   AuthenticatedServicosRoute: typeof AuthenticatedServicosRouteWithChildren
 }
@@ -355,6 +451,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedClientesRoute: AuthenticatedClientesRouteWithChildren,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedEstoqueRoute: AuthenticatedEstoqueRouteWithChildren,
+  AuthenticatedFinanceiroRoute: AuthenticatedFinanceiroRouteWithChildren,
   AuthenticatedMaisRoute: AuthenticatedMaisRoute,
   AuthenticatedServicosRoute: AuthenticatedServicosRouteWithChildren,
 }

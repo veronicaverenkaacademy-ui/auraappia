@@ -21,7 +21,7 @@ const items = [
   { to: "/agenda", label: "Agenda", icon: Calendar, desc: "Horários e compromissos" },
   { to: "/servicos", label: "Serviços", icon: Sparkles, desc: "Protocolos e preços" },
   { to: "/estoque", label: "Estoque", icon: Package, desc: "Produtos e compras" },
-  { to: "/financeiro", label: "Financeiro", icon: DollarSign, desc: "Receitas e despesas", soon: true },
+  { to: "/financeiro", label: "Financeiro", icon: DollarSign, desc: "Caixa, DRE e CFO IA" },
   { to: "/relatorios", label: "Relatórios", icon: BarChart3, desc: "Indicadores do negócio", soon: true },
   { to: "/campanhas", label: "Campanhas", icon: Megaphone, desc: "Marketing automático", soon: true },
   { to: "/venda-rapida", label: "Venda rápida", icon: ShoppingBag, desc: "Pacotes e produtos", soon: true },
