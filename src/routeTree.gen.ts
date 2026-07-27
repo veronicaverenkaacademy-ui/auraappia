@@ -20,6 +20,7 @@ import { Route as AuthenticatedClientesRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAuraIaRouteImport } from './routes/_authenticated/aura-ia'
 import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
 import { Route as AuthenticatedServicosIdRouteImport } from './routes/_authenticated/servicos.$id'
+import { Route as AuthenticatedEstoqueIdRouteImport } from './routes/_authenticated/estoque.$id'
 import { Route as AuthenticatedClientesIdRouteImport } from './routes/_authenticated/clientes.$id'
 
 const AuthRoute = AuthRouteImport.update({
@@ -76,6 +77,11 @@ const AuthenticatedServicosIdRoute = AuthenticatedServicosIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AuthenticatedServicosRoute,
 } as any)
+const AuthenticatedEstoqueIdRoute = AuthenticatedEstoqueIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AuthenticatedEstoqueRoute,
+} as any)
 const AuthenticatedClientesIdRoute = AuthenticatedClientesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -89,10 +95,11 @@ export interface FileRoutesByFullPath {
   '/aura-ia': typeof AuthenticatedAuraIaRoute
   '/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/estoque': typeof AuthenticatedEstoqueRoute
+  '/estoque': typeof AuthenticatedEstoqueRouteWithChildren
   '/mais': typeof AuthenticatedMaisRoute
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
+  '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
 }
 export interface FileRoutesByTo {
@@ -102,10 +109,11 @@ export interface FileRoutesByTo {
   '/aura-ia': typeof AuthenticatedAuraIaRoute
   '/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/estoque': typeof AuthenticatedEstoqueRoute
+  '/estoque': typeof AuthenticatedEstoqueRouteWithChildren
   '/mais': typeof AuthenticatedMaisRoute
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
+  '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
 }
 export interface FileRoutesById {
@@ -117,10 +125,11 @@ export interface FileRoutesById {
   '/_authenticated/aura-ia': typeof AuthenticatedAuraIaRoute
   '/_authenticated/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
-  '/_authenticated/estoque': typeof AuthenticatedEstoqueRoute
+  '/_authenticated/estoque': typeof AuthenticatedEstoqueRouteWithChildren
   '/_authenticated/mais': typeof AuthenticatedMaisRoute
   '/_authenticated/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/_authenticated/clientes/$id': typeof AuthenticatedClientesIdRoute
+  '/_authenticated/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/_authenticated/servicos/$id': typeof AuthenticatedServicosIdRoute
 }
 export interface FileRouteTypes {
@@ -136,6 +145,7 @@ export interface FileRouteTypes {
     | '/mais'
     | '/servicos'
     | '/clientes/$id'
+    | '/estoque/$id'
     | '/servicos/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -149,6 +159,7 @@ export interface FileRouteTypes {
     | '/mais'
     | '/servicos'
     | '/clientes/$id'
+    | '/estoque/$id'
     | '/servicos/$id'
   id:
     | '__root__'
@@ -163,6 +174,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mais'
     | '/_authenticated/servicos'
     | '/_authenticated/clientes/$id'
+    | '/_authenticated/estoque/$id'
     | '/_authenticated/servicos/$id'
   fileRoutesById: FileRoutesById
 }
@@ -251,6 +263,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedServicosIdRouteImport
       parentRoute: typeof AuthenticatedServicosRoute
     }
+    '/_authenticated/estoque/$id': {
+      id: '/_authenticated/estoque/$id'
+      path: '/$id'
+      fullPath: '/estoque/$id'
+      preLoaderRoute: typeof AuthenticatedEstoqueIdRouteImport
+      parentRoute: typeof AuthenticatedEstoqueRoute
+    }
     '/_authenticated/clientes/$id': {
       id: '/_authenticated/clientes/$id'
       path: '/$id'
@@ -274,6 +293,17 @@ const AuthenticatedClientesRouteWithChildren =
     AuthenticatedClientesRouteChildren,
   )
 
+interface AuthenticatedEstoqueRouteChildren {
+  AuthenticatedEstoqueIdRoute: typeof AuthenticatedEstoqueIdRoute
+}
+
+const AuthenticatedEstoqueRouteChildren: AuthenticatedEstoqueRouteChildren = {
+  AuthenticatedEstoqueIdRoute: AuthenticatedEstoqueIdRoute,
+}
+
+const AuthenticatedEstoqueRouteWithChildren =
+  AuthenticatedEstoqueRoute._addFileChildren(AuthenticatedEstoqueRouteChildren)
+
 interface AuthenticatedServicosRouteChildren {
   AuthenticatedServicosIdRoute: typeof AuthenticatedServicosIdRoute
 }
@@ -292,7 +322,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAuraIaRoute: typeof AuthenticatedAuraIaRoute
   AuthenticatedClientesRoute: typeof AuthenticatedClientesRouteWithChildren
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
-  AuthenticatedEstoqueRoute: typeof AuthenticatedEstoqueRoute
+  AuthenticatedEstoqueRoute: typeof AuthenticatedEstoqueRouteWithChildren
   AuthenticatedMaisRoute: typeof AuthenticatedMaisRoute
   AuthenticatedServicosRoute: typeof AuthenticatedServicosRouteWithChildren
 }
@@ -302,7 +332,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAuraIaRoute: AuthenticatedAuraIaRoute,
   AuthenticatedClientesRoute: AuthenticatedClientesRouteWithChildren,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
-  AuthenticatedEstoqueRoute: AuthenticatedEstoqueRoute,
+  AuthenticatedEstoqueRoute: AuthenticatedEstoqueRouteWithChildren,
   AuthenticatedMaisRoute: AuthenticatedMaisRoute,
   AuthenticatedServicosRoute: AuthenticatedServicosRouteWithChildren,
 }
