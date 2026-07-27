@@ -20,7 +20,7 @@ export function AppShell({ children, title, right, hideTrigger, className }: App
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-background">
-        <AppSidebar className="hidden md:flex" />
+        <AppSidebar />
         <div className="flex-1 flex flex-col min-w-0">
           <header className="h-14 flex items-center gap-3 px-4 md:px-8 border-b border-border/50">
             {!hideTrigger && <SidebarTrigger className="shrink-0" />}
@@ -39,9 +39,12 @@ export function AppShell({ children, title, right, hideTrigger, className }: App
 
           <main className={cn("flex-1", className)}>{children}</main>
 
-          {isMobile && <MobileBottomNav className="fixed bottom-0 left-0 right-0 md:hidden" />}
+          {isMobile && (
+            <MobileBottomNav className="fixed bottom-0 left-0 right-0 md:hidden" />
+          )}
         </div>
       </div>
     </SidebarProvider>
   );
 }
+
