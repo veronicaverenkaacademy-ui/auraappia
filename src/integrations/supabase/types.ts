@@ -211,59 +211,166 @@ export type Database = {
         }
         Relationships: []
       }
+      product_batches: {
+        Row: {
+          batch_number: string | null
+          created_at: string
+          expires_at: string | null
+          id: string
+          initial_quantity: number
+          manufactured_at: string | null
+          notes: string | null
+          owner_id: string
+          product_id: string
+          remaining_quantity: number
+          supplier_id: string | null
+          unit_cost: number | null
+          updated_at: string
+        }
+        Insert: {
+          batch_number?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          initial_quantity?: number
+          manufactured_at?: string | null
+          notes?: string | null
+          owner_id: string
+          product_id: string
+          remaining_quantity?: number
+          supplier_id?: string | null
+          unit_cost?: number | null
+          updated_at?: string
+        }
+        Update: {
+          batch_number?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          initial_quantity?: number
+          manufactured_at?: string | null
+          notes?: string | null
+          owner_id?: string
+          product_id?: string
+          remaining_quantity?: number
+          supplier_id?: string | null
+          unit_cost?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_batches_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_batches_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products: {
         Row: {
           active: boolean
+          barcode: string | null
           brand: string | null
+          category: string | null
           cost_per_unit: number
           created_at: string
+          description: string | null
           id: string
+          ideal_stock: number | null
+          image_url: string | null
+          internal_code: string | null
           last_purchase_cost: number | null
           last_purchase_qty: number | null
+          location: string | null
+          max_stock: number | null
           min_stock: number
           name: string
           notes: string | null
           owner_id: string
+          sku: string | null
           stock: number
+          subcategory: string | null
           supplier: string | null
+          supplier_id: string | null
           unit: string
           updated_at: string
+          yield_per_unit: number | null
         }
         Insert: {
           active?: boolean
+          barcode?: string | null
           brand?: string | null
+          category?: string | null
           cost_per_unit?: number
           created_at?: string
+          description?: string | null
           id?: string
+          ideal_stock?: number | null
+          image_url?: string | null
+          internal_code?: string | null
           last_purchase_cost?: number | null
           last_purchase_qty?: number | null
+          location?: string | null
+          max_stock?: number | null
           min_stock?: number
           name: string
           notes?: string | null
           owner_id: string
+          sku?: string | null
           stock?: number
+          subcategory?: string | null
           supplier?: string | null
+          supplier_id?: string | null
           unit?: string
           updated_at?: string
+          yield_per_unit?: number | null
         }
         Update: {
           active?: boolean
+          barcode?: string | null
           brand?: string | null
+          category?: string | null
           cost_per_unit?: number
           created_at?: string
+          description?: string | null
           id?: string
+          ideal_stock?: number | null
+          image_url?: string | null
+          internal_code?: string | null
           last_purchase_cost?: number | null
           last_purchase_qty?: number | null
+          location?: string | null
+          max_stock?: number | null
           min_stock?: number
           name?: string
           notes?: string | null
           owner_id?: string
+          sku?: string | null
           stock?: number
+          subcategory?: string | null
           supplier?: string | null
+          supplier_id?: string | null
           unit?: string
           updated_at?: string
+          yield_per_unit?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "products_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -429,6 +536,66 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      suppliers: {
+        Row: {
+          active: boolean
+          address: string | null
+          avg_delivery_days: number | null
+          cnpj: string | null
+          contact_name: string | null
+          created_at: string
+          email: string | null
+          id: string
+          instagram: string | null
+          name: string
+          notes: string | null
+          owner_id: string
+          phone: string | null
+          rating: number | null
+          updated_at: string
+          website: string | null
+          whatsapp: string | null
+        }
+        Insert: {
+          active?: boolean
+          address?: string | null
+          avg_delivery_days?: number | null
+          cnpj?: string | null
+          contact_name?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          instagram?: string | null
+          name: string
+          notes?: string | null
+          owner_id: string
+          phone?: string | null
+          rating?: number | null
+          updated_at?: string
+          website?: string | null
+          whatsapp?: string | null
+        }
+        Update: {
+          active?: boolean
+          address?: string | null
+          avg_delivery_days?: number | null
+          cnpj?: string | null
+          contact_name?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          instagram?: string | null
+          name?: string
+          notes?: string | null
+          owner_id?: string
+          phone?: string | null
+          rating?: number | null
+          updated_at?: string
+          website?: string | null
+          whatsapp?: string | null
+        }
+        Relationships: []
       }
     }
     Views: {
