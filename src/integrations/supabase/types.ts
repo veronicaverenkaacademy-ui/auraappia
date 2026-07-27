@@ -211,6 +211,60 @@ export type Database = {
         }
         Relationships: []
       }
+      products: {
+        Row: {
+          active: boolean
+          brand: string | null
+          cost_per_unit: number
+          created_at: string
+          id: string
+          last_purchase_cost: number | null
+          last_purchase_qty: number | null
+          min_stock: number
+          name: string
+          notes: string | null
+          owner_id: string
+          stock: number
+          supplier: string | null
+          unit: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          brand?: string | null
+          cost_per_unit?: number
+          created_at?: string
+          id?: string
+          last_purchase_cost?: number | null
+          last_purchase_qty?: number | null
+          min_stock?: number
+          name: string
+          notes?: string | null
+          owner_id: string
+          stock?: number
+          supplier?: string | null
+          unit?: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          brand?: string | null
+          cost_per_unit?: number
+          created_at?: string
+          id?: string
+          last_purchase_cost?: number | null
+          last_purchase_qty?: number | null
+          min_stock?: number
+          name?: string
+          notes?: string | null
+          owner_id?: string
+          stock?: number
+          supplier?: string | null
+          unit?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -243,6 +297,48 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      service_materials: {
+        Row: {
+          created_at: string
+          id: string
+          owner_id: string
+          product_id: string
+          quantity: number
+          service_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          owner_id: string
+          product_id: string
+          quantity?: number
+          service_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          owner_id?: string
+          product_id?: string
+          quantity?: number
+          service_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_materials_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_materials_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       services: {
         Row: {
@@ -282,6 +378,57 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      stock_movements: {
+        Row: {
+          appointment_id: string | null
+          created_at: string
+          id: string
+          kind: string
+          note: string | null
+          owner_id: string
+          product_id: string
+          quantity: number
+          unit_cost: number | null
+        }
+        Insert: {
+          appointment_id?: string | null
+          created_at?: string
+          id?: string
+          kind: string
+          note?: string | null
+          owner_id: string
+          product_id: string
+          quantity: number
+          unit_cost?: number | null
+        }
+        Update: {
+          appointment_id?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          note?: string | null
+          owner_id?: string
+          product_id?: string
+          quantity?: number
+          unit_cost?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_movements_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_movements_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
