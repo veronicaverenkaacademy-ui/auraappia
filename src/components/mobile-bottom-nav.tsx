@@ -24,8 +24,9 @@ export function MobileBottomNav({ className }: { className?: string }) {
       <div className="flex items-center justify-around h-16 px-2">
         {tabs.map((tab) => {
           const Icon = tab.icon;
-          const active = pathname === tab.to;
+          const active = pathname === tab.to || (tab.to !== "/" && pathname.startsWith(tab.to));
           return (
+
             <Link
               key={tab.to}
               to={tab.to}
