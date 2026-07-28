@@ -29,6 +29,7 @@ import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedWhatsappIndexRouteImport } from './routes/_authenticated/whatsapp.index'
 import { Route as AuthenticatedMarketingIndexRouteImport } from './routes/_authenticated/marketing.index'
 import { Route as AuthenticatedFinanceiroIndexRouteImport } from './routes/_authenticated/financeiro.index'
+import { Route as AuthenticatedEquipeIndexRouteImport } from './routes/_authenticated/equipe.index'
 import { Route as AuthenticatedBiIndexRouteImport } from './routes/_authenticated/bi.index'
 import { Route as AuthenticatedAuraIaIndexRouteImport } from './routes/_authenticated/aura-ia.index'
 import { Route as AuthenticatedWhatsappTemplatesRouteImport } from './routes/_authenticated/whatsapp.templates'
@@ -152,6 +153,12 @@ const AuthenticatedFinanceiroIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedFinanceiroRoute,
   } as any)
+const AuthenticatedEquipeIndexRoute =
+  AuthenticatedEquipeIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedEquipeRoute,
+  } as any)
 const AuthenticatedBiIndexRoute = AuthenticatedBiIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -269,7 +276,7 @@ export interface FileRoutesByFullPath {
   '/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/equipe': typeof AuthenticatedEquipeRoute
+  '/equipe': typeof AuthenticatedEquipeRouteWithChildren
   '/estoque': typeof AuthenticatedEstoqueRouteWithChildren
   '/financeiro': typeof AuthenticatedFinanceiroRouteWithChildren
   '/mais': typeof AuthenticatedMaisRoute
@@ -295,6 +302,7 @@ export interface FileRoutesByFullPath {
   '/whatsapp/templates': typeof AuthenticatedWhatsappTemplatesRoute
   '/aura-ia/': typeof AuthenticatedAuraIaIndexRoute
   '/bi/': typeof AuthenticatedBiIndexRoute
+  '/equipe/': typeof AuthenticatedEquipeIndexRoute
   '/financeiro/': typeof AuthenticatedFinanceiroIndexRoute
   '/marketing/': typeof AuthenticatedMarketingIndexRoute
   '/whatsapp/': typeof AuthenticatedWhatsappIndexRoute
@@ -307,7 +315,6 @@ export interface FileRoutesByTo {
   '/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/equipe': typeof AuthenticatedEquipeRoute
   '/estoque': typeof AuthenticatedEstoqueRouteWithChildren
   '/mais': typeof AuthenticatedMaisRoute
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
@@ -330,6 +337,7 @@ export interface FileRoutesByTo {
   '/whatsapp/templates': typeof AuthenticatedWhatsappTemplatesRoute
   '/aura-ia': typeof AuthenticatedAuraIaIndexRoute
   '/bi': typeof AuthenticatedBiIndexRoute
+  '/equipe': typeof AuthenticatedEquipeIndexRoute
   '/financeiro': typeof AuthenticatedFinanceiroIndexRoute
   '/marketing': typeof AuthenticatedMarketingIndexRoute
   '/whatsapp': typeof AuthenticatedWhatsappIndexRoute
@@ -346,7 +354,7 @@ export interface FileRoutesById {
   '/_authenticated/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/_authenticated/configuracoes': typeof AuthenticatedConfiguracoesRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
-  '/_authenticated/equipe': typeof AuthenticatedEquipeRoute
+  '/_authenticated/equipe': typeof AuthenticatedEquipeRouteWithChildren
   '/_authenticated/estoque': typeof AuthenticatedEstoqueRouteWithChildren
   '/_authenticated/financeiro': typeof AuthenticatedFinanceiroRouteWithChildren
   '/_authenticated/mais': typeof AuthenticatedMaisRoute
@@ -372,6 +380,7 @@ export interface FileRoutesById {
   '/_authenticated/whatsapp/templates': typeof AuthenticatedWhatsappTemplatesRoute
   '/_authenticated/aura-ia/': typeof AuthenticatedAuraIaIndexRoute
   '/_authenticated/bi/': typeof AuthenticatedBiIndexRoute
+  '/_authenticated/equipe/': typeof AuthenticatedEquipeIndexRoute
   '/_authenticated/financeiro/': typeof AuthenticatedFinanceiroIndexRoute
   '/_authenticated/marketing/': typeof AuthenticatedMarketingIndexRoute
   '/_authenticated/whatsapp/': typeof AuthenticatedWhatsappIndexRoute
@@ -414,6 +423,7 @@ export interface FileRouteTypes {
     | '/whatsapp/templates'
     | '/aura-ia/'
     | '/bi/'
+    | '/equipe/'
     | '/financeiro/'
     | '/marketing/'
     | '/whatsapp/'
@@ -426,7 +436,6 @@ export interface FileRouteTypes {
     | '/clientes'
     | '/configuracoes'
     | '/dashboard'
-    | '/equipe'
     | '/estoque'
     | '/mais'
     | '/servicos'
@@ -449,6 +458,7 @@ export interface FileRouteTypes {
     | '/whatsapp/templates'
     | '/aura-ia'
     | '/bi'
+    | '/equipe'
     | '/financeiro'
     | '/marketing'
     | '/whatsapp'
@@ -490,6 +500,7 @@ export interface FileRouteTypes {
     | '/_authenticated/whatsapp/templates'
     | '/_authenticated/aura-ia/'
     | '/_authenticated/bi/'
+    | '/_authenticated/equipe/'
     | '/_authenticated/financeiro/'
     | '/_authenticated/marketing/'
     | '/_authenticated/whatsapp/'
@@ -643,6 +654,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/financeiro/'
       preLoaderRoute: typeof AuthenticatedFinanceiroIndexRouteImport
       parentRoute: typeof AuthenticatedFinanceiroRoute
+    }
+    '/_authenticated/equipe/': {
+      id: '/_authenticated/equipe/'
+      path: '/'
+      fullPath: '/equipe/'
+      preLoaderRoute: typeof AuthenticatedEquipeIndexRouteImport
+      parentRoute: typeof AuthenticatedEquipeRoute
     }
     '/_authenticated/bi/': {
       id: '/_authenticated/bi/'
@@ -826,6 +844,17 @@ const AuthenticatedClientesRouteWithChildren =
     AuthenticatedClientesRouteChildren,
   )
 
+interface AuthenticatedEquipeRouteChildren {
+  AuthenticatedEquipeIndexRoute: typeof AuthenticatedEquipeIndexRoute
+}
+
+const AuthenticatedEquipeRouteChildren: AuthenticatedEquipeRouteChildren = {
+  AuthenticatedEquipeIndexRoute: AuthenticatedEquipeIndexRoute,
+}
+
+const AuthenticatedEquipeRouteWithChildren =
+  AuthenticatedEquipeRoute._addFileChildren(AuthenticatedEquipeRouteChildren)
+
 interface AuthenticatedEstoqueRouteChildren {
   AuthenticatedEstoqueIdRoute: typeof AuthenticatedEstoqueIdRoute
   AuthenticatedEstoquePreditivoRoute: typeof AuthenticatedEstoquePreditivoRoute
@@ -916,7 +945,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedClientesRoute: typeof AuthenticatedClientesRouteWithChildren
   AuthenticatedConfiguracoesRoute: typeof AuthenticatedConfiguracoesRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
-  AuthenticatedEquipeRoute: typeof AuthenticatedEquipeRoute
+  AuthenticatedEquipeRoute: typeof AuthenticatedEquipeRouteWithChildren
   AuthenticatedEstoqueRoute: typeof AuthenticatedEstoqueRouteWithChildren
   AuthenticatedFinanceiroRoute: typeof AuthenticatedFinanceiroRouteWithChildren
   AuthenticatedMaisRoute: typeof AuthenticatedMaisRoute
@@ -932,7 +961,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedClientesRoute: AuthenticatedClientesRouteWithChildren,
   AuthenticatedConfiguracoesRoute: AuthenticatedConfiguracoesRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
-  AuthenticatedEquipeRoute: AuthenticatedEquipeRoute,
+  AuthenticatedEquipeRoute: AuthenticatedEquipeRouteWithChildren,
   AuthenticatedEstoqueRoute: AuthenticatedEstoqueRouteWithChildren,
   AuthenticatedFinanceiroRoute: AuthenticatedFinanceiroRouteWithChildren,
   AuthenticatedMaisRoute: AuthenticatedMaisRoute,

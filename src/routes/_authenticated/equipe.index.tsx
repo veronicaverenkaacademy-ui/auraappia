@@ -15,7 +15,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { listTeamMembers } from "@/lib/team";
-import { createTeamMember } from "@/lib/team.functions";
+import { createTeamMember, type CreateTeamMemberInput } from "@/lib/team.functions";
 import { initials } from "@/lib/clients";
 
 export const Route = createFileRoute("/_authenticated/equipe/")({
@@ -32,7 +32,7 @@ function EquipeIndex() {
 
   const createFn = useServerFn(createTeamMember);
   const create = useMutation({
-    mutationFn: (data: Parameters<typeof createFn>[0]["data"]) => createFn({ data }),
+    mutationFn: (data: CreateTeamMemberInput) => createFn({ data }),
     onSuccess: (res) => {
       toast.success("Colaborador criado.");
       setCreds(res.credentials);
@@ -152,7 +152,7 @@ function avgCommission(members: { commission_type: string; commission_value: num
   return (pct.reduce((s, m) => s + Number(m.commission_value), 0) / pct.length).toFixed(0);
 }
 
-function NewMemberForm({ loading, onSubmit }: { loading: boolean; onSubmit: (p: Parameters<typeof createTeamMember>[0]["data"]) => void }) {
+function NewMemberForm({ loading, onSubmit }: { loading: boolean; onSubmit: (p: CreateTeamMemberInput) => void }) {
   const [form, setForm] = useState({
     full_name: "", phone: "", email: "", password: "",
     role_title: "", profession: "", agenda_color: AGENDA_COLORS[0],
