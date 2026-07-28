@@ -23,6 +23,7 @@ import { Route as AuthenticatedAuraIaRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
 import { Route as AuthenticatedMarketingIndexRouteImport } from './routes/_authenticated/marketing.index'
 import { Route as AuthenticatedFinanceiroIndexRouteImport } from './routes/_authenticated/financeiro.index'
+import { Route as AuthenticatedAuraIaIndexRouteImport } from './routes/_authenticated/aura-ia.index'
 import { Route as AuthenticatedServicosIdRouteImport } from './routes/_authenticated/servicos.$id'
 import { Route as AuthenticatedMarketingJornadasRouteImport } from './routes/_authenticated/marketing.jornadas'
 import { Route as AuthenticatedMarketingIaRouteImport } from './routes/_authenticated/marketing.ia'
@@ -104,6 +105,12 @@ const AuthenticatedFinanceiroIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedFinanceiroRoute,
   } as any)
+const AuthenticatedAuraIaIndexRoute =
+  AuthenticatedAuraIaIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedAuraIaRoute,
+  } as any)
 const AuthenticatedServicosIdRoute = AuthenticatedServicosIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -160,7 +167,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/agenda': typeof AuthenticatedAgendaRoute
-  '/aura-ia': typeof AuthenticatedAuraIaRoute
+  '/aura-ia': typeof AuthenticatedAuraIaRouteWithChildren
   '/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/estoque': typeof AuthenticatedEstoqueRouteWithChildren
@@ -177,6 +184,7 @@ export interface FileRoutesByFullPath {
   '/marketing/ia': typeof AuthenticatedMarketingIaRoute
   '/marketing/jornadas': typeof AuthenticatedMarketingJornadasRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
+  '/aura-ia/': typeof AuthenticatedAuraIaIndexRoute
   '/financeiro/': typeof AuthenticatedFinanceiroIndexRoute
   '/marketing/': typeof AuthenticatedMarketingIndexRoute
 }
@@ -184,7 +192,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/agenda': typeof AuthenticatedAgendaRoute
-  '/aura-ia': typeof AuthenticatedAuraIaRoute
   '/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/estoque': typeof AuthenticatedEstoqueRouteWithChildren
@@ -199,6 +206,7 @@ export interface FileRoutesByTo {
   '/marketing/ia': typeof AuthenticatedMarketingIaRoute
   '/marketing/jornadas': typeof AuthenticatedMarketingJornadasRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
+  '/aura-ia': typeof AuthenticatedAuraIaIndexRoute
   '/financeiro': typeof AuthenticatedFinanceiroIndexRoute
   '/marketing': typeof AuthenticatedMarketingIndexRoute
 }
@@ -208,7 +216,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/agenda': typeof AuthenticatedAgendaRoute
-  '/_authenticated/aura-ia': typeof AuthenticatedAuraIaRoute
+  '/_authenticated/aura-ia': typeof AuthenticatedAuraIaRouteWithChildren
   '/_authenticated/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/estoque': typeof AuthenticatedEstoqueRouteWithChildren
@@ -225,6 +233,7 @@ export interface FileRoutesById {
   '/_authenticated/marketing/ia': typeof AuthenticatedMarketingIaRoute
   '/_authenticated/marketing/jornadas': typeof AuthenticatedMarketingJornadasRoute
   '/_authenticated/servicos/$id': typeof AuthenticatedServicosIdRoute
+  '/_authenticated/aura-ia/': typeof AuthenticatedAuraIaIndexRoute
   '/_authenticated/financeiro/': typeof AuthenticatedFinanceiroIndexRoute
   '/_authenticated/marketing/': typeof AuthenticatedMarketingIndexRoute
 }
@@ -251,6 +260,7 @@ export interface FileRouteTypes {
     | '/marketing/ia'
     | '/marketing/jornadas'
     | '/servicos/$id'
+    | '/aura-ia/'
     | '/financeiro/'
     | '/marketing/'
   fileRoutesByTo: FileRoutesByTo
@@ -258,7 +268,6 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/agenda'
-    | '/aura-ia'
     | '/clientes'
     | '/dashboard'
     | '/estoque'
@@ -273,6 +282,7 @@ export interface FileRouteTypes {
     | '/marketing/ia'
     | '/marketing/jornadas'
     | '/servicos/$id'
+    | '/aura-ia'
     | '/financeiro'
     | '/marketing'
   id:
@@ -298,6 +308,7 @@ export interface FileRouteTypes {
     | '/_authenticated/marketing/ia'
     | '/_authenticated/marketing/jornadas'
     | '/_authenticated/servicos/$id'
+    | '/_authenticated/aura-ia/'
     | '/_authenticated/financeiro/'
     | '/_authenticated/marketing/'
   fileRoutesById: FileRoutesById
@@ -408,6 +419,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedFinanceiroIndexRouteImport
       parentRoute: typeof AuthenticatedFinanceiroRoute
     }
+    '/_authenticated/aura-ia/': {
+      id: '/_authenticated/aura-ia/'
+      path: '/'
+      fullPath: '/aura-ia/'
+      preLoaderRoute: typeof AuthenticatedAuraIaIndexRouteImport
+      parentRoute: typeof AuthenticatedAuraIaRoute
+    }
     '/_authenticated/servicos/$id': {
       id: '/_authenticated/servicos/$id'
       path: '/$id'
@@ -473,6 +491,17 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface AuthenticatedAuraIaRouteChildren {
+  AuthenticatedAuraIaIndexRoute: typeof AuthenticatedAuraIaIndexRoute
+}
+
+const AuthenticatedAuraIaRouteChildren: AuthenticatedAuraIaRouteChildren = {
+  AuthenticatedAuraIaIndexRoute: AuthenticatedAuraIaIndexRoute,
+}
+
+const AuthenticatedAuraIaRouteWithChildren =
+  AuthenticatedAuraIaRoute._addFileChildren(AuthenticatedAuraIaRouteChildren)
 
 interface AuthenticatedClientesRouteChildren {
   AuthenticatedClientesIdRoute: typeof AuthenticatedClientesIdRoute
@@ -553,7 +582,7 @@ const AuthenticatedServicosRouteWithChildren =
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAgendaRoute: typeof AuthenticatedAgendaRoute
-  AuthenticatedAuraIaRoute: typeof AuthenticatedAuraIaRoute
+  AuthenticatedAuraIaRoute: typeof AuthenticatedAuraIaRouteWithChildren
   AuthenticatedClientesRoute: typeof AuthenticatedClientesRouteWithChildren
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedEstoqueRoute: typeof AuthenticatedEstoqueRouteWithChildren
@@ -565,7 +594,7 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAgendaRoute: AuthenticatedAgendaRoute,
-  AuthenticatedAuraIaRoute: AuthenticatedAuraIaRoute,
+  AuthenticatedAuraIaRoute: AuthenticatedAuraIaRouteWithChildren,
   AuthenticatedClientesRoute: AuthenticatedClientesRouteWithChildren,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedEstoqueRoute: AuthenticatedEstoqueRouteWithChildren,
