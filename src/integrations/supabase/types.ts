@@ -74,6 +74,48 @@ export type Database = {
           },
         ]
       }
+      audit_log: {
+        Row: {
+          action: string
+          actor_id: string | null
+          actor_name: string | null
+          created_at: string
+          details: Json | null
+          id: string
+          ip: string | null
+          owner_id: string
+          resource: string
+          resource_id: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          actor_name?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+          ip?: string | null
+          owner_id: string
+          resource: string
+          resource_id?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          actor_name?: string | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+          ip?: string | null
+          owner_id?: string
+          resource?: string
+          resource_id?: string | null
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       client_anamnesis: {
         Row: {
           allergies: string | null
@@ -738,14 +780,156 @@ export type Database = {
         }
         Relationships: []
       }
+      team_members: {
+        Row: {
+          agenda_color: string | null
+          avatar_url: string | null
+          bio: string | null
+          booking_slug: string | null
+          commission_type: string
+          commission_value: number
+          created_at: string
+          email: string | null
+          full_name: string
+          id: string
+          instagram: string | null
+          monthly_goal: number
+          onboarding_completed: boolean
+          owner_id: string
+          phone: string | null
+          profession: string | null
+          role_title: string | null
+          show_commission: boolean
+          status: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          agenda_color?: string | null
+          avatar_url?: string | null
+          bio?: string | null
+          booking_slug?: string | null
+          commission_type?: string
+          commission_value?: number
+          created_at?: string
+          email?: string | null
+          full_name: string
+          id?: string
+          instagram?: string | null
+          monthly_goal?: number
+          onboarding_completed?: boolean
+          owner_id: string
+          phone?: string | null
+          profession?: string | null
+          role_title?: string | null
+          show_commission?: boolean
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          agenda_color?: string | null
+          avatar_url?: string | null
+          bio?: string | null
+          booking_slug?: string | null
+          commission_type?: string
+          commission_value?: number
+          created_at?: string
+          email?: string | null
+          full_name?: string
+          id?: string
+          instagram?: string | null
+          monthly_goal?: number
+          onboarding_completed?: boolean
+          owner_id?: string
+          phone?: string | null
+          profession?: string | null
+          role_title?: string | null
+          show_commission?: boolean
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      team_permissions: {
+        Row: {
+          action: string
+          allowed: boolean
+          id: string
+          member_id: string
+          owner_id: string
+          resource: string
+          updated_at: string
+        }
+        Insert: {
+          action: string
+          allowed?: boolean
+          id?: string
+          member_id: string
+          owner_id: string
+          resource: string
+          updated_at?: string
+        }
+        Update: {
+          action?: string
+          allowed?: boolean
+          id?: string
+          member_id?: string
+          owner_id?: string
+          resource?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_permissions_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          granted_by: string | null
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          granted_by?: string | null
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          granted_by?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_admin: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
+      app_role: "admin" | "staff"
       appointment_status:
         | "pending"
         | "confirmed"
@@ -879,6 +1063,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      app_role: ["admin", "staff"],
       appointment_status: [
         "pending",
         "confirmed",
