@@ -33,6 +33,7 @@ import { Route as AuthenticatedFinanceiroCfoRouteImport } from './routes/_authen
 import { Route as AuthenticatedEstoquePreditivoRouteImport } from './routes/_authenticated/estoque.preditivo'
 import { Route as AuthenticatedEstoqueIdRouteImport } from './routes/_authenticated/estoque.$id'
 import { Route as AuthenticatedClientesIdRouteImport } from './routes/_authenticated/clientes.$id'
+import { Route as AuthenticatedAuraIaConselhoRouteImport } from './routes/_authenticated/aura-ia.conselho'
 import { Route as AuthenticatedAuraIaChatRouteImport } from './routes/_authenticated/aura-ia.chat'
 
 const AuthRoute = AuthRouteImport.update({
@@ -163,6 +164,12 @@ const AuthenticatedClientesIdRoute = AuthenticatedClientesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AuthenticatedClientesRoute,
 } as any)
+const AuthenticatedAuraIaConselhoRoute =
+  AuthenticatedAuraIaConselhoRouteImport.update({
+    id: '/conselho',
+    path: '/conselho',
+    getParentRoute: () => AuthenticatedAuraIaRoute,
+  } as any)
 const AuthenticatedAuraIaChatRoute = AuthenticatedAuraIaChatRouteImport.update({
   id: '/chat',
   path: '/chat',
@@ -182,6 +189,7 @@ export interface FileRoutesByFullPath {
   '/marketing': typeof AuthenticatedMarketingRouteWithChildren
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
+  '/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
@@ -205,6 +213,7 @@ export interface FileRoutesByTo {
   '/mais': typeof AuthenticatedMaisRoute
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
+  '/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
@@ -233,6 +242,7 @@ export interface FileRoutesById {
   '/_authenticated/marketing': typeof AuthenticatedMarketingRouteWithChildren
   '/_authenticated/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/_authenticated/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
+  '/_authenticated/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
   '/_authenticated/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/_authenticated/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/_authenticated/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
@@ -261,6 +271,7 @@ export interface FileRouteTypes {
     | '/marketing'
     | '/servicos'
     | '/aura-ia/chat'
+    | '/aura-ia/conselho'
     | '/clientes/$id'
     | '/estoque/$id'
     | '/estoque/preditivo'
@@ -284,6 +295,7 @@ export interface FileRouteTypes {
     | '/mais'
     | '/servicos'
     | '/aura-ia/chat'
+    | '/aura-ia/conselho'
     | '/clientes/$id'
     | '/estoque/$id'
     | '/estoque/preditivo'
@@ -311,6 +323,7 @@ export interface FileRouteTypes {
     | '/_authenticated/marketing'
     | '/_authenticated/servicos'
     | '/_authenticated/aura-ia/chat'
+    | '/_authenticated/aura-ia/conselho'
     | '/_authenticated/clientes/$id'
     | '/_authenticated/estoque/$id'
     | '/_authenticated/estoque/preditivo'
@@ -501,6 +514,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedClientesIdRouteImport
       parentRoute: typeof AuthenticatedClientesRoute
     }
+    '/_authenticated/aura-ia/conselho': {
+      id: '/_authenticated/aura-ia/conselho'
+      path: '/conselho'
+      fullPath: '/aura-ia/conselho'
+      preLoaderRoute: typeof AuthenticatedAuraIaConselhoRouteImport
+      parentRoute: typeof AuthenticatedAuraIaRoute
+    }
     '/_authenticated/aura-ia/chat': {
       id: '/_authenticated/aura-ia/chat'
       path: '/chat'
@@ -513,11 +533,13 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedAuraIaRouteChildren {
   AuthenticatedAuraIaChatRoute: typeof AuthenticatedAuraIaChatRoute
+  AuthenticatedAuraIaConselhoRoute: typeof AuthenticatedAuraIaConselhoRoute
   AuthenticatedAuraIaIndexRoute: typeof AuthenticatedAuraIaIndexRoute
 }
 
 const AuthenticatedAuraIaRouteChildren: AuthenticatedAuraIaRouteChildren = {
   AuthenticatedAuraIaChatRoute: AuthenticatedAuraIaChatRoute,
+  AuthenticatedAuraIaConselhoRoute: AuthenticatedAuraIaConselhoRoute,
   AuthenticatedAuraIaIndexRoute: AuthenticatedAuraIaIndexRoute,
 }
 
