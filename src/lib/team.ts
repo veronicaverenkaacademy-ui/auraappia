@@ -159,7 +159,7 @@ export async function logAudit(
     action,
     resource,
     resource_id: resource_id ?? null,
-    details: details ?? null,
+    details: (details ?? null) as never,
     user_agent: typeof navigator !== "undefined" ? navigator.userAgent : null,
   });
 }
