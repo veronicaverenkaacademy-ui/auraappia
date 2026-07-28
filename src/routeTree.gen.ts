@@ -27,6 +27,7 @@ import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedWhatsappIndexRouteImport } from './routes/_authenticated/whatsapp.index'
 import { Route as AuthenticatedMarketingIndexRouteImport } from './routes/_authenticated/marketing.index'
 import { Route as AuthenticatedFinanceiroIndexRouteImport } from './routes/_authenticated/financeiro.index'
+import { Route as AuthenticatedBiIndexRouteImport } from './routes/_authenticated/bi.index'
 import { Route as AuthenticatedAuraIaIndexRouteImport } from './routes/_authenticated/aura-ia.index'
 import { Route as AuthenticatedWhatsappTemplatesRouteImport } from './routes/_authenticated/whatsapp.templates'
 import { Route as AuthenticatedWhatsappConfigRouteImport } from './routes/_authenticated/whatsapp.config'
@@ -135,6 +136,11 @@ const AuthenticatedFinanceiroIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedFinanceiroRoute,
   } as any)
+const AuthenticatedBiIndexRoute = AuthenticatedBiIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedBiRoute,
+} as any)
 const AuthenticatedAuraIaIndexRoute =
   AuthenticatedAuraIaIndexRouteImport.update({
     id: '/',
@@ -227,7 +233,7 @@ export interface FileRoutesByFullPath {
   '/portal': typeof PortalRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/aura-ia': typeof AuthenticatedAuraIaRouteWithChildren
-  '/bi': typeof AuthenticatedBiRoute
+  '/bi': typeof AuthenticatedBiRouteWithChildren
   '/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/estoque': typeof AuthenticatedEstoqueRouteWithChildren
@@ -251,6 +257,7 @@ export interface FileRoutesByFullPath {
   '/whatsapp/config': typeof AuthenticatedWhatsappConfigRoute
   '/whatsapp/templates': typeof AuthenticatedWhatsappTemplatesRoute
   '/aura-ia/': typeof AuthenticatedAuraIaIndexRoute
+  '/bi/': typeof AuthenticatedBiIndexRoute
   '/financeiro/': typeof AuthenticatedFinanceiroIndexRoute
   '/marketing/': typeof AuthenticatedMarketingIndexRoute
   '/whatsapp/': typeof AuthenticatedWhatsappIndexRoute
@@ -260,7 +267,6 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/portal': typeof PortalRoute
   '/agenda': typeof AuthenticatedAgendaRoute
-  '/bi': typeof AuthenticatedBiRoute
   '/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/estoque': typeof AuthenticatedEstoqueRouteWithChildren
@@ -281,6 +287,7 @@ export interface FileRoutesByTo {
   '/whatsapp/config': typeof AuthenticatedWhatsappConfigRoute
   '/whatsapp/templates': typeof AuthenticatedWhatsappTemplatesRoute
   '/aura-ia': typeof AuthenticatedAuraIaIndexRoute
+  '/bi': typeof AuthenticatedBiIndexRoute
   '/financeiro': typeof AuthenticatedFinanceiroIndexRoute
   '/marketing': typeof AuthenticatedMarketingIndexRoute
   '/whatsapp': typeof AuthenticatedWhatsappIndexRoute
@@ -293,7 +300,7 @@ export interface FileRoutesById {
   '/portal': typeof PortalRoute
   '/_authenticated/agenda': typeof AuthenticatedAgendaRoute
   '/_authenticated/aura-ia': typeof AuthenticatedAuraIaRouteWithChildren
-  '/_authenticated/bi': typeof AuthenticatedBiRoute
+  '/_authenticated/bi': typeof AuthenticatedBiRouteWithChildren
   '/_authenticated/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/estoque': typeof AuthenticatedEstoqueRouteWithChildren
@@ -317,6 +324,7 @@ export interface FileRoutesById {
   '/_authenticated/whatsapp/config': typeof AuthenticatedWhatsappConfigRoute
   '/_authenticated/whatsapp/templates': typeof AuthenticatedWhatsappTemplatesRoute
   '/_authenticated/aura-ia/': typeof AuthenticatedAuraIaIndexRoute
+  '/_authenticated/bi/': typeof AuthenticatedBiIndexRoute
   '/_authenticated/financeiro/': typeof AuthenticatedFinanceiroIndexRoute
   '/_authenticated/marketing/': typeof AuthenticatedMarketingIndexRoute
   '/_authenticated/whatsapp/': typeof AuthenticatedWhatsappIndexRoute
@@ -353,6 +361,7 @@ export interface FileRouteTypes {
     | '/whatsapp/config'
     | '/whatsapp/templates'
     | '/aura-ia/'
+    | '/bi/'
     | '/financeiro/'
     | '/marketing/'
     | '/whatsapp/'
@@ -362,7 +371,6 @@ export interface FileRouteTypes {
     | '/auth'
     | '/portal'
     | '/agenda'
-    | '/bi'
     | '/clientes'
     | '/dashboard'
     | '/estoque'
@@ -383,6 +391,7 @@ export interface FileRouteTypes {
     | '/whatsapp/config'
     | '/whatsapp/templates'
     | '/aura-ia'
+    | '/bi'
     | '/financeiro'
     | '/marketing'
     | '/whatsapp'
@@ -418,6 +427,7 @@ export interface FileRouteTypes {
     | '/_authenticated/whatsapp/config'
     | '/_authenticated/whatsapp/templates'
     | '/_authenticated/aura-ia/'
+    | '/_authenticated/bi/'
     | '/_authenticated/financeiro/'
     | '/_authenticated/marketing/'
     | '/_authenticated/whatsapp/'
@@ -558,6 +568,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedFinanceiroIndexRouteImport
       parentRoute: typeof AuthenticatedFinanceiroRoute
     }
+    '/_authenticated/bi/': {
+      id: '/_authenticated/bi/'
+      path: '/'
+      fullPath: '/bi/'
+      preLoaderRoute: typeof AuthenticatedBiIndexRouteImport
+      parentRoute: typeof AuthenticatedBiRoute
+    }
     '/_authenticated/aura-ia/': {
       id: '/_authenticated/aura-ia/'
       path: '/'
@@ -681,6 +698,18 @@ const AuthenticatedAuraIaRouteChildren: AuthenticatedAuraIaRouteChildren = {
 const AuthenticatedAuraIaRouteWithChildren =
   AuthenticatedAuraIaRoute._addFileChildren(AuthenticatedAuraIaRouteChildren)
 
+interface AuthenticatedBiRouteChildren {
+  AuthenticatedBiIndexRoute: typeof AuthenticatedBiIndexRoute
+}
+
+const AuthenticatedBiRouteChildren: AuthenticatedBiRouteChildren = {
+  AuthenticatedBiIndexRoute: AuthenticatedBiIndexRoute,
+}
+
+const AuthenticatedBiRouteWithChildren = AuthenticatedBiRoute._addFileChildren(
+  AuthenticatedBiRouteChildren,
+)
+
 interface AuthenticatedClientesRouteChildren {
   AuthenticatedClientesIdRoute: typeof AuthenticatedClientesIdRoute
 }
@@ -780,7 +809,7 @@ const AuthenticatedWhatsappRouteWithChildren =
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAgendaRoute: typeof AuthenticatedAgendaRoute
   AuthenticatedAuraIaRoute: typeof AuthenticatedAuraIaRouteWithChildren
-  AuthenticatedBiRoute: typeof AuthenticatedBiRoute
+  AuthenticatedBiRoute: typeof AuthenticatedBiRouteWithChildren
   AuthenticatedClientesRoute: typeof AuthenticatedClientesRouteWithChildren
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedEstoqueRoute: typeof AuthenticatedEstoqueRouteWithChildren
@@ -794,7 +823,7 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAgendaRoute: AuthenticatedAgendaRoute,
   AuthenticatedAuraIaRoute: AuthenticatedAuraIaRouteWithChildren,
-  AuthenticatedBiRoute: AuthenticatedBiRoute,
+  AuthenticatedBiRoute: AuthenticatedBiRouteWithChildren,
   AuthenticatedClientesRoute: AuthenticatedClientesRouteWithChildren,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedEstoqueRoute: AuthenticatedEstoqueRouteWithChildren,
