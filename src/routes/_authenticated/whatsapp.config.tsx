@@ -16,7 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/whatsapp/config")({
-  component: WhatsAppConfig;
+  component: WhatsAppConfig,
 });
 
 const PROVIDERS: { id: Provider; description: string }[] = [
