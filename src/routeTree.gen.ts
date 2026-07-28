@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedWhatsappRouteImport } from './routes/_authenticated/whatsapp'
 import { Route as AuthenticatedServicosRouteImport } from './routes/_authenticated/servicos'
 import { Route as AuthenticatedMarketingRouteImport } from './routes/_authenticated/marketing'
 import { Route as AuthenticatedMaisRouteImport } from './routes/_authenticated/mais'
@@ -49,6 +50,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedWhatsappRoute = AuthenticatedWhatsappRouteImport.update({
+  id: '/whatsapp',
+  path: '/whatsapp',
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedServicosRoute = AuthenticatedServicosRouteImport.update({
   id: '/servicos',
@@ -188,6 +194,7 @@ export interface FileRoutesByFullPath {
   '/mais': typeof AuthenticatedMaisRoute
   '/marketing': typeof AuthenticatedMarketingRouteWithChildren
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
+  '/whatsapp': typeof AuthenticatedWhatsappRoute
   '/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
   '/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
@@ -212,6 +219,7 @@ export interface FileRoutesByTo {
   '/estoque': typeof AuthenticatedEstoqueRouteWithChildren
   '/mais': typeof AuthenticatedMaisRoute
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
+  '/whatsapp': typeof AuthenticatedWhatsappRoute
   '/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
   '/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
@@ -241,6 +249,7 @@ export interface FileRoutesById {
   '/_authenticated/mais': typeof AuthenticatedMaisRoute
   '/_authenticated/marketing': typeof AuthenticatedMarketingRouteWithChildren
   '/_authenticated/servicos': typeof AuthenticatedServicosRouteWithChildren
+  '/_authenticated/whatsapp': typeof AuthenticatedWhatsappRoute
   '/_authenticated/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
   '/_authenticated/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
   '/_authenticated/clientes/$id': typeof AuthenticatedClientesIdRoute
@@ -270,6 +279,7 @@ export interface FileRouteTypes {
     | '/mais'
     | '/marketing'
     | '/servicos'
+    | '/whatsapp'
     | '/aura-ia/chat'
     | '/aura-ia/conselho'
     | '/clientes/$id'
@@ -294,6 +304,7 @@ export interface FileRouteTypes {
     | '/estoque'
     | '/mais'
     | '/servicos'
+    | '/whatsapp'
     | '/aura-ia/chat'
     | '/aura-ia/conselho'
     | '/clientes/$id'
@@ -322,6 +333,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mais'
     | '/_authenticated/marketing'
     | '/_authenticated/servicos'
+    | '/_authenticated/whatsapp'
     | '/_authenticated/aura-ia/chat'
     | '/_authenticated/aura-ia/conselho'
     | '/_authenticated/clientes/$id'
@@ -366,6 +378,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/whatsapp': {
+      id: '/_authenticated/whatsapp'
+      path: '/whatsapp'
+      fullPath: '/whatsapp'
+      preLoaderRoute: typeof AuthenticatedWhatsappRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/servicos': {
       id: '/_authenticated/servicos'
@@ -633,6 +652,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMaisRoute: typeof AuthenticatedMaisRoute
   AuthenticatedMarketingRoute: typeof AuthenticatedMarketingRouteWithChildren
   AuthenticatedServicosRoute: typeof AuthenticatedServicosRouteWithChildren
+  AuthenticatedWhatsappRoute: typeof AuthenticatedWhatsappRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -645,6 +665,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMaisRoute: AuthenticatedMaisRoute,
   AuthenticatedMarketingRoute: AuthenticatedMarketingRouteWithChildren,
   AuthenticatedServicosRoute: AuthenticatedServicosRouteWithChildren,
+  AuthenticatedWhatsappRoute: AuthenticatedWhatsappRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
