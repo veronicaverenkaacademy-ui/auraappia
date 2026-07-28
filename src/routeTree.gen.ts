@@ -43,6 +43,7 @@ import { Route as AuthenticatedFinanceiroFluxoRouteImport } from './routes/_auth
 import { Route as AuthenticatedFinanceiroCfoRouteImport } from './routes/_authenticated/financeiro.cfo'
 import { Route as AuthenticatedEstoquePreditivoRouteImport } from './routes/_authenticated/estoque.preditivo'
 import { Route as AuthenticatedEstoqueIdRouteImport } from './routes/_authenticated/estoque.$id'
+import { Route as AuthenticatedEquipeIdRouteImport } from './routes/_authenticated/equipe.$id'
 import { Route as AuthenticatedClientesIdRouteImport } from './routes/_authenticated/clientes.$id'
 import { Route as AuthenticatedBiServicosRouteImport } from './routes/_authenticated/bi.servicos'
 import { Route as AuthenticatedBiPreditivoRouteImport } from './routes/_authenticated/bi.preditivo'
@@ -233,6 +234,11 @@ const AuthenticatedEstoqueIdRoute = AuthenticatedEstoqueIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AuthenticatedEstoqueRoute,
 } as any)
+const AuthenticatedEquipeIdRoute = AuthenticatedEquipeIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AuthenticatedEquipeRoute,
+} as any)
 const AuthenticatedClientesIdRoute = AuthenticatedClientesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -289,6 +295,7 @@ export interface FileRoutesByFullPath {
   '/bi/preditivo': typeof AuthenticatedBiPreditivoRoute
   '/bi/servicos': typeof AuthenticatedBiServicosRoute
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
+  '/equipe/$id': typeof AuthenticatedEquipeIdRoute
   '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
   '/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
@@ -324,6 +331,7 @@ export interface FileRoutesByTo {
   '/bi/preditivo': typeof AuthenticatedBiPreditivoRoute
   '/bi/servicos': typeof AuthenticatedBiServicosRoute
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
+  '/equipe/$id': typeof AuthenticatedEquipeIdRoute
   '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
   '/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
@@ -367,6 +375,7 @@ export interface FileRoutesById {
   '/_authenticated/bi/preditivo': typeof AuthenticatedBiPreditivoRoute
   '/_authenticated/bi/servicos': typeof AuthenticatedBiServicosRoute
   '/_authenticated/clientes/$id': typeof AuthenticatedClientesIdRoute
+  '/_authenticated/equipe/$id': typeof AuthenticatedEquipeIdRoute
   '/_authenticated/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/_authenticated/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
   '/_authenticated/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
@@ -410,6 +419,7 @@ export interface FileRouteTypes {
     | '/bi/preditivo'
     | '/bi/servicos'
     | '/clientes/$id'
+    | '/equipe/$id'
     | '/estoque/$id'
     | '/estoque/preditivo'
     | '/financeiro/cfo'
@@ -445,6 +455,7 @@ export interface FileRouteTypes {
     | '/bi/preditivo'
     | '/bi/servicos'
     | '/clientes/$id'
+    | '/equipe/$id'
     | '/estoque/$id'
     | '/estoque/preditivo'
     | '/financeiro/cfo'
@@ -487,6 +498,7 @@ export interface FileRouteTypes {
     | '/_authenticated/bi/preditivo'
     | '/_authenticated/bi/servicos'
     | '/_authenticated/clientes/$id'
+    | '/_authenticated/equipe/$id'
     | '/_authenticated/estoque/$id'
     | '/_authenticated/estoque/preditivo'
     | '/_authenticated/financeiro/cfo'
@@ -753,6 +765,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedEstoqueIdRouteImport
       parentRoute: typeof AuthenticatedEstoqueRoute
     }
+    '/_authenticated/equipe/$id': {
+      id: '/_authenticated/equipe/$id'
+      path: '/$id'
+      fullPath: '/equipe/$id'
+      preLoaderRoute: typeof AuthenticatedEquipeIdRouteImport
+      parentRoute: typeof AuthenticatedEquipeRoute
+    }
     '/_authenticated/clientes/$id': {
       id: '/_authenticated/clientes/$id'
       path: '/$id'
@@ -845,10 +864,12 @@ const AuthenticatedClientesRouteWithChildren =
   )
 
 interface AuthenticatedEquipeRouteChildren {
+  AuthenticatedEquipeIdRoute: typeof AuthenticatedEquipeIdRoute
   AuthenticatedEquipeIndexRoute: typeof AuthenticatedEquipeIndexRoute
 }
 
 const AuthenticatedEquipeRouteChildren: AuthenticatedEquipeRouteChildren = {
+  AuthenticatedEquipeIdRoute: AuthenticatedEquipeIdRoute,
   AuthenticatedEquipeIndexRoute: AuthenticatedEquipeIndexRoute,
 }
 
