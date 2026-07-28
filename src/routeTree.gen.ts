@@ -42,6 +42,7 @@ import { Route as AuthenticatedEstoquePreditivoRouteImport } from './routes/_aut
 import { Route as AuthenticatedEstoqueIdRouteImport } from './routes/_authenticated/estoque.$id'
 import { Route as AuthenticatedClientesIdRouteImport } from './routes/_authenticated/clientes.$id'
 import { Route as AuthenticatedBiServicosRouteImport } from './routes/_authenticated/bi.servicos'
+import { Route as AuthenticatedBiPreditivoRouteImport } from './routes/_authenticated/bi.preditivo'
 import { Route as AuthenticatedBiClientesRouteImport } from './routes/_authenticated/bi.clientes'
 import { Route as AuthenticatedAuraIaConselhoRouteImport } from './routes/_authenticated/aura-ia.conselho'
 import { Route as AuthenticatedAuraIaChatRouteImport } from './routes/_authenticated/aura-ia.chat'
@@ -222,6 +223,12 @@ const AuthenticatedBiServicosRoute = AuthenticatedBiServicosRouteImport.update({
   path: '/servicos',
   getParentRoute: () => AuthenticatedBiRoute,
 } as any)
+const AuthenticatedBiPreditivoRoute =
+  AuthenticatedBiPreditivoRouteImport.update({
+    id: '/preditivo',
+    path: '/preditivo',
+    getParentRoute: () => AuthenticatedBiRoute,
+  } as any)
 const AuthenticatedBiClientesRoute = AuthenticatedBiClientesRouteImport.update({
   id: '/clientes',
   path: '/clientes',
@@ -257,6 +264,7 @@ export interface FileRoutesByFullPath {
   '/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
   '/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
   '/bi/clientes': typeof AuthenticatedBiClientesRoute
+  '/bi/preditivo': typeof AuthenticatedBiPreditivoRoute
   '/bi/servicos': typeof AuthenticatedBiServicosRoute
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
@@ -289,6 +297,7 @@ export interface FileRoutesByTo {
   '/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
   '/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
   '/bi/clientes': typeof AuthenticatedBiClientesRoute
+  '/bi/preditivo': typeof AuthenticatedBiPreditivoRoute
   '/bi/servicos': typeof AuthenticatedBiServicosRoute
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
@@ -328,6 +337,7 @@ export interface FileRoutesById {
   '/_authenticated/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
   '/_authenticated/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
   '/_authenticated/bi/clientes': typeof AuthenticatedBiClientesRoute
+  '/_authenticated/bi/preditivo': typeof AuthenticatedBiPreditivoRoute
   '/_authenticated/bi/servicos': typeof AuthenticatedBiServicosRoute
   '/_authenticated/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/_authenticated/estoque/$id': typeof AuthenticatedEstoqueIdRoute
@@ -367,6 +377,7 @@ export interface FileRouteTypes {
     | '/aura-ia/chat'
     | '/aura-ia/conselho'
     | '/bi/clientes'
+    | '/bi/preditivo'
     | '/bi/servicos'
     | '/clientes/$id'
     | '/estoque/$id'
@@ -399,6 +410,7 @@ export interface FileRouteTypes {
     | '/aura-ia/chat'
     | '/aura-ia/conselho'
     | '/bi/clientes'
+    | '/bi/preditivo'
     | '/bi/servicos'
     | '/clientes/$id'
     | '/estoque/$id'
@@ -437,6 +449,7 @@ export interface FileRouteTypes {
     | '/_authenticated/aura-ia/chat'
     | '/_authenticated/aura-ia/conselho'
     | '/_authenticated/bi/clientes'
+    | '/_authenticated/bi/preditivo'
     | '/_authenticated/bi/servicos'
     | '/_authenticated/clientes/$id'
     | '/_authenticated/estoque/$id'
@@ -697,6 +710,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedBiServicosRouteImport
       parentRoute: typeof AuthenticatedBiRoute
     }
+    '/_authenticated/bi/preditivo': {
+      id: '/_authenticated/bi/preditivo'
+      path: '/preditivo'
+      fullPath: '/bi/preditivo'
+      preLoaderRoute: typeof AuthenticatedBiPreditivoRouteImport
+      parentRoute: typeof AuthenticatedBiRoute
+    }
     '/_authenticated/bi/clientes': {
       id: '/_authenticated/bi/clientes'
       path: '/clientes'
@@ -738,12 +758,14 @@ const AuthenticatedAuraIaRouteWithChildren =
 
 interface AuthenticatedBiRouteChildren {
   AuthenticatedBiClientesRoute: typeof AuthenticatedBiClientesRoute
+  AuthenticatedBiPreditivoRoute: typeof AuthenticatedBiPreditivoRoute
   AuthenticatedBiServicosRoute: typeof AuthenticatedBiServicosRoute
   AuthenticatedBiIndexRoute: typeof AuthenticatedBiIndexRoute
 }
 
 const AuthenticatedBiRouteChildren: AuthenticatedBiRouteChildren = {
   AuthenticatedBiClientesRoute: AuthenticatedBiClientesRoute,
+  AuthenticatedBiPreditivoRoute: AuthenticatedBiPreditivoRoute,
   AuthenticatedBiServicosRoute: AuthenticatedBiServicosRoute,
   AuthenticatedBiIndexRoute: AuthenticatedBiIndexRoute,
 }
