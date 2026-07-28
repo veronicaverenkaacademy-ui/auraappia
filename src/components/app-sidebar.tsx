@@ -1,5 +1,5 @@
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Calendar, Users, Package, DollarSign, Sparkles, Settings, LogOut, Megaphone, Wand2, MessageCircle, BarChart3 } from "lucide-react";
+import { LayoutDashboard, Calendar, Users, Package, DollarSign, Sparkles, Settings, LogOut, Megaphone, Wand2, MessageCircle, BarChart3, SlidersHorizontal } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarMenu,
   SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, useSidebar,
@@ -87,9 +87,11 @@ export function AppSidebar() {
       <SidebarFooter className="p-3 gap-1">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton className="h-10 rounded-xl" disabled>
-              <Settings className="w-4 h-4" />
-              {!collapsed && <span>Ajustes</span>}
+            <SidebarMenuButton asChild className="h-10 rounded-xl" isActive={pathname.startsWith("/configuracoes")}>
+              <Link to="/configuracoes" className="flex items-center gap-3">
+                <SlidersHorizontal className="w-4 h-4" />
+                {!collapsed && <span>Control Center</span>}
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
