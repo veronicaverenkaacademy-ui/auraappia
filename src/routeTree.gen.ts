@@ -21,6 +21,7 @@ import { Route as AuthenticatedFinanceiroRouteImport } from './routes/_authentic
 import { Route as AuthenticatedEstoqueRouteImport } from './routes/_authenticated/estoque'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedClientesRouteImport } from './routes/_authenticated/clientes'
+import { Route as AuthenticatedBiRouteImport } from './routes/_authenticated/bi'
 import { Route as AuthenticatedAuraIaRouteImport } from './routes/_authenticated/aura-ia'
 import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
 import { Route as AuthenticatedWhatsappIndexRouteImport } from './routes/_authenticated/whatsapp.index'
@@ -99,6 +100,11 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
 const AuthenticatedClientesRoute = AuthenticatedClientesRouteImport.update({
   id: '/clientes',
   path: '/clientes',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedBiRoute = AuthenticatedBiRouteImport.update({
+  id: '/bi',
+  path: '/bi',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedAuraIaRoute = AuthenticatedAuraIaRouteImport.update({
@@ -221,6 +227,7 @@ export interface FileRoutesByFullPath {
   '/portal': typeof PortalRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/aura-ia': typeof AuthenticatedAuraIaRouteWithChildren
+  '/bi': typeof AuthenticatedBiRoute
   '/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/estoque': typeof AuthenticatedEstoqueRouteWithChildren
@@ -253,6 +260,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/portal': typeof PortalRoute
   '/agenda': typeof AuthenticatedAgendaRoute
+  '/bi': typeof AuthenticatedBiRoute
   '/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/estoque': typeof AuthenticatedEstoqueRouteWithChildren
@@ -285,6 +293,7 @@ export interface FileRoutesById {
   '/portal': typeof PortalRoute
   '/_authenticated/agenda': typeof AuthenticatedAgendaRoute
   '/_authenticated/aura-ia': typeof AuthenticatedAuraIaRouteWithChildren
+  '/_authenticated/bi': typeof AuthenticatedBiRoute
   '/_authenticated/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/estoque': typeof AuthenticatedEstoqueRouteWithChildren
@@ -320,6 +329,7 @@ export interface FileRouteTypes {
     | '/portal'
     | '/agenda'
     | '/aura-ia'
+    | '/bi'
     | '/clientes'
     | '/dashboard'
     | '/estoque'
@@ -352,6 +362,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/portal'
     | '/agenda'
+    | '/bi'
     | '/clientes'
     | '/dashboard'
     | '/estoque'
@@ -383,6 +394,7 @@ export interface FileRouteTypes {
     | '/portal'
     | '/_authenticated/agenda'
     | '/_authenticated/aura-ia'
+    | '/_authenticated/bi'
     | '/_authenticated/clientes'
     | '/_authenticated/dashboard'
     | '/_authenticated/estoque'
@@ -502,6 +514,13 @@ declare module '@tanstack/react-router' {
       path: '/clientes'
       fullPath: '/clientes'
       preLoaderRoute: typeof AuthenticatedClientesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/bi': {
+      id: '/_authenticated/bi'
+      path: '/bi'
+      fullPath: '/bi'
+      preLoaderRoute: typeof AuthenticatedBiRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/aura-ia': {
@@ -761,6 +780,7 @@ const AuthenticatedWhatsappRouteWithChildren =
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAgendaRoute: typeof AuthenticatedAgendaRoute
   AuthenticatedAuraIaRoute: typeof AuthenticatedAuraIaRouteWithChildren
+  AuthenticatedBiRoute: typeof AuthenticatedBiRoute
   AuthenticatedClientesRoute: typeof AuthenticatedClientesRouteWithChildren
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedEstoqueRoute: typeof AuthenticatedEstoqueRouteWithChildren
@@ -774,6 +794,7 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAgendaRoute: AuthenticatedAgendaRoute,
   AuthenticatedAuraIaRoute: AuthenticatedAuraIaRouteWithChildren,
+  AuthenticatedBiRoute: AuthenticatedBiRoute,
   AuthenticatedClientesRoute: AuthenticatedClientesRouteWithChildren,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedEstoqueRoute: AuthenticatedEstoqueRouteWithChildren,
