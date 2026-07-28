@@ -13,8 +13,11 @@ import { Route as PortalRouteImport } from './routes/portal'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LSlugRouteImport } from './routes/l.$slug'
 import { Route as AuthenticatedWhatsappRouteImport } from './routes/_authenticated/whatsapp'
 import { Route as AuthenticatedServicosRouteImport } from './routes/_authenticated/servicos'
+import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
+import { Route as AuthenticatedMeuEspacoRouteImport } from './routes/_authenticated/meu-espaco'
 import { Route as AuthenticatedMarketingRouteImport } from './routes/_authenticated/marketing'
 import { Route as AuthenticatedMaisRouteImport } from './routes/_authenticated/mais'
 import { Route as AuthenticatedFinanceiroRouteImport } from './routes/_authenticated/financeiro'
@@ -43,6 +46,8 @@ import { Route as AuthenticatedFinanceiroFluxoRouteImport } from './routes/_auth
 import { Route as AuthenticatedFinanceiroCfoRouteImport } from './routes/_authenticated/financeiro.cfo'
 import { Route as AuthenticatedEstoquePreditivoRouteImport } from './routes/_authenticated/estoque.preditivo'
 import { Route as AuthenticatedEstoqueIdRouteImport } from './routes/_authenticated/estoque.$id'
+import { Route as AuthenticatedEquipePermissoesRouteImport } from './routes/_authenticated/equipe.permissoes'
+import { Route as AuthenticatedEquipeAuditoriaRouteImport } from './routes/_authenticated/equipe.auditoria'
 import { Route as AuthenticatedEquipeIdRouteImport } from './routes/_authenticated/equipe.$id'
 import { Route as AuthenticatedClientesIdRouteImport } from './routes/_authenticated/clientes.$id'
 import { Route as AuthenticatedBiServicosRouteImport } from './routes/_authenticated/bi.servicos'
@@ -70,6 +75,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LSlugRoute = LSlugRouteImport.update({
+  id: '/l/$slug',
+  path: '/l/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedWhatsappRoute = AuthenticatedWhatsappRouteImport.update({
   id: '/whatsapp',
   path: '/whatsapp',
@@ -78,6 +88,16 @@ const AuthenticatedWhatsappRoute = AuthenticatedWhatsappRouteImport.update({
 const AuthenticatedServicosRoute = AuthenticatedServicosRouteImport.update({
   id: '/servicos',
   path: '/servicos',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedMeuEspacoRoute = AuthenticatedMeuEspacoRouteImport.update({
+  id: '/meu-espaco',
+  path: '/meu-espaco',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedMarketingRoute = AuthenticatedMarketingRouteImport.update({
@@ -234,6 +254,18 @@ const AuthenticatedEstoqueIdRoute = AuthenticatedEstoqueIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AuthenticatedEstoqueRoute,
 } as any)
+const AuthenticatedEquipePermissoesRoute =
+  AuthenticatedEquipePermissoesRouteImport.update({
+    id: '/permissoes',
+    path: '/permissoes',
+    getParentRoute: () => AuthenticatedEquipeRoute,
+  } as any)
+const AuthenticatedEquipeAuditoriaRoute =
+  AuthenticatedEquipeAuditoriaRouteImport.update({
+    id: '/auditoria',
+    path: '/auditoria',
+    getParentRoute: () => AuthenticatedEquipeRoute,
+  } as any)
 const AuthenticatedEquipeIdRoute = AuthenticatedEquipeIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -287,8 +319,11 @@ export interface FileRoutesByFullPath {
   '/financeiro': typeof AuthenticatedFinanceiroRouteWithChildren
   '/mais': typeof AuthenticatedMaisRoute
   '/marketing': typeof AuthenticatedMarketingRouteWithChildren
+  '/meu-espaco': typeof AuthenticatedMeuEspacoRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/whatsapp': typeof AuthenticatedWhatsappRouteWithChildren
+  '/l/$slug': typeof LSlugRoute
   '/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
   '/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
   '/bi/clientes': typeof AuthenticatedBiClientesRoute
@@ -296,6 +331,8 @@ export interface FileRoutesByFullPath {
   '/bi/servicos': typeof AuthenticatedBiServicosRoute
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/equipe/$id': typeof AuthenticatedEquipeIdRoute
+  '/equipe/auditoria': typeof AuthenticatedEquipeAuditoriaRoute
+  '/equipe/permissoes': typeof AuthenticatedEquipePermissoesRoute
   '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
   '/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
@@ -324,7 +361,10 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/estoque': typeof AuthenticatedEstoqueRouteWithChildren
   '/mais': typeof AuthenticatedMaisRoute
+  '/meu-espaco': typeof AuthenticatedMeuEspacoRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
+  '/l/$slug': typeof LSlugRoute
   '/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
   '/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
   '/bi/clientes': typeof AuthenticatedBiClientesRoute
@@ -332,6 +372,8 @@ export interface FileRoutesByTo {
   '/bi/servicos': typeof AuthenticatedBiServicosRoute
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/equipe/$id': typeof AuthenticatedEquipeIdRoute
+  '/equipe/auditoria': typeof AuthenticatedEquipeAuditoriaRoute
+  '/equipe/permissoes': typeof AuthenticatedEquipePermissoesRoute
   '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
   '/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
@@ -367,8 +409,11 @@ export interface FileRoutesById {
   '/_authenticated/financeiro': typeof AuthenticatedFinanceiroRouteWithChildren
   '/_authenticated/mais': typeof AuthenticatedMaisRoute
   '/_authenticated/marketing': typeof AuthenticatedMarketingRouteWithChildren
+  '/_authenticated/meu-espaco': typeof AuthenticatedMeuEspacoRoute
+  '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/_authenticated/whatsapp': typeof AuthenticatedWhatsappRouteWithChildren
+  '/l/$slug': typeof LSlugRoute
   '/_authenticated/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
   '/_authenticated/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
   '/_authenticated/bi/clientes': typeof AuthenticatedBiClientesRoute
@@ -376,6 +421,8 @@ export interface FileRoutesById {
   '/_authenticated/bi/servicos': typeof AuthenticatedBiServicosRoute
   '/_authenticated/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/_authenticated/equipe/$id': typeof AuthenticatedEquipeIdRoute
+  '/_authenticated/equipe/auditoria': typeof AuthenticatedEquipeAuditoriaRoute
+  '/_authenticated/equipe/permissoes': typeof AuthenticatedEquipePermissoesRoute
   '/_authenticated/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/_authenticated/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
   '/_authenticated/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
@@ -411,8 +458,11 @@ export interface FileRouteTypes {
     | '/financeiro'
     | '/mais'
     | '/marketing'
+    | '/meu-espaco'
+    | '/onboarding'
     | '/servicos'
     | '/whatsapp'
+    | '/l/$slug'
     | '/aura-ia/chat'
     | '/aura-ia/conselho'
     | '/bi/clientes'
@@ -420,6 +470,8 @@ export interface FileRouteTypes {
     | '/bi/servicos'
     | '/clientes/$id'
     | '/equipe/$id'
+    | '/equipe/auditoria'
+    | '/equipe/permissoes'
     | '/estoque/$id'
     | '/estoque/preditivo'
     | '/financeiro/cfo'
@@ -448,7 +500,10 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/estoque'
     | '/mais'
+    | '/meu-espaco'
+    | '/onboarding'
     | '/servicos'
+    | '/l/$slug'
     | '/aura-ia/chat'
     | '/aura-ia/conselho'
     | '/bi/clientes'
@@ -456,6 +511,8 @@ export interface FileRouteTypes {
     | '/bi/servicos'
     | '/clientes/$id'
     | '/equipe/$id'
+    | '/equipe/auditoria'
+    | '/equipe/permissoes'
     | '/estoque/$id'
     | '/estoque/preditivo'
     | '/financeiro/cfo'
@@ -490,8 +547,11 @@ export interface FileRouteTypes {
     | '/_authenticated/financeiro'
     | '/_authenticated/mais'
     | '/_authenticated/marketing'
+    | '/_authenticated/meu-espaco'
+    | '/_authenticated/onboarding'
     | '/_authenticated/servicos'
     | '/_authenticated/whatsapp'
+    | '/l/$slug'
     | '/_authenticated/aura-ia/chat'
     | '/_authenticated/aura-ia/conselho'
     | '/_authenticated/bi/clientes'
@@ -499,6 +559,8 @@ export interface FileRouteTypes {
     | '/_authenticated/bi/servicos'
     | '/_authenticated/clientes/$id'
     | '/_authenticated/equipe/$id'
+    | '/_authenticated/equipe/auditoria'
+    | '/_authenticated/equipe/permissoes'
     | '/_authenticated/estoque/$id'
     | '/_authenticated/estoque/preditivo'
     | '/_authenticated/financeiro/cfo'
@@ -523,6 +585,7 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   PortalRoute: typeof PortalRoute
+  LSlugRoute: typeof LSlugRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -555,6 +618,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/l/$slug': {
+      id: '/l/$slug'
+      path: '/l/$slug'
+      fullPath: '/l/$slug'
+      preLoaderRoute: typeof LSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/whatsapp': {
       id: '/_authenticated/whatsapp'
       path: '/whatsapp'
@@ -567,6 +637,20 @@ declare module '@tanstack/react-router' {
       path: '/servicos'
       fullPath: '/servicos'
       preLoaderRoute: typeof AuthenticatedServicosRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/onboarding': {
+      id: '/_authenticated/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof AuthenticatedOnboardingRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/meu-espaco': {
+      id: '/_authenticated/meu-espaco'
+      path: '/meu-espaco'
+      fullPath: '/meu-espaco'
+      preLoaderRoute: typeof AuthenticatedMeuEspacoRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/marketing': {
@@ -765,6 +849,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedEstoqueIdRouteImport
       parentRoute: typeof AuthenticatedEstoqueRoute
     }
+    '/_authenticated/equipe/permissoes': {
+      id: '/_authenticated/equipe/permissoes'
+      path: '/permissoes'
+      fullPath: '/equipe/permissoes'
+      preLoaderRoute: typeof AuthenticatedEquipePermissoesRouteImport
+      parentRoute: typeof AuthenticatedEquipeRoute
+    }
+    '/_authenticated/equipe/auditoria': {
+      id: '/_authenticated/equipe/auditoria'
+      path: '/auditoria'
+      fullPath: '/equipe/auditoria'
+      preLoaderRoute: typeof AuthenticatedEquipeAuditoriaRouteImport
+      parentRoute: typeof AuthenticatedEquipeRoute
+    }
     '/_authenticated/equipe/$id': {
       id: '/_authenticated/equipe/$id'
       path: '/$id'
@@ -865,11 +963,15 @@ const AuthenticatedClientesRouteWithChildren =
 
 interface AuthenticatedEquipeRouteChildren {
   AuthenticatedEquipeIdRoute: typeof AuthenticatedEquipeIdRoute
+  AuthenticatedEquipeAuditoriaRoute: typeof AuthenticatedEquipeAuditoriaRoute
+  AuthenticatedEquipePermissoesRoute: typeof AuthenticatedEquipePermissoesRoute
   AuthenticatedEquipeIndexRoute: typeof AuthenticatedEquipeIndexRoute
 }
 
 const AuthenticatedEquipeRouteChildren: AuthenticatedEquipeRouteChildren = {
   AuthenticatedEquipeIdRoute: AuthenticatedEquipeIdRoute,
+  AuthenticatedEquipeAuditoriaRoute: AuthenticatedEquipeAuditoriaRoute,
+  AuthenticatedEquipePermissoesRoute: AuthenticatedEquipePermissoesRoute,
   AuthenticatedEquipeIndexRoute: AuthenticatedEquipeIndexRoute,
 }
 
@@ -971,6 +1073,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedFinanceiroRoute: typeof AuthenticatedFinanceiroRouteWithChildren
   AuthenticatedMaisRoute: typeof AuthenticatedMaisRoute
   AuthenticatedMarketingRoute: typeof AuthenticatedMarketingRouteWithChildren
+  AuthenticatedMeuEspacoRoute: typeof AuthenticatedMeuEspacoRoute
+  AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedServicosRoute: typeof AuthenticatedServicosRouteWithChildren
   AuthenticatedWhatsappRoute: typeof AuthenticatedWhatsappRouteWithChildren
 }
@@ -987,6 +1091,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedFinanceiroRoute: AuthenticatedFinanceiroRouteWithChildren,
   AuthenticatedMaisRoute: AuthenticatedMaisRoute,
   AuthenticatedMarketingRoute: AuthenticatedMarketingRouteWithChildren,
+  AuthenticatedMeuEspacoRoute: AuthenticatedMeuEspacoRoute,
+  AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedServicosRoute: AuthenticatedServicosRouteWithChildren,
   AuthenticatedWhatsappRoute: AuthenticatedWhatsappRouteWithChildren,
 }
@@ -999,6 +1105,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   PortalRoute: PortalRoute,
+  LSlugRoute: LSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
