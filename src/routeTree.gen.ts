@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedWhatsappRouteImport } from './routes/_authenticated/whatsapp'
 import { Route as AuthenticatedServicosRouteImport } from './routes/_authenticated/servicos'
 import { Route as AuthenticatedMarketingRouteImport } from './routes/_authenticated/marketing'
 import { Route as AuthenticatedMaisRouteImport } from './routes/_authenticated/mais'
@@ -21,9 +22,13 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedClientesRouteImport } from './routes/_authenticated/clientes'
 import { Route as AuthenticatedAuraIaRouteImport } from './routes/_authenticated/aura-ia'
 import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
+import { Route as AuthenticatedWhatsappIndexRouteImport } from './routes/_authenticated/whatsapp.index'
 import { Route as AuthenticatedMarketingIndexRouteImport } from './routes/_authenticated/marketing.index'
 import { Route as AuthenticatedFinanceiroIndexRouteImport } from './routes/_authenticated/financeiro.index'
 import { Route as AuthenticatedAuraIaIndexRouteImport } from './routes/_authenticated/aura-ia.index'
+import { Route as AuthenticatedWhatsappTemplatesRouteImport } from './routes/_authenticated/whatsapp.templates'
+import { Route as AuthenticatedWhatsappConfigRouteImport } from './routes/_authenticated/whatsapp.config'
+import { Route as AuthenticatedWhatsappIdRouteImport } from './routes/_authenticated/whatsapp.$id'
 import { Route as AuthenticatedServicosIdRouteImport } from './routes/_authenticated/servicos.$id'
 import { Route as AuthenticatedMarketingJornadasRouteImport } from './routes/_authenticated/marketing.jornadas'
 import { Route as AuthenticatedMarketingIaRouteImport } from './routes/_authenticated/marketing.ia'
@@ -49,6 +54,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedWhatsappRoute = AuthenticatedWhatsappRouteImport.update({
+  id: '/whatsapp',
+  path: '/whatsapp',
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedServicosRoute = AuthenticatedServicosRouteImport.update({
   id: '/servicos',
@@ -95,6 +105,12 @@ const AuthenticatedAgendaRoute = AuthenticatedAgendaRouteImport.update({
   path: '/agenda',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedWhatsappIndexRoute =
+  AuthenticatedWhatsappIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedWhatsappRoute,
+  } as any)
 const AuthenticatedMarketingIndexRoute =
   AuthenticatedMarketingIndexRouteImport.update({
     id: '/',
@@ -113,6 +129,23 @@ const AuthenticatedAuraIaIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedAuraIaRoute,
   } as any)
+const AuthenticatedWhatsappTemplatesRoute =
+  AuthenticatedWhatsappTemplatesRouteImport.update({
+    id: '/templates',
+    path: '/templates',
+    getParentRoute: () => AuthenticatedWhatsappRoute,
+  } as any)
+const AuthenticatedWhatsappConfigRoute =
+  AuthenticatedWhatsappConfigRouteImport.update({
+    id: '/config',
+    path: '/config',
+    getParentRoute: () => AuthenticatedWhatsappRoute,
+  } as any)
+const AuthenticatedWhatsappIdRoute = AuthenticatedWhatsappIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AuthenticatedWhatsappRoute,
+} as any)
 const AuthenticatedServicosIdRoute = AuthenticatedServicosIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -188,6 +221,7 @@ export interface FileRoutesByFullPath {
   '/mais': typeof AuthenticatedMaisRoute
   '/marketing': typeof AuthenticatedMarketingRouteWithChildren
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
+  '/whatsapp': typeof AuthenticatedWhatsappRouteWithChildren
   '/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
   '/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
@@ -199,9 +233,13 @@ export interface FileRoutesByFullPath {
   '/marketing/ia': typeof AuthenticatedMarketingIaRoute
   '/marketing/jornadas': typeof AuthenticatedMarketingJornadasRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
+  '/whatsapp/$id': typeof AuthenticatedWhatsappIdRoute
+  '/whatsapp/config': typeof AuthenticatedWhatsappConfigRoute
+  '/whatsapp/templates': typeof AuthenticatedWhatsappTemplatesRoute
   '/aura-ia/': typeof AuthenticatedAuraIaIndexRoute
   '/financeiro/': typeof AuthenticatedFinanceiroIndexRoute
   '/marketing/': typeof AuthenticatedMarketingIndexRoute
+  '/whatsapp/': typeof AuthenticatedWhatsappIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -223,9 +261,13 @@ export interface FileRoutesByTo {
   '/marketing/ia': typeof AuthenticatedMarketingIaRoute
   '/marketing/jornadas': typeof AuthenticatedMarketingJornadasRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
+  '/whatsapp/$id': typeof AuthenticatedWhatsappIdRoute
+  '/whatsapp/config': typeof AuthenticatedWhatsappConfigRoute
+  '/whatsapp/templates': typeof AuthenticatedWhatsappTemplatesRoute
   '/aura-ia': typeof AuthenticatedAuraIaIndexRoute
   '/financeiro': typeof AuthenticatedFinanceiroIndexRoute
   '/marketing': typeof AuthenticatedMarketingIndexRoute
+  '/whatsapp': typeof AuthenticatedWhatsappIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -241,6 +283,7 @@ export interface FileRoutesById {
   '/_authenticated/mais': typeof AuthenticatedMaisRoute
   '/_authenticated/marketing': typeof AuthenticatedMarketingRouteWithChildren
   '/_authenticated/servicos': typeof AuthenticatedServicosRouteWithChildren
+  '/_authenticated/whatsapp': typeof AuthenticatedWhatsappRouteWithChildren
   '/_authenticated/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
   '/_authenticated/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
   '/_authenticated/clientes/$id': typeof AuthenticatedClientesIdRoute
@@ -252,9 +295,13 @@ export interface FileRoutesById {
   '/_authenticated/marketing/ia': typeof AuthenticatedMarketingIaRoute
   '/_authenticated/marketing/jornadas': typeof AuthenticatedMarketingJornadasRoute
   '/_authenticated/servicos/$id': typeof AuthenticatedServicosIdRoute
+  '/_authenticated/whatsapp/$id': typeof AuthenticatedWhatsappIdRoute
+  '/_authenticated/whatsapp/config': typeof AuthenticatedWhatsappConfigRoute
+  '/_authenticated/whatsapp/templates': typeof AuthenticatedWhatsappTemplatesRoute
   '/_authenticated/aura-ia/': typeof AuthenticatedAuraIaIndexRoute
   '/_authenticated/financeiro/': typeof AuthenticatedFinanceiroIndexRoute
   '/_authenticated/marketing/': typeof AuthenticatedMarketingIndexRoute
+  '/_authenticated/whatsapp/': typeof AuthenticatedWhatsappIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -270,6 +317,7 @@ export interface FileRouteTypes {
     | '/mais'
     | '/marketing'
     | '/servicos'
+    | '/whatsapp'
     | '/aura-ia/chat'
     | '/aura-ia/conselho'
     | '/clientes/$id'
@@ -281,9 +329,13 @@ export interface FileRouteTypes {
     | '/marketing/ia'
     | '/marketing/jornadas'
     | '/servicos/$id'
+    | '/whatsapp/$id'
+    | '/whatsapp/config'
+    | '/whatsapp/templates'
     | '/aura-ia/'
     | '/financeiro/'
     | '/marketing/'
+    | '/whatsapp/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -305,9 +357,13 @@ export interface FileRouteTypes {
     | '/marketing/ia'
     | '/marketing/jornadas'
     | '/servicos/$id'
+    | '/whatsapp/$id'
+    | '/whatsapp/config'
+    | '/whatsapp/templates'
     | '/aura-ia'
     | '/financeiro'
     | '/marketing'
+    | '/whatsapp'
   id:
     | '__root__'
     | '/'
@@ -322,6 +378,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mais'
     | '/_authenticated/marketing'
     | '/_authenticated/servicos'
+    | '/_authenticated/whatsapp'
     | '/_authenticated/aura-ia/chat'
     | '/_authenticated/aura-ia/conselho'
     | '/_authenticated/clientes/$id'
@@ -333,9 +390,13 @@ export interface FileRouteTypes {
     | '/_authenticated/marketing/ia'
     | '/_authenticated/marketing/jornadas'
     | '/_authenticated/servicos/$id'
+    | '/_authenticated/whatsapp/$id'
+    | '/_authenticated/whatsapp/config'
+    | '/_authenticated/whatsapp/templates'
     | '/_authenticated/aura-ia/'
     | '/_authenticated/financeiro/'
     | '/_authenticated/marketing/'
+    | '/_authenticated/whatsapp/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -366,6 +427,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/whatsapp': {
+      id: '/_authenticated/whatsapp'
+      path: '/whatsapp'
+      fullPath: '/whatsapp'
+      preLoaderRoute: typeof AuthenticatedWhatsappRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/servicos': {
       id: '/_authenticated/servicos'
@@ -430,6 +498,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAgendaRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/whatsapp/': {
+      id: '/_authenticated/whatsapp/'
+      path: '/'
+      fullPath: '/whatsapp/'
+      preLoaderRoute: typeof AuthenticatedWhatsappIndexRouteImport
+      parentRoute: typeof AuthenticatedWhatsappRoute
+    }
     '/_authenticated/marketing/': {
       id: '/_authenticated/marketing/'
       path: '/'
@@ -450,6 +525,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/aura-ia/'
       preLoaderRoute: typeof AuthenticatedAuraIaIndexRouteImport
       parentRoute: typeof AuthenticatedAuraIaRoute
+    }
+    '/_authenticated/whatsapp/templates': {
+      id: '/_authenticated/whatsapp/templates'
+      path: '/templates'
+      fullPath: '/whatsapp/templates'
+      preLoaderRoute: typeof AuthenticatedWhatsappTemplatesRouteImport
+      parentRoute: typeof AuthenticatedWhatsappRoute
+    }
+    '/_authenticated/whatsapp/config': {
+      id: '/_authenticated/whatsapp/config'
+      path: '/config'
+      fullPath: '/whatsapp/config'
+      preLoaderRoute: typeof AuthenticatedWhatsappConfigRouteImport
+      parentRoute: typeof AuthenticatedWhatsappRoute
+    }
+    '/_authenticated/whatsapp/$id': {
+      id: '/_authenticated/whatsapp/$id'
+      path: '/$id'
+      fullPath: '/whatsapp/$id'
+      preLoaderRoute: typeof AuthenticatedWhatsappIdRouteImport
+      parentRoute: typeof AuthenticatedWhatsappRoute
     }
     '/_authenticated/servicos/$id': {
       id: '/_authenticated/servicos/$id'
@@ -623,6 +719,25 @@ const AuthenticatedServicosRouteWithChildren =
     AuthenticatedServicosRouteChildren,
   )
 
+interface AuthenticatedWhatsappRouteChildren {
+  AuthenticatedWhatsappIdRoute: typeof AuthenticatedWhatsappIdRoute
+  AuthenticatedWhatsappConfigRoute: typeof AuthenticatedWhatsappConfigRoute
+  AuthenticatedWhatsappTemplatesRoute: typeof AuthenticatedWhatsappTemplatesRoute
+  AuthenticatedWhatsappIndexRoute: typeof AuthenticatedWhatsappIndexRoute
+}
+
+const AuthenticatedWhatsappRouteChildren: AuthenticatedWhatsappRouteChildren = {
+  AuthenticatedWhatsappIdRoute: AuthenticatedWhatsappIdRoute,
+  AuthenticatedWhatsappConfigRoute: AuthenticatedWhatsappConfigRoute,
+  AuthenticatedWhatsappTemplatesRoute: AuthenticatedWhatsappTemplatesRoute,
+  AuthenticatedWhatsappIndexRoute: AuthenticatedWhatsappIndexRoute,
+}
+
+const AuthenticatedWhatsappRouteWithChildren =
+  AuthenticatedWhatsappRoute._addFileChildren(
+    AuthenticatedWhatsappRouteChildren,
+  )
+
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAgendaRoute: typeof AuthenticatedAgendaRoute
   AuthenticatedAuraIaRoute: typeof AuthenticatedAuraIaRouteWithChildren
@@ -633,6 +748,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMaisRoute: typeof AuthenticatedMaisRoute
   AuthenticatedMarketingRoute: typeof AuthenticatedMarketingRouteWithChildren
   AuthenticatedServicosRoute: typeof AuthenticatedServicosRouteWithChildren
+  AuthenticatedWhatsappRoute: typeof AuthenticatedWhatsappRouteWithChildren
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -645,6 +761,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMaisRoute: AuthenticatedMaisRoute,
   AuthenticatedMarketingRoute: AuthenticatedMarketingRouteWithChildren,
   AuthenticatedServicosRoute: AuthenticatedServicosRouteWithChildren,
+  AuthenticatedWhatsappRoute: AuthenticatedWhatsappRouteWithChildren,
 }
 
 const AuthenticatedRouteRouteWithChildren =

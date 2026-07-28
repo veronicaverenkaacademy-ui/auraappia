@@ -1,0 +1,452 @@
+// Mock WhatsApp module data + shared types (frontend-only for now).
+// Real Meta Cloud API / Twilio / 360dialog integration will plug into these
+// same shapes via server functions later.
+
+export type Provider = "meta" | "twilio" | "360dialog" | "gupshup" | "infobip";
+
+export const PROVIDER_LABEL: Record<Provider, string> = {
+  meta: "Meta Cloud API",
+  twilio: "Twilio",
+  "360dialog": "360dialog",
+  gupshup: "Gupshup",
+  infobip: "Infobip",
+};
+
+export type ConnectionStatus = {
+  provider: Provider;
+  phone: string;
+  displayName: string;
+  status: "connected" | "pending" | "error" | "disconnected";
+  qualityRating: "high" | "medium" | "low";
+  messagingLimit: string;
+  templatesApproved: number;
+  templatesTotal: number;
+  lastSyncAt: string;
+};
+
+export const connection: ConnectionStatus = {
+  provider: "meta",
+  phone: "+55 11 98765-4321",
+  displayName: "Studio Verônica",
+  status: "connected",
+  qualityRating: "high",
+  messagingLimit: "1.000 conversas iniciadas / 24h",
+  templatesApproved: 12,
+  templatesTotal: 14,
+  lastSyncAt: "há 2 min",
+};
+
+export type ConversationHandler = "ai" | "human" | "done";
+export type ClientTag = "vip" | "nova" | "recorrente" | "inativa";
+
+export type Conversation = {
+  id: string;
+  clientName: string;
+  initials: string;
+  lastMessagePreview: string;
+  lastMessageBy: "aura" | "client" | "you";
+  time: string;
+  unread: number;
+  handler: ConversationHandler;
+  tag?: ClientTag;
+  channel: "whatsapp";
+  lastAppointment?: string;
+  nextMaintenance?: string;
+  spent?: number;
+};
+
+export const conversations: Conversation[] = [
+  {
+    id: "c-marina",
+    clientName: "Marina Costa",
+    initials: "MC",
+    lastMessagePreview: "Aura: Tenho quinta às 14h ou sexta às 10h 😊",
+    lastMessageBy: "aura",
+    time: "09:41",
+    unread: 0,
+    handler: "ai",
+    tag: "vip",
+    channel: "whatsapp",
+    lastAppointment: "12/07 · Volume Brasileiro",
+    nextMaintenance: "no tempo certo",
+    spent: 2340,
+  },
+  {
+    id: "c-juliana",
+    clientName: "Juliana Santos",
+    initials: "JS",
+    lastMessagePreview: "Cliente: Posso pagar parcelado no cartão?",
+    lastMessageBy: "client",
+    time: "09:12",
+    unread: 2,
+    handler: "human",
+    tag: "recorrente",
+    channel: "whatsapp",
+    lastAppointment: "28/06 · Lash Lifting",
+    spent: 890,
+  },
+  {
+    id: "c-larissa",
+    clientName: "Larissa Mendes",
+    initials: "LM",
+    lastMessagePreview: "Aura: Perfeito! Agendado para terça às 9h ✅",
+    lastMessageBy: "aura",
+    time: "08:55",
+    unread: 0,
+    handler: "ai",
+    tag: "nova",
+    channel: "whatsapp",
+    spent: 180,
+  },
+  {
+    id: "c-amanda",
+    clientName: "Amanda Silva",
+    initials: "AS",
+    lastMessagePreview: "Aura: Que bom te ver por aqui de novo! 💛",
+    lastMessageBy: "aura",
+    time: "ontem",
+    unread: 0,
+    handler: "done",
+    tag: "inativa",
+    channel: "whatsapp",
+    lastAppointment: "há 62 dias",
+    spent: 540,
+  },
+  {
+    id: "c-patricia",
+    clientName: "Patricia Lima",
+    initials: "PL",
+    lastMessagePreview: "Cliente: Vocês fazem sobrancelha também?",
+    lastMessageBy: "client",
+    time: "ontem",
+    unread: 1,
+    handler: "human",
+    channel: "whatsapp",
+  },
+  {
+    id: "c-beatriz",
+    clientName: "Beatriz Rocha",
+    initials: "BR",
+    lastMessagePreview: "Aura: Enviei o PIX no valor de R$ 180 💛",
+    lastMessageBy: "aura",
+    time: "ontem",
+    unread: 0,
+    handler: "ai",
+    tag: "recorrente",
+    channel: "whatsapp",
+    spent: 1560,
+  },
+];
+
+export type MessageKind = "text" | "slots" | "location" | "payment" | "system";
+
+export type ChatMessage = {
+  id: string;
+  direction: "in" | "out";
+  kind: MessageKind;
+  content: string;
+  time: string;
+  slots?: string[];
+  status?: "sent" | "delivered" | "read";
+  author?: "aura" | "you";
+};
+
+export const sampleConversation: {
+  clientId: string;
+  aiSummary: {
+    intent: string;
+    action: string;
+    calendarUpdated: boolean;
+    confidence: number;
+  };
+  messages: ChatMessage[];
+} = {
+  clientId: "c-marina",
+  aiSummary: {
+    intent: "Agendamento",
+    action: "Reserva confirmada",
+    calendarUpdated: true,
+    confidence: 98,
+  },
+  messages: [
+    {
+      id: "m1",
+      direction: "in",
+      kind: "text",
+      content: "Oi Aura! Será que tem horário essa semana pra Volume Brasileiro?",
+      time: "09:38",
+    },
+    {
+      id: "m2",
+      direction: "out",
+      author: "aura",
+      kind: "slots",
+      content:
+        "Oii Marina 💛 Vi aqui que você costuma fazer manutenção a cada 19 dias — já está no tempinho certo. Tenho estes horários disponíveis:",
+      slots: ["Qui · 14h", "Sex · 10h", "Sex · 16h"],
+      time: "09:39",
+      status: "read",
+    },
+    {
+      id: "m3",
+      direction: "in",
+      kind: "text",
+      content: "Sexta às 10h fica ótimo!",
+      time: "09:40",
+    },
+    {
+      id: "m4",
+      direction: "out",
+      author: "aura",
+      kind: "text",
+      content:
+        "Perfeito! Agendei seu Volume Brasileiro para sexta, 31/07 às 10h. Valor R$ 180. Vou te enviar um lembrete um dia antes 😊",
+      time: "09:41",
+      status: "read",
+    },
+    {
+      id: "m5",
+      direction: "out",
+      author: "aura",
+      kind: "text",
+      content:
+        "Só um detalhe: evite maquiagem nos olhos no dia e chegue 10 minutinhos antes. Nos vemos lá! ✨",
+      time: "09:41",
+      status: "delivered",
+    },
+  ],
+};
+
+export type TemplateStatus = "approved" | "pending" | "rejected" | "draft";
+export type TemplateCategory =
+  | "confirmacao"
+  | "lembrete"
+  | "reativacao"
+  | "pos"
+  | "cobranca"
+  | "boas_vindas";
+
+export const TEMPLATE_CATEGORY_LABEL: Record<TemplateCategory, string> = {
+  confirmacao: "Confirmação",
+  lembrete: "Lembrete",
+  reativacao: "Reativação",
+  pos: "Pós-atendimento",
+  cobranca: "Cobrança",
+  boas_vindas: "Boas-vindas",
+};
+
+export type Template = {
+  id: string;
+  name: string;
+  category: TemplateCategory;
+  status: TemplateStatus;
+  language: "pt_BR";
+  body: string;
+  variables: string[];
+  version: string;
+  updatedAt: string;
+};
+
+export const templates: Template[] = [
+  {
+    id: "t-conf",
+    name: "Confirmação de agendamento",
+    category: "confirmacao",
+    status: "approved",
+    language: "pt_BR",
+    body: "Olá {{nome}}! Seu horário para {{procedimento}} foi confirmado para {{data}} às {{hora}}.",
+    variables: ["nome", "procedimento", "data", "hora"],
+    version: "v3",
+    updatedAt: "12/07",
+  },
+  {
+    id: "t-lembrete24",
+    name: "Lembrete 24h",
+    category: "lembrete",
+    status: "approved",
+    language: "pt_BR",
+    body: "Passando para lembrar do seu horário amanhã às {{hora}} 💛 Confirma pra mim?",
+    variables: ["hora"],
+    version: "v2",
+    updatedAt: "05/07",
+  },
+  {
+    id: "t-lembrete2",
+    name: "Lembrete 2h antes",
+    category: "lembrete",
+    status: "approved",
+    language: "pt_BR",
+    body: "Faltam 2h para o seu {{procedimento}}, {{nome}}! Endereço: {{endereco}}.",
+    variables: ["nome", "procedimento", "endereco"],
+    version: "v1",
+    updatedAt: "01/07",
+  },
+  {
+    id: "t-reativ30",
+    name: "Reativação 30 dias",
+    category: "reativacao",
+    status: "pending",
+    language: "pt_BR",
+    body: "Sentimos sua falta, {{nome}}! Que tal agendar sua manutenção com 10% off?",
+    variables: ["nome"],
+    version: "v1",
+    updatedAt: "hoje",
+  },
+  {
+    id: "t-pos",
+    name: "Pós-atendimento",
+    category: "pos",
+    status: "approved",
+    language: "pt_BR",
+    body: "Obrigada pela visita, {{nome}}! Envio os cuidados: {{cuidados}}. Nos vemos em breve 💛",
+    variables: ["nome", "cuidados"],
+    version: "v4",
+    updatedAt: "28/06",
+  },
+  {
+    id: "t-cobranca",
+    name: "PIX pendente",
+    category: "cobranca",
+    status: "approved",
+    language: "pt_BR",
+    body: "Segue o PIX de R$ {{valor}} para sua reserva. Chave: {{chave}}. Assim que confirmar, aviso 🙏",
+    variables: ["valor", "chave"],
+    version: "v2",
+    updatedAt: "20/06",
+  },
+  {
+    id: "t-boasvindas",
+    name: "Boas-vindas novas clientes",
+    category: "boas_vindas",
+    status: "draft",
+    language: "pt_BR",
+    body: "Que alegria te receber por aqui, {{nome}}! Sou a Aura, assistente do Studio. Como posso ajudar?",
+    variables: ["nome"],
+    version: "rascunho",
+    updatedAt: "hoje",
+  },
+];
+
+export type WhatsAppStats = {
+  sentMonth: number;
+  deliveryRate: number;
+  readRate: number;
+  avgResponseSec: number;
+  openConversations: number;
+  closedConversations: number;
+  aiBookings: number;
+  aiBookingsShare: number;
+  reschedules: number;
+  cancellations: number;
+  attributedRevenue: number;
+  handoverRate: number;
+};
+
+export const whatsappStats: WhatsAppStats = {
+  sentMonth: 1240,
+  deliveryRate: 98,
+  readRate: 87,
+  avgResponseSec: 38,
+  openConversations: 24,
+  closedConversations: 168,
+  aiBookings: 86,
+  aiBookingsShare: 62,
+  reschedules: 14,
+  cancellations: 7,
+  attributedRevenue: 9240,
+  handoverRate: 12,
+};
+
+export const currency = (v: number) =>
+  v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+export function conversationById(id: string): Conversation | undefined {
+  return conversations.find((c) => c.id === id);
+}
+
+export const HANDLER_LABEL: Record<ConversationHandler, string> = {
+  ai: "Aura IA",
+  human: "Sua vez",
+  done: "Resolvida",
+};
+
+export const TAG_LABEL: Record<ClientTag, string> = {
+  vip: "VIP",
+  nova: "Nova",
+  recorrente: "Recorrente",
+  inativa: "Inativa",
+};
+
+export const TEMPLATE_STATUS_LABEL: Record<TemplateStatus, string> = {
+  approved: "Aprovado",
+  pending: "Em análise",
+  rejected: "Rejeitado",
+  draft: "Rascunho",
+};
+
+export type AiCapability = {
+  id: string;
+  title: string;
+  description: string;
+  active: boolean;
+  requiresConfirmation: boolean;
+};
+
+export const aiCapabilities: AiCapability[] = [
+  {
+    id: "book",
+    title: "Agendar horários",
+    description: "Consulta a agenda em tempo real e reserva o slot escolhido.",
+    active: true,
+    requiresConfirmation: false,
+  },
+  {
+    id: "reschedule",
+    title: "Remarcar",
+    description: "Libera o horário antigo e propõe novos slots disponíveis.",
+    active: true,
+    requiresConfirmation: false,
+  },
+  {
+    id: "cancel",
+    title: "Cancelar",
+    description: "Cancela, registra motivo e oferece reagendar.",
+    active: true,
+    requiresConfirmation: true,
+  },
+  {
+    id: "charge",
+    title: "Enviar cobrança PIX",
+    description: "Gera PIX de reserva e registra pagamento após confirmação.",
+    active: true,
+    requiresConfirmation: false,
+  },
+  {
+    id: "location",
+    title: "Enviar localização",
+    description: "Compartilha endereço, mapa e botão de navegação.",
+    active: true,
+    requiresConfirmation: false,
+  },
+  {
+    id: "prep",
+    title: "Instruções de preparo",
+    description: "Envia orientações específicas do procedimento agendado.",
+    active: true,
+    requiresConfirmation: false,
+  },
+  {
+    id: "aftercare",
+    title: "Pós-atendimento",
+    description: "Cuidados, pesquisa de satisfação e convite para retorno.",
+    active: true,
+    requiresConfirmation: false,
+  },
+  {
+    id: "handover",
+    title: "Transferir para humano",
+    description: "Encaminha ao profissional quando a confiança está baixa.",
+    active: true,
+    requiresConfirmation: false,
+  },
+];
