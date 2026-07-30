@@ -47,6 +47,39 @@ export type ClientPhoto = {
   created_at: string;
 };
 
+/**
+ * DIAGNÓSTICO TEMPORÁRIO — remover depois de confirmada a causa raiz real do
+ * "Não autenticado" reportado nas escritas de cliente pela Agenda. Loga o estado
+ * completo de sessão/usuário no console e embute o motivo técnico exato na mensagem
+ * de erro (que aparece no toast), em vez do "Não autenticado" genérico.
+ */
+async function requireUser(callSite: string) {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  const session = sessionData.session;
+
+  if (sessionError || !session?.user) {
+    const { data: userCheck, error: userError } = await supabase.auth.getUser();
+    const diagnostics = {
+      callSite,
+      sessionError: sessionError ? { message: sessionError.message, name: sessionError.name } : null,
+      hasSession: !!session,
+      sessionExpiresAt: session?.expires_at ? new Date(session.expires_at * 1000).toISOString() : null,
+      nowIso: new Date().toISOString(),
+      getUserError: userError ? { message: userError.message, name: userError.name, status: (userError as { status?: number }).status } : null,
+      getUserFoundUser: !!userCheck?.user,
+    };
+    // eslint-disable-next-line no-console
+    console.error("[requireUser] Falha de autenticação —", diagnostics);
+
+    const detail = sessionError?.message
+      ?? userError?.message
+      ?? (session ? "sessão encontrada, mas sem usuário" : "nenhuma sessão encontrada no navegador (localStorage)");
+    throw new Error(`Não autenticado (${callSite}: ${detail})`);
+  }
+
+  return session.user;
+}
+
 export async function listClients(): Promise<Client[]> {
   const { data, error } = await supabase
     .from("clients")
@@ -63,10 +96,7 @@ export async function getClient(id: string): Promise<Client> {
 }
 
 export async function upsertClient(input: Partial<Client> & { full_name: string }): Promise<Client> {
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError) throw sessionError;
-  const user = sessionData.session?.user;
-  if (!user) throw new Error("Não autenticado");
+  const user = await requireUser("upsertClient");
   const payload = { ...input, owner_id: user.id };
   const { data, error } = await supabase.from("clients").upsert(payload).select().single();
   if (error) throw error;
@@ -89,10 +119,7 @@ export async function getAnamnesis(clientId: string): Promise<Anamnesis | null> 
 }
 
 export async function upsertAnamnesis(clientId: string, input: Partial<Anamnesis>): Promise<void> {
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError) throw sessionError;
-  const user = sessionData.session?.user;
-  if (!user) throw new Error("Não autenticado");
+  const user = await requireUser("upsertAnamnesis");
   const { error } = await supabase
     .from("client_anamnesis")
     .upsert({ ...input, client_id: clientId, owner_id: user.id });
@@ -125,10 +152,7 @@ export async function listPhotos(clientId: string): Promise<(ClientPhoto & { url
 }
 
 export async function uploadPhoto(clientId: string, file: File, kind: string, caption?: string) {
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError) throw sessionError;
-  const user = sessionData.session?.user;
-  if (!user) throw new Error("Não autenticado");
+  const user = await requireUser("uploadPhoto");
   const ext = file.name.split(".").pop() ?? "jpg";
   const path = `${user.id}/${clientId}/${crypto.randomUUID()}.${ext}`;
   const { error: upErr } = await supabase.storage.from("client-photos").upload(path, file, {
