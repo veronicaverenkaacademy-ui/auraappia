@@ -63,9 +63,11 @@ export async function getClient(id: string): Promise<Client> {
 }
 
 export async function upsertClient(input: Partial<Client> & { full_name: string }): Promise<Client> {
-  const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user) throw new Error("Não autenticado");
-  const payload = { ...input, owner_id: userData.user.id };
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+  const user = sessionData.session?.user;
+  if (!user) throw new Error("Não autenticado");
+  const payload = { ...input, owner_id: user.id };
   const { data, error } = await supabase.from("clients").upsert(payload).select().single();
   if (error) throw error;
   return data as Client;
@@ -87,11 +89,13 @@ export async function getAnamnesis(clientId: string): Promise<Anamnesis | null> 
 }
 
 export async function upsertAnamnesis(clientId: string, input: Partial<Anamnesis>): Promise<void> {
-  const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user) throw new Error("Não autenticado");
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+  const user = sessionData.session?.user;
+  if (!user) throw new Error("Não autenticado");
   const { error } = await supabase
     .from("client_anamnesis")
-    .upsert({ ...input, client_id: clientId, owner_id: userData.user.id });
+    .upsert({ ...input, client_id: clientId, owner_id: user.id });
   if (error) throw error;
 }
 
@@ -121,17 +125,19 @@ export async function listPhotos(clientId: string): Promise<(ClientPhoto & { url
 }
 
 export async function uploadPhoto(clientId: string, file: File, kind: string, caption?: string) {
-  const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user) throw new Error("Não autenticado");
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+  const user = sessionData.session?.user;
+  if (!user) throw new Error("Não autenticado");
   const ext = file.name.split(".").pop() ?? "jpg";
-  const path = `${userData.user.id}/${clientId}/${crypto.randomUUID()}.${ext}`;
+  const path = `${user.id}/${clientId}/${crypto.randomUUID()}.${ext}`;
   const { error: upErr } = await supabase.storage.from("client-photos").upload(path, file, {
     contentType: file.type,
     upsert: false,
   });
   if (upErr) throw upErr;
   const { error: insErr } = await supabase.from("client_photos").insert({
-    owner_id: userData.user.id,
+    owner_id: user.id,
     client_id: clientId,
     storage_path: path,
     kind,
