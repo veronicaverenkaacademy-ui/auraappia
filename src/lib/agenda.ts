@@ -34,10 +34,15 @@ export type AgendaBlock = {
   professional: { id: string; full_name: string; agenda_color: string | null } | null;
 };
 
+// Usa getSession() (lê a sessão já em memória/local storage) em vez de getUser() (faz uma
+// chamada de rede ao vivo pra revalidar). Todo o resto da tela já depende só da sessão local
+// pro RLS funcionar — getUser() aqui era um ponto de falha extra e desnecessário.
 async function uid() {
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) throw new Error("Não autenticado");
-  return data.user.id;
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  const user = data.session?.user;
+  if (!user) throw new Error("Não autenticado");
+  return user.id;
 }
 
 const APPT_SELECT =
