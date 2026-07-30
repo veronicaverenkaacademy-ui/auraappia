@@ -41,7 +41,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import {
   cancelAppointment,
@@ -660,6 +659,15 @@ function ActionBtn({
 }
 
 // ---------- Client picker (busca real em clients + criação rápida inline) ----------
+//
+// Importante: NÃO usar o componente `cmdk` (Command/CommandEmpty) aqui. `CommandEmpty`
+// desmonta a própria árvore (`return null`) sempre que seu estado interno de filtro
+// recalcula — o que acontece a cada re-render do componente pai (ex.: lista de clientes
+// chegando do Supabase, relógio da Agenda batendo minuto). Um mini-formulário com estado
+// próprio (nome/telefone) e envio assíncrono dentro dessa árvore condicional pode ser
+// desmontado no meio da interação, apagando o texto digitado ou interrompendo o clique
+// entre o mousedown e o click — sem lançar nenhuma exceção. Por isso a lista + criação
+// aqui são só React state simples, sem nenhuma lib de terceiros controlando montagem.
 function ClientPicker({
   clients, value, onChange,
 }: {
@@ -670,9 +678,17 @@ function ClientPicker({
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [search, setSearch] = useState("");
   const [newName, setNewName] = useState("");
   const [newPhone, setNewPhone] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
   const selected = clients.find((c) => c.id === value);
+
+  const filteredClients = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return clients;
+    return clients.filter((c) => c.full_name.toLowerCase().includes(q) || (c.phone ?? "").includes(q));
+  }, [clients, search]);
 
   const create = useMutation({
     mutationFn: () => upsertClient({ full_name: newName.trim(), phone: newPhone.trim() || null }),
@@ -680,50 +696,70 @@ function ClientPicker({
       qc.invalidateQueries({ queryKey: ["clients"] });
       onChange(c.id, c.full_name);
       toast.success("Cliente cadastrada");
-      setCreating(false); setOpen(false); setNewName(""); setNewPhone("");
+      setCreating(false); setOpen(false); setNewName(""); setNewPhone(""); setSearch(""); setCreateError(null);
     },
-    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Erro ao cadastrar cliente"),
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : "Erro ao cadastrar cliente";
+      setCreateError(msg);
+      toast.error(msg);
+    },
   });
 
+  const startCreating = () => { setCreateError(null); setNewName(search); setCreating(true); };
+
   return (
-    <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) setCreating(false); }}>
+    <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setCreating(false); setCreateError(null); } }}>
       <PopoverTrigger asChild>
         <button type="button" className="w-full h-11 rounded-xl bg-secondary px-3 text-left text-sm flex items-center justify-between">
           <span className={selected ? "" : "text-muted-foreground"}>{selected ? selected.full_name : "Selecionar cliente"}</span>
           <User className="w-4 h-4 text-muted-foreground shrink-0" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-[320px] p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Buscar cliente…" onValueChange={(v) => !creating && setNewName(v)} />
-          <CommandList>
-            <CommandEmpty>
-              <div className="p-3 space-y-2">
-                <p className="text-xs text-muted-foreground">Nenhuma cliente encontrada.</p>
-                {!creating ? (
-                  <Button size="sm" variant="outline" className="w-full rounded-xl" onClick={() => setCreating(true)}>
-                    <UserPlus className="w-3.5 h-3.5 mr-1.5" /> Criar nova cliente
-                  </Button>
-                ) : (
-                  <div className="space-y-2">
-                    <Input placeholder="Nome completo" value={newName} onChange={(e) => setNewName(e.target.value)} className="h-9" autoFocus />
-                    <Input placeholder="Telefone (opcional)" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="h-9" />
-                    <Button size="sm" className="w-full rounded-xl" disabled={newName.trim().length < 2 || create.isPending} onClick={() => create.mutate()}>
-                      {create.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Cadastrar e selecionar"}
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </CommandEmpty>
-            <CommandGroup>
-              {clients.map((c) => (
-                <CommandItem key={c.id} value={c.full_name} onSelect={() => { onChange(c.id, c.full_name); setOpen(false); }}>
-                  {c.full_name}{c.phone ? ` · ${c.phone}` : ""}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
+      <PopoverContent className="w-[320px]" align="start">
+        {!creating ? (
+          <div className="space-y-2">
+            <Input placeholder="Buscar cliente…" value={search} onChange={(e) => setSearch(e.target.value)} className="h-9" autoFocus />
+            <div className="max-h-56 overflow-y-auto -mx-1 px-1">
+              {filteredClients.length === 0 ? (
+                <div className="py-4 text-center text-xs text-muted-foreground">Nenhuma cliente encontrada.</div>
+              ) : (
+                filteredClients.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => { onChange(c.id, c.full_name); setOpen(false); setSearch(""); }}
+                    className="w-full text-left rounded-lg px-2 py-2 text-sm hover:bg-secondary transition"
+                  >
+                    {c.full_name}{c.phone ? ` · ${c.phone}` : ""}
+                  </button>
+                ))
+              )}
+            </div>
+            <Button type="button" size="sm" variant="outline" className="w-full rounded-xl" onClick={startCreating}>
+              <UserPlus className="w-3.5 h-3.5 mr-1.5" /> Criar nova cliente
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Input placeholder="Nome completo" value={newName} onChange={(e) => setNewName(e.target.value)} className="h-9" autoFocus />
+            <Input placeholder="Telefone (opcional)" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="h-9" />
+            {createError && <p className="text-xs text-destructive">{createError}</p>}
+            <div className="flex gap-2">
+              <Button type="button" size="sm" variant="ghost" className="flex-1 rounded-xl" onClick={() => { setCreating(false); setCreateError(null); }}>
+                Voltar
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="flex-1 rounded-xl"
+                disabled={newName.trim().length < 2 || create.isPending}
+                onClick={() => { setCreateError(null); create.mutate(); }}
+              >
+                {create.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Cadastrar e selecionar"}
+              </Button>
+            </div>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );
