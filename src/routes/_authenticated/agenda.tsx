@@ -1,34 +1,72 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import {
+  Ban,
   Bell,
-  Calendar as CalIcon,
   Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock,
-  Copy,
-  Coffee,
+  DollarSign,
   Filter,
-  Instagram,
-  MessageCircle,
-  Package,
+  Loader2,
+  Pencil,
   Phone,
   Plus,
   RotateCcw,
   Search,
   Sparkles,
   User,
+  UserPlus,
   X,
-  AlertTriangle,
-  DollarSign,
-  Gift,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
+import {
+  cancelAppointment,
+  completeAppointment,
+  confirmAppointment,
+  createAppointment,
+  createBlock,
+  deleteBlock,
+  findConflicts,
+  formatBRL,
+  getCompletionPreview,
+  getRevertPreview,
+  listAppointmentsRange,
+  listBlocksRange,
+  revertCompleted,
+  updateAppointment,
+  updateAppointmentTime,
+  type AgendaBlock,
+  type Appointment,
+  type AppointmentStatus,
+  type ConflictItem,
+} from "@/lib/agenda";
+import { listClients, upsertClient, type Client } from "@/lib/clients";
+import { listServices, type Service } from "@/lib/catalog";
+import { listTeamMembers, type TeamMember } from "@/lib/team";
 
 export const Route = createFileRoute("/_authenticated/agenda")({
   head: () => ({
@@ -41,76 +79,30 @@ export const Route = createFileRoute("/_authenticated/agenda")({
   component: Agenda,
 });
 
-// ---------- Types & mock data ----------
-type Status = "scheduled" | "confirmed" | "waiting" | "cancelled" | "in_progress" | "done";
-
-type Appt = {
-  id: string;
-  day: number; // offset from Monday 0..5
-  start: number; // decimal hour
-  duration: number; // hours
-  name: string;
-  service: string;
-  price: number;
-  status: Status;
-  phone?: string;
-  instagram?: string;
-  avatar?: string;
-};
-
-type Marker = {
-  day: number;
-  at: number;
-  kind: "confirm" | "stock" | "goal" | "birthday" | "cleaning" | "lunch";
-  text: string;
-};
-
+// ---------- Constants ----------
 const HOUR_H = 64;
 const HOURS = Array.from({ length: 12 }, (_, i) => 8 + i); // 8..19
 
-const STATUS: Record<Status, { label: string; dot: string; ring: string; bg: string }> = {
-  scheduled: { label: "Agendado", dot: "bg-muted-foreground/60", ring: "border-border", bg: "bg-card" },
-  confirmed: { label: "Confirmado", dot: "bg-success", ring: "border-success/30", bg: "bg-card" },
-  waiting: { label: "Aguardando", dot: "bg-amber-500", ring: "border-amber-500/30", bg: "bg-amber-50/60 dark:bg-amber-500/5" },
-  cancelled: { label: "Cancelado", dot: "bg-destructive", ring: "border-destructive/30", bg: "bg-card opacity-60" },
-  in_progress: { label: "Em atendimento", dot: "bg-blue-500", ring: "border-blue-500/40", bg: "bg-blue-50/60 dark:bg-blue-500/5" },
-  done: { label: "Concluído", dot: "bg-purple-500", ring: "border-purple-500/30", bg: "bg-card" },
+const STATUS: Record<AppointmentStatus, { label: string; dot: string; ring: string; bg: string; badge: string }> = {
+  pending: { label: "Agendado", dot: "bg-muted-foreground/60", ring: "border-border", bg: "bg-card", badge: "bg-secondary text-muted-foreground" },
+  confirmed: { label: "Confirmado", dot: "bg-success", ring: "border-success/30", bg: "bg-card", badge: "bg-success/10 text-success" },
+  completed: { label: "Concluído", dot: "bg-purple-500", ring: "border-purple-500/30", bg: "bg-card", badge: "bg-purple-500/10 text-purple-600 dark:text-purple-400" },
+  cancelled: { label: "Cancelado", dot: "bg-destructive", ring: "border-destructive/30", bg: "bg-card opacity-60", badge: "bg-destructive/10 text-destructive" },
+  no_show: { label: "Não compareceu", dot: "bg-amber-500", ring: "border-amber-500/30", bg: "bg-amber-50/60 dark:bg-amber-500/5", badge: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
 };
 
-const week: Appt[] = [
-  { id: "a1", day: 1, start: 9, duration: 1.5, name: "Marina Costa", service: "Volume Brasileiro", price: 180, status: "in_progress", phone: "(11) 98765-4321", instagram: "@marinacosta" },
-  { id: "a2", day: 1, start: 10.5, duration: 1.5, name: "Isabela Torres", service: "Volume Russo", price: 190, status: "confirmed", phone: "(11) 97777-1122" },
-  { id: "a3", day: 1, start: 12, duration: 1, name: "Beatriz Almeida", service: "Manutenção", price: 170, status: "waiting", phone: "(11) 96666-3344" },
-  { id: "a4", day: 1, start: 14.5, duration: 1.5, name: "Camila Lima", service: "Volume Brasileiro", price: 200, status: "confirmed" },
-  { id: "a5", day: 1, start: 17.5, duration: 1, name: "Julia Mendes", service: "Volume Brasileiro", price: 180, status: "scheduled" },
-  { id: "a6", day: 2, start: 10, duration: 1.5, name: "Ana Prado", service: "Design", price: 90, status: "confirmed" },
-  { id: "a7", day: 2, start: 14, duration: 2, name: "Fernanda Luz", service: "Volume Brasileiro", price: 180, status: "scheduled" },
-  { id: "a8", day: 3, start: 9, duration: 2.5, name: "Renata M.", service: "Volume Russo", price: 190, status: "confirmed" },
-  { id: "a9", day: 3, start: 15, duration: 1, name: "Camila S.", service: "Manutenção", price: 170, status: "scheduled" },
-  { id: "a10", day: 4, start: 11, duration: 2, name: "Laura V.", service: "Volume Brasileiro", price: 180, status: "confirmed" },
-  { id: "a11", day: 5, start: 10, duration: 1, name: "Patricia N.", service: "Sobrancelhas", price: 90, status: "scheduled" },
-  { id: "a12", day: 5, start: 14, duration: 2.5, name: "Tatiana B.", service: "Volume Russo", price: 190, status: "confirmed" },
-];
-
-const markers: Marker[] = [
-  { day: 1, at: 8.5, kind: "confirm", text: "Enviar confirmação para Camila em 30 min" },
-  { day: 1, at: 11.75, kind: "stock", text: "Adesivo atinge estoque mínimo após este atendimento" },
-  { day: 1, at: 13.5, kind: "lunch", text: "Almoço · 30 min" },
-  { day: 1, at: 14, kind: "goal", text: "Meta diária será atingida após o próximo serviço" },
-  { day: 1, at: 15.5, kind: "cleaning", text: "Tempo insuficiente para limpeza entre 15:20 e 15:30" },
-  { day: 1, at: 16.5, kind: "birthday", text: "Juliana faz aniversário amanhã" },
-];
-
-const waitlist = [
-  { name: "Juliana Santos", tag: "VIP", meta: "23 dias sem vir", price: 180 },
-  { name: "Larissa Mendes", tag: "Média", meta: "15 dias sem vir", price: 150 },
-  { name: "Amanda Silva", tag: "Média", meta: "30 dias sem vir", price: 170 },
-  { name: "Patricia Lima", tag: "Baixa", meta: "45 dias sem vir", price: 130 },
-];
-
-// ---------- Helpers ----------
-const fmtBRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+// ---------- Date/time helpers ----------
 const fmtHour = (h: number) => `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.round((h % 1) * 60)).padStart(2, "0")}`;
+const hourOf = (iso: string) => { const d = new Date(iso); return d.getHours() + d.getMinutes() / 60; };
+const toLocalDateStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const toLocalTimeStr = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+const combineLocal = (dateStr: string, timeStr: string) => new Date(`${dateStr}T${timeStr}:00`);
+const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+function dayRangeISO(d: Date) {
+  const from = new Date(d); from.setHours(0, 0, 0, 0);
+  const to = new Date(from); to.setDate(to.getDate() + 1);
+  return { fromISO: from.toISOString(), toISO: to.toISOString() };
+}
 
 function useNow() {
   const [now, setNow] = useState(new Date());
@@ -123,35 +115,43 @@ function useNow() {
 
 // ---------- Main ----------
 type ViewMode = "day" | "week" | "list" | "timeline";
+type Selection = { type: "appointment"; data: Appointment } | { type: "block"; data: AgendaBlock } | null;
+type FormOpen = { mode: "create" | "edit"; appointment?: Appointment; prefillStart?: Date } | null;
 
 function Agenda() {
   const [view, setView] = useState<ViewMode>("day");
-  const [dayOffset, setDayOffset] = useState(0); // for day view (in days from today)
+  const [dayOffset, setDayOffset] = useState(0);
   const [weekOffset, setWeekOffset] = useState(0);
-  const [selected, setSelected] = useState<Appt | null>(null);
+  const [selection, setSelection] = useState<Selection>(null);
+  const [formOpen, setFormOpen] = useState<FormOpen>(null);
+  const [blockFormOpen, setBlockFormOpen] = useState<{ prefillStart?: Date } | null>(null);
 
   const now = useNow();
-
-  // Day-view target date
-  const dayDate = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + dayOffset);
-    return d;
-  }, [dayOffset]);
-
-  // Which weekday slot does today correspond to (0..5, Mon..Sat)
+  const dayDate = useMemo(() => { const d = new Date(); d.setDate(d.getDate() + dayOffset); return d; }, [dayOffset]);
   const todayIdx = (new Date().getDay() + 6) % 7;
 
-  // Appointments for the "day view" mapped from mocked weekday-1 (Tuesday)
-  // We just show the "day 1" set as "today" for demo purposes.
-  const todaysAppts = week.filter((a) => a.day === 1);
-  const todaysMarkers = markers.filter((m) => m.day === 1);
+  const { fromISO: dFrom, toISO: dTo } = useMemo(() => dayRangeISO(dayDate), [dayDate]);
+  const { data: dayAppts = [], isLoading: loadingDay } = useQuery({
+    queryKey: ["appointments", dFrom, dTo],
+    queryFn: () => listAppointmentsRange(dFrom, dTo),
+  });
+  const { data: dayBlocks = [] } = useQuery({
+    queryKey: ["blocks", dFrom, dTo],
+    queryFn: () => listBlocksRange(dFrom, dTo),
+  });
 
-  const revenueToday = todaysAppts.filter((a) => a.status !== "cancelled").reduce((s, a) => s + a.price, 0);
-  const doneCount = todaysAppts.filter((a) => a.status === "done" || a.status === "in_progress").length;
-  const occupancy = Math.round(
-    (todaysAppts.reduce((s, a) => s + a.duration, 0) / HOURS.length) * 100
-  );
+  const { data: clients = [] } = useQuery({ queryKey: ["clients"], queryFn: listClients });
+  const { data: services = [] } = useQuery({ queryKey: ["services"], queryFn: listServices });
+  const { data: team = [] } = useQuery({ queryKey: ["team-members"], queryFn: listTeamMembers });
+  const activeProfessionals = useMemo(() => team.filter((t) => t.status === "active"), [team]);
+
+  const activeAppts = dayAppts.filter((a) => a.status !== "cancelled");
+  const revenueToday = activeAppts.reduce((s, a) => s + Number(a.price), 0);
+  const occupiedHours = activeAppts.reduce((s, a) => s + (new Date(a.ends_at).getTime() - new Date(a.starts_at).getTime()) / 3_600_000, 0);
+  const occupancy = Math.round((occupiedHours / HOURS.length) * 100);
+
+  const openCreate = (prefillStart?: Date) => setFormOpen({ mode: "create", prefillStart });
+  const openEdit = (appointment: Appointment) => { setSelection(null); setFormOpen({ mode: "edit", appointment }); };
 
   return (
     <AppShell
@@ -170,7 +170,10 @@ function Agenda() {
             <Bell className="w-4 h-4" />
             <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-destructive" />
           </Button>
-          <Button size="sm" className="rounded-full h-9 gap-1.5">
+          <Button variant="ghost" size="icon" className="rounded-full h-9 w-9" onClick={() => setBlockFormOpen({})} title="Bloquear horário">
+            <Ban className="w-4 h-4" />
+          </Button>
+          <Button size="sm" className="rounded-full h-9 gap-1.5" onClick={() => openCreate()}>
             <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo</span>
           </Button>
         </>
@@ -201,14 +204,12 @@ function Agenda() {
           </div>
         </div>
 
-        {/* Resumo do dia */}
         <div className="mt-5 grid grid-cols-3 gap-3">
-          <SummaryCard label="atendimentos" value={String(todaysAppts.length).padStart(2, "0")} />
+          <SummaryCard label="atendimentos" value={String(activeAppts.length).padStart(2, "0")} />
           <SummaryCard label="ocupação" value={`${occupancy}%`} />
-          <SummaryCard label="previsto" value={fmtBRL(revenueToday)} />
+          <SummaryCard label="previsto" value={formatBRL(revenueToday)} />
         </div>
 
-        {/* View tabs */}
         <div className="mt-5 -mx-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="flex items-center gap-1 px-1">
             {(["day", "week", "list", "timeline"] as ViewMode[]).map((v) => (
@@ -217,9 +218,7 @@ function Agenda() {
                 onClick={() => setView(v)}
                 className={cn(
                   "px-3.5 h-8 rounded-full text-xs font-medium transition-all whitespace-nowrap",
-                  view === v
-                    ? "bg-foreground text-background"
-                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+                  view === v ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground hover:bg-secondary/60",
                 )}
               >
                 {v === "day" ? "Dia" : v === "week" ? "Semana" : v === "list" ? "Lista" : "Timeline"}
@@ -238,27 +237,58 @@ function Agenda() {
       <main className="flex-1 overflow-auto px-4 md:px-8 pb-10 animate-fade-in">
         {view === "day" && (
           <DayView
-            appts={todaysAppts}
-            markers={todaysMarkers}
+            appts={dayAppts}
+            blocks={dayBlocks}
             now={now}
-            isToday
-            onSelect={setSelected}
+            isToday={dayOffset === 0}
+            loading={loadingDay}
+            baseDate={dayDate}
+            onSelectAppt={(a) => setSelection({ type: "appointment", data: a })}
+            onSelectBlock={(b) => setSelection({ type: "block", data: b })}
+            onCreateAt={(d) => openCreate(d)}
           />
         )}
         {view === "week" && (
-          <WeekView weekOffset={weekOffset} setWeekOffset={setWeekOffset} onSelect={setSelected} todayIdx={todayIdx} />
+          <WeekView
+            weekOffset={weekOffset}
+            setWeekOffset={setWeekOffset}
+            todayIdx={todayIdx}
+            onSelectAppt={(a) => setSelection({ type: "appointment", data: a })}
+          />
         )}
-        {view === "list" && <ListView appts={todaysAppts} markers={todaysMarkers} onSelect={setSelected} />}
-        {view === "timeline" && <ListView appts={todaysAppts} markers={todaysMarkers} onSelect={setSelected} dense />}
+        {view === "list" && (
+          <ListView appts={dayAppts} blocks={dayBlocks} onSelectAppt={(a) => setSelection({ type: "appointment", data: a })} onSelectBlock={(b) => setSelection({ type: "block", data: b })} />
+        )}
+        {view === "timeline" && (
+          <ListView appts={dayAppts} blocks={dayBlocks} onSelectAppt={(a) => setSelection({ type: "appointment", data: a })} onSelectBlock={(b) => setSelection({ type: "block", data: b })} dense />
+        )}
 
-        {/* AI + Waitlist */}
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
-          <AIStrip revenueToday={revenueToday} appts={todaysAppts.length} occupancy={occupancy} />
-          <WaitlistCard />
+        <div className="mt-6">
+          <AIStrip revenueToday={revenueToday} appts={activeAppts.length} occupancy={occupancy} />
         </div>
       </main>
 
-      <AppointmentSheet appt={selected} onClose={() => setSelected(null)} />
+      <AppointmentDetailSheet
+        appointment={selection?.type === "appointment" ? selection.data : null}
+        onClose={() => setSelection(null)}
+        onEdit={openEdit}
+      />
+      <BlockDetailSheet block={selection?.type === "block" ? selection.data : null} onClose={() => setSelection(null)} />
+
+      {formOpen && (
+        <AppointmentFormSheet
+          mode={formOpen.mode}
+          appointment={formOpen.appointment}
+          prefillStart={formOpen.prefillStart}
+          clients={clients}
+          services={services}
+          professionals={activeProfessionals}
+          onClose={() => setFormOpen(null)}
+        />
+      )}
+      {blockFormOpen && (
+        <BlockFormSheet prefillStart={blockFormOpen.prefillStart} professionals={activeProfessionals} onClose={() => setBlockFormOpen(null)} />
+      )}
     </AppShell>
   );
 }
@@ -275,54 +305,49 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
 
 // ---------- Day view ----------
 function DayView({
-  appts,
-  markers,
-  now,
-  isToday,
-  onSelect,
+  appts, blocks, now, isToday, loading, baseDate, onSelectAppt, onSelectBlock, onCreateAt,
 }: {
-  appts: Appt[];
-  markers: Marker[];
+  appts: Appointment[];
+  blocks: AgendaBlock[];
   now: Date;
   isToday: boolean;
-  onSelect: (a: Appt) => void;
+  loading: boolean;
+  baseDate: Date;
+  onSelectAppt: (a: Appointment) => void;
+  onSelectBlock: (b: AgendaBlock) => void;
+  onCreateAt: (d: Date) => void;
 }) {
   const nowH = now.getHours() + now.getMinutes() / 60;
   const showNow = isToday && nowH >= HOURS[0] && nowH <= HOURS[HOURS.length - 1] + 1;
 
+  const handleColumnClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const offsetY = e.clientY - rect.top;
+    const rawHour = HOURS[0] + offsetY / HOUR_H;
+    const snapped = Math.max(HOURS[0], Math.min(HOURS[HOURS.length - 1] + 0.75, Math.round(rawHour * 4) / 4));
+    const d = new Date(baseDate);
+    d.setHours(Math.floor(snapped), Math.round((snapped % 1) * 60), 0, 0);
+    onCreateAt(d);
+  };
+
   return (
     <div className="relative">
       <div className="grid grid-cols-[52px_1fr] gap-3">
-        {/* Hour column */}
         <div className="relative">
           {HOURS.map((h) => (
-            <div
-              key={h}
-              style={{ height: HOUR_H }}
-              className="text-[10px] text-muted-foreground text-right pr-2 -translate-y-1.5 tabular-nums"
-            >
+            <div key={h} style={{ height: HOUR_H }} className="text-[10px] text-muted-foreground text-right pr-2 -translate-y-1.5 tabular-nums">
               {String(h).padStart(2, "0")}:00
             </div>
           ))}
         </div>
 
-        {/* Column */}
-        <div className="relative" style={{ height: HOUR_H * HOURS.length }}>
-          {/* Hour lines */}
+        <div className="relative cursor-cell" style={{ height: HOUR_H * HOURS.length }} onClick={handleColumnClick}>
           {HOURS.map((h, i) => (
-            <div
-              key={h}
-              style={{ top: i * HOUR_H }}
-              className="absolute inset-x-0 border-t border-border/40"
-            />
+            <div key={h} style={{ top: i * HOUR_H }} className="absolute inset-x-0 border-t border-border/40 pointer-events-none" />
           ))}
 
-          {/* Now indicator */}
           {showNow && (
-            <div
-              style={{ top: (nowH - HOURS[0]) * HOUR_H }}
-              className="absolute inset-x-0 z-30 pointer-events-none"
-            >
+            <div style={{ top: (nowH - HOURS[0]) * HOUR_H }} className="absolute inset-x-0 z-30 pointer-events-none">
               <div className="relative">
                 <div className="absolute -left-1 -top-[5px] w-2.5 h-2.5 rounded-full bg-primary shadow-[0_0_0_4px_var(--background)]" />
                 <div className="border-t-2 border-primary" />
@@ -333,90 +358,77 @@ function DayView({
             </div>
           )}
 
-          {/* Markers (contextual) */}
-          {markers.map((m, i) => (
-            <MarkerRow key={i} m={m} />
-          ))}
-
-          {/* Appointments */}
-          {appts.map((a) => (
-            <ApptCard key={a.id} a={a} onSelect={onSelect} />
-          ))}
-
-          {/* Free slots — subtle empty slot at bottom */}
-          <div
-            style={{ top: (16.5 - HOURS[0]) * HOUR_H + 2, height: HOUR_H - 4 }}
-            className="absolute left-1 right-1 rounded-xl border border-dashed border-border/60 flex items-center justify-between px-4 text-xs text-muted-foreground hover:border-primary/40 hover:text-foreground transition cursor-pointer group"
-          >
-            <div>
-              <div className="font-medium text-foreground/70 group-hover:text-foreground">16:30</div>
-              <div className="text-[10px]">Horário livre · disponível para encaixe</div>
+          {loading && (
+            <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground pointer-events-none">
+              Carregando agenda…
             </div>
-            <Plus className="w-4 h-4" />
-          </div>
+          )}
+
+          {blocks.map((b) => <BlockBar key={b.id} b={b} onSelect={onSelectBlock} />)}
+          {appts.map((a) => <ApptCard key={a.id} a={a} onSelect={onSelectAppt} />)}
         </div>
       </div>
     </div>
   );
 }
 
-function ApptCard({ a, onSelect }: { a: Appt; onSelect: (a: Appt) => void }) {
-  const top = (a.start - HOURS[0]) * HOUR_H + 2;
-  const height = a.duration * HOUR_H - 6;
+function ApptCard({ a, onSelect }: { a: Appointment; onSelect: (a: Appointment) => void }) {
+  const start = hourOf(a.starts_at);
+  const end = hourOf(a.ends_at);
+  const top = (start - HOURS[0]) * HOUR_H + 2;
+  const height = Math.max(30, (end - start) * HOUR_H - 6);
   const s = STATUS[a.status];
   return (
     <button
-      onClick={() => onSelect(a)}
+      onClick={(e) => { e.stopPropagation(); onSelect(a); }}
       style={{ top, height }}
       className={cn(
         "absolute left-1 right-1 rounded-2xl border shadow-sm px-3.5 py-2.5 text-left overflow-hidden transition-all",
         "hover:shadow-md hover:-translate-y-[1px] active:translate-y-0",
         s.ring,
-        s.bg
+        s.bg,
       )}
     >
       <div className="flex items-center gap-2">
         <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", s.dot)} />
         <span className="text-[10px] font-medium tabular-nums text-muted-foreground">
-          {fmtHour(a.start)} · {Math.round(a.duration * 60)}min
+          {fmtHour(start)} · {Math.round((end - start) * 60)}min
         </span>
-        {a.status === "in_progress" && (
-          <span className="ml-auto text-[10px] font-medium text-blue-600 dark:text-blue-400">em andamento</span>
+        {a.professional?.full_name && (
+          <span className="ml-auto text-[10px] text-muted-foreground truncate max-w-[90px]">{a.professional.full_name}</span>
         )}
       </div>
       <div className="mt-1 flex items-start gap-3">
-        <Avatar name={a.name} />
+        <Avatar name={a.client?.full_name ?? "Cliente"} />
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium truncate">{a.name}</div>
-          <div className="text-xs text-muted-foreground truncate">{a.service}</div>
-          <div className="text-xs font-medium tabular-nums mt-0.5">{fmtBRL(a.price)}</div>
+          <div className="text-sm font-medium truncate">{a.client?.full_name ?? "Cliente"}</div>
+          <div className="text-xs text-muted-foreground truncate">{a.service_name ?? a.service?.name ?? "Atendimento"}</div>
+          <div className="text-xs font-medium tabular-nums mt-0.5">{formatBRL(Number(a.price))}</div>
         </div>
       </div>
     </button>
   );
 }
 
-function MarkerRow({ m }: { m: Marker }) {
-  const top = (m.at - HOURS[0]) * HOUR_H + 2;
-  const map = {
-    confirm: { icon: Sparkles, tint: "text-primary" },
-    stock: { icon: Package, tint: "text-amber-600 dark:text-amber-400" },
-    goal: { icon: DollarSign, tint: "text-success" },
-    birthday: { icon: Gift, tint: "text-pink-500" },
-    cleaning: { icon: AlertTriangle, tint: "text-destructive" },
-    lunch: { icon: Coffee, tint: "text-muted-foreground" },
-  } as const;
-  const { icon: Icon, tint } = map[m.kind];
+function BlockBar({ b, onSelect }: { b: AgendaBlock; onSelect: (b: AgendaBlock) => void }) {
+  const start = hourOf(b.starts_at);
+  const end = hourOf(b.ends_at);
+  const top = (start - HOURS[0]) * HOUR_H + 2;
+  const height = Math.max(26, (end - start) * HOUR_H - 6);
   return (
-    <div
-      style={{ top, height: 22 }}
-      className="absolute left-1 right-1 flex items-center gap-2 px-2 z-20 pointer-events-none"
+    <button
+      onClick={(e) => { e.stopPropagation(); onSelect(b); }}
+      style={{ top, height }}
+      className="absolute left-1 right-1 rounded-2xl border border-dashed border-muted-foreground/40 bg-secondary/60 px-3.5 py-2 text-left flex items-center gap-2 text-muted-foreground hover:border-muted-foreground/60 transition"
     >
-      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-background/90 backdrop-blur border border-border/60 shadow-sm">
-        <Icon className={cn("w-3 h-3", tint)} />
-        <span className="text-[10px] font-medium text-foreground/80">{m.text}</span>
+      <Ban className="w-3.5 h-3.5 shrink-0" />
+      <div className="min-w-0">
+        <div className="text-xs font-medium truncate">{b.reason || "Horário bloqueado"}</div>
+        <div className="text-[10px] tabular-nums">
+          {fmtHour(start)}–{fmtHour(end)}{b.professional?.full_name ? ` · ${b.professional.full_name}` : ""}
+        </div>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -431,26 +443,24 @@ function Avatar({ name }: { name: string }) {
 
 // ---------- Week view ----------
 function WeekView({
-  weekOffset,
-  setWeekOffset,
-  onSelect,
-  todayIdx,
+  weekOffset, setWeekOffset, onSelectAppt, todayIdx,
 }: {
   weekOffset: number;
   setWeekOffset: (fn: (n: number) => number) => void;
-  onSelect: (a: Appt) => void;
+  onSelectAppt: (a: Appointment) => void;
   todayIdx: number;
 }) {
   const days = useMemo(() => {
     const start = new Date();
     const dow = (start.getDay() + 6) % 7;
     start.setDate(start.getDate() - dow + weekOffset * 7);
-    return Array.from({ length: 6 }, (_, i) => {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      return d;
-    });
+    start.setHours(0, 0, 0, 0);
+    return Array.from({ length: 6 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
   }, [weekOffset]);
+
+  const fromISO = useMemo(() => days[0].toISOString(), [days]);
+  const toISO = useMemo(() => { const d = new Date(days[days.length - 1]); d.setDate(d.getDate() + 1); return d.toISOString(); }, [days]);
+  const { data: appts = [] } = useQuery({ queryKey: ["appointments", fromISO, toISO], queryFn: () => listAppointmentsRange(fromISO, toISO) });
 
   return (
     <div>
@@ -480,10 +490,7 @@ function WeekView({
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
                     {d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")}
                   </div>
-                  <div className={cn(
-                    "mt-1 mx-auto w-8 h-8 flex items-center justify-center rounded-full text-sm tabular-nums",
-                    isToday ? "bg-primary text-primary-foreground font-medium" : ""
-                  )}>
+                  <div className={cn("mt-1 mx-auto w-8 h-8 flex items-center justify-center rounded-full text-sm tabular-nums", isToday ? "bg-primary text-primary-foreground font-medium" : "")}>
                     {d.getDate()}
                   </div>
                 </div>
@@ -499,31 +506,30 @@ function WeekView({
                 </div>
               ))}
             </div>
-            {days.map((_, dayIdx) => {
-              const dayAppts = week.filter((a) => a.day === dayIdx);
+            {days.map((day, dayIdx) => {
+              const dayAppts = appts.filter((a) => sameDay(new Date(a.starts_at), day));
               return (
                 <div key={dayIdx} className="relative rounded-2xl bg-secondary/30 border border-border/40" style={{ height: HOUR_H * HOURS.length }}>
                   {HOURS.slice(1).map((h) => (
                     <div key={h} style={{ top: (h - HOURS[0]) * HOUR_H }} className="absolute inset-x-0 border-t border-border/30" />
                   ))}
                   {dayAppts.map((a) => {
+                    const start = hourOf(a.starts_at);
+                    const end = hourOf(a.ends_at);
                     const s = STATUS[a.status];
                     return (
                       <button
                         key={a.id}
-                        onClick={() => onSelect(a)}
-                        style={{ top: (a.start - HOURS[0]) * HOUR_H + 2, height: a.duration * HOUR_H - 4 }}
-                        className={cn(
-                          "absolute inset-x-1 rounded-xl border px-2 py-1.5 text-left overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-[1px] transition",
-                          s.ring, s.bg
-                        )}
+                        onClick={() => onSelectAppt(a)}
+                        style={{ top: (start - HOURS[0]) * HOUR_H + 2, height: Math.max(24, (end - start) * HOUR_H - 4) }}
+                        className={cn("absolute inset-x-1 rounded-xl border px-2 py-1.5 text-left overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-[1px] transition", s.ring, s.bg)}
                       >
                         <div className="flex items-center gap-1.5">
                           <span className={cn("w-1 h-1 rounded-full", s.dot)} />
-                          <span className="text-[10px] tabular-nums text-muted-foreground">{fmtHour(a.start)}</span>
+                          <span className="text-[10px] tabular-nums text-muted-foreground">{fmtHour(start)}</span>
                         </div>
-                        <div className="text-[11px] font-medium truncate mt-0.5">{a.name}</div>
-                        <div className="text-[10px] text-muted-foreground truncate">{a.service}</div>
+                        <div className="text-[11px] font-medium truncate mt-0.5">{a.client?.full_name ?? "Cliente"}</div>
+                        <div className="text-[10px] text-muted-foreground truncate">{a.service_name ?? "Atendimento"}</div>
                       </button>
                     );
                   })}
@@ -539,87 +545,62 @@ function WeekView({
 
 // ---------- List / Timeline view ----------
 function ListView({
-  appts,
-  markers,
-  onSelect,
-  dense,
+  appts, blocks, onSelectAppt, onSelectBlock, dense,
 }: {
-  appts: Appt[];
-  markers: Marker[];
-  onSelect: (a: Appt) => void;
+  appts: Appointment[];
+  blocks: AgendaBlock[];
+  onSelectAppt: (a: Appointment) => void;
+  onSelectBlock: (b: AgendaBlock) => void;
   dense?: boolean;
 }) {
-  // Merge appts + markers into single ordered stream
-  type Row =
-    | { type: "appt"; at: number; a: Appt }
-    | { type: "marker"; at: number; m: Marker };
+  type Row = { at: number } & ({ kind: "appt"; a: Appointment } | { kind: "block"; b: AgendaBlock });
   const rows: Row[] = [
-    ...appts.map<Row>((a) => ({ type: "appt", at: a.start, a })),
-    ...markers.map<Row>((m) => ({ type: "marker", at: m.at, m })),
+    ...appts.map<Row>((a) => ({ kind: "appt", at: hourOf(a.starts_at), a })),
+    ...blocks.map<Row>((b) => ({ kind: "block", at: hourOf(b.starts_at), b })),
   ].sort((x, y) => x.at - y.at);
 
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="text-xs text-muted-foreground mb-3">Terça, {new Date().getDate()} de {new Date().toLocaleDateString("pt-BR", { month: "long" })}</div>
-      <div className="relative pl-16">
-        <div className="absolute left-[52px] top-1 bottom-1 w-px bg-border/60" />
-        {rows.map((r, i) => (
-          <div key={i} className="relative py-2">
-            <div className="absolute left-0 top-3 text-[10px] tabular-nums text-muted-foreground w-11 text-right pr-3">
-              {fmtHour(r.at)}
+      {rows.length === 0 ? (
+        <div className="text-center text-sm text-muted-foreground py-10">Nenhum agendamento neste dia.</div>
+      ) : (
+        <div className="relative pl-16">
+          <div className="absolute left-[52px] top-1 bottom-1 w-px bg-border/60" />
+          {rows.map((r, i) => (
+            <div key={i} className="relative py-2">
+              <div className="absolute left-0 top-3 text-[10px] tabular-nums text-muted-foreground w-11 text-right pr-3">{fmtHour(r.at)}</div>
+              <div className="absolute left-[48px] top-4 w-2 h-2 rounded-full bg-background border-2 border-border" />
+              {r.kind === "appt" ? (
+                <button
+                  onClick={() => onSelectAppt(r.a)}
+                  className={cn("w-full text-left rounded-2xl border bg-card px-3 py-2.5 flex items-center gap-3 hover:shadow-md hover:-translate-y-[1px] transition", STATUS[r.a.status].ring)}
+                >
+                  <Avatar name={r.a.client?.full_name ?? "Cliente"} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium truncate">{r.a.client?.full_name ?? "Cliente"}</div>
+                    <div className="text-xs text-muted-foreground truncate">{r.a.service_name ?? "Atendimento"}</div>
+                  </div>
+                  <div className="text-xs font-medium tabular-nums">{formatBRL(Number(r.a.price))}</div>
+                </button>
+              ) : (
+                <button
+                  onClick={() => onSelectBlock(r.b)}
+                  className={cn("w-full text-left rounded-2xl border border-dashed border-muted-foreground/40 bg-secondary/40 px-3 py-2 flex items-center gap-2", dense ? "py-1.5" : "")}
+                >
+                  <Ban className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span className="text-xs text-foreground/80">{r.b.reason || "Horário bloqueado"}</span>
+                </button>
+              )}
             </div>
-            <div className="absolute left-[48px] top-4 w-2 h-2 rounded-full bg-background border-2 border-border" />
-            {r.type === "appt" ? (
-              <button
-                onClick={() => onSelect(r.a)}
-                className={cn(
-                  "w-full text-left rounded-2xl border bg-card px-3 py-2.5 flex items-center gap-3 hover:shadow-md hover:-translate-y-[1px] transition",
-                  STATUS[r.a.status].ring
-                )}
-              >
-                <Avatar name={r.a.name} />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium truncate">{r.a.name}</div>
-                  <div className="text-xs text-muted-foreground truncate">{r.a.service}</div>
-                </div>
-                <div className="text-xs font-medium tabular-nums">{fmtBRL(r.a.price)}</div>
-              </button>
-            ) : (
-              <div className={cn(
-                "rounded-2xl border border-dashed border-border/70 bg-secondary/40 px-3 py-2 flex items-center gap-2",
-                dense ? "py-1.5" : ""
-              )}>
-                <MarkerIcon kind={r.m.kind} />
-                <span className="text-xs text-foreground/80">{r.m.text}</span>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function MarkerIcon({ kind }: { kind: Marker["kind"] }) {
-  const map = {
-    confirm: { icon: Sparkles, tint: "text-primary" },
-    stock: { icon: Package, tint: "text-amber-600 dark:text-amber-400" },
-    goal: { icon: DollarSign, tint: "text-success" },
-    birthday: { icon: Gift, tint: "text-pink-500" },
-    cleaning: { icon: AlertTriangle, tint: "text-destructive" },
-    lunch: { icon: Coffee, tint: "text-muted-foreground" },
-  } as const;
-  const { icon: Icon, tint } = map[kind];
-  return <Icon className={cn("w-3.5 h-3.5", tint)} />;
-}
-
-// ---------- AI strip ----------
+// ---------- AI strip (só números reais, nada fabricado) ----------
 function AIStrip({ revenueToday, appts, occupancy }: { revenueToday: number; appts: number; occupancy: number }) {
-  const tips = [
-    `Você terá um intervalo de 40 min às 15h — ideal para encaixar uma manutenção.`,
-    `Faturamento previsto hoje: ${fmtBRL(revenueToday + 140)} com um encaixe.`,
-    `Ocupação de ${occupancy}% em ${appts} atendimentos — dia produtivo.`,
-  ];
   return (
     <div className="rounded-3xl bg-ai-card text-ai-card-foreground p-5 relative overflow-hidden">
       <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-ai-glow/30 blur-3xl" />
@@ -627,45 +608,288 @@ function AIStrip({ revenueToday, appts, occupancy }: { revenueToday: number; app
         <div className="w-7 h-7 rounded-full bg-ai-glow/40 flex items-center justify-center">
           <Sparkles className="w-3.5 h-3.5" />
         </div>
-        <div className="text-xs uppercase tracking-[0.18em] opacity-70">AURA IA</div>
+        <div className="text-xs uppercase tracking-[0.18em] opacity-70">Resumo do dia</div>
       </div>
-      <ul className="mt-4 space-y-2.5 relative">
-        {tips.map((t, i) => (
-          <li key={i} className="text-sm leading-relaxed flex gap-2">
-            <span className="opacity-40 mt-1">·</span>
-            <span>{t}</span>
-          </li>
-        ))}
-      </ul>
+      <div className="mt-4 text-sm leading-relaxed relative">
+        {appts === 0 ? (
+          <p>Nenhum atendimento hoje ainda.</p>
+        ) : (
+          <p>
+            Ocupação de {occupancy}% em {appts} atendimento{appts === 1 ? "" : "s"} hoje. Faturamento previsto: {formatBRL(revenueToday)}.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
 
-// ---------- Waitlist ----------
-function WaitlistCard() {
+// ---------- Form primitives ----------
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-3xl border border-border/50 bg-card p-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Fila de encaixe</div>
-          <div className="text-base font-display font-medium mt-0.5">4 clientes aguardando</div>
-        </div>
-        <Button variant="ghost" size="sm" className="rounded-full h-8 text-xs">Ver todas</Button>
-      </div>
-      <div className="mt-4 space-y-2">
-        {waitlist.map((c) => (
-          <div key={c.name} className="flex items-center gap-3 py-1.5">
-            <Avatar name={c.name} />
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium truncate flex items-center gap-2">
-                {c.name}
-                {c.tag === "VIP" && (
-                  <span className="text-[9px] uppercase tracking-wider bg-accent/40 text-accent-foreground px-1.5 py-0.5 rounded-full">VIP</span>
+    <div className="space-y-1.5">
+      <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-normal">{label}</Label>
+      {children}
+    </div>
+  );
+}
+
+function Row({ icon: Icon, label, right }: { icon: React.ComponentType<{ className?: string }>; label: string; right?: string }) {
+  return (
+    <div className="flex items-center gap-3 py-1.5">
+      <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
+      <span className="flex-1 truncate">{label}</span>
+      {right && <span className="text-muted-foreground tabular-nums">{right}</span>}
+    </div>
+  );
+}
+
+function ActionBtn({
+  icon: Icon, label, onClick, disabled,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button onClick={onClick} disabled={disabled} className="flex flex-col items-center gap-1.5 py-2.5 rounded-2xl bg-secondary/60 hover:bg-secondary transition disabled:opacity-40 disabled:pointer-events-none">
+      <Icon className="w-4 h-4" />
+      <span className="text-[10px] font-medium">{label}</span>
+    </button>
+  );
+}
+
+// ---------- Client picker (busca real em clients + criação rápida inline) ----------
+function ClientPicker({
+  clients, value, onChange,
+}: {
+  clients: Client[];
+  value: string;
+  onChange: (id: string, name: string) => void;
+}) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newPhone, setNewPhone] = useState("");
+  const selected = clients.find((c) => c.id === value);
+
+  const create = useMutation({
+    mutationFn: () => upsertClient({ full_name: newName.trim(), phone: newPhone.trim() || null }),
+    onSuccess: (c) => {
+      qc.invalidateQueries({ queryKey: ["clients"] });
+      onChange(c.id, c.full_name);
+      toast.success("Cliente cadastrada");
+      setCreating(false); setOpen(false); setNewName(""); setNewPhone("");
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Erro ao cadastrar cliente"),
+  });
+
+  return (
+    <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) setCreating(false); }}>
+      <PopoverTrigger asChild>
+        <button type="button" className="w-full h-11 rounded-xl bg-secondary px-3 text-left text-sm flex items-center justify-between">
+          <span className={selected ? "" : "text-muted-foreground"}>{selected ? selected.full_name : "Selecionar cliente"}</span>
+          <User className="w-4 h-4 text-muted-foreground shrink-0" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[320px] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Buscar cliente…" onValueChange={(v) => !creating && setNewName(v)} />
+          <CommandList>
+            <CommandEmpty>
+              <div className="p-3 space-y-2">
+                <p className="text-xs text-muted-foreground">Nenhuma cliente encontrada.</p>
+                {!creating ? (
+                  <Button size="sm" variant="outline" className="w-full rounded-xl" onClick={() => setCreating(true)}>
+                    <UserPlus className="w-3.5 h-3.5 mr-1.5" /> Criar nova cliente
+                  </Button>
+                ) : (
+                  <div className="space-y-2">
+                    <Input placeholder="Nome completo" value={newName} onChange={(e) => setNewName(e.target.value)} className="h-9" autoFocus />
+                    <Input placeholder="Telefone (opcional)" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="h-9" />
+                    <Button size="sm" className="w-full rounded-xl" disabled={newName.trim().length < 2 || create.isPending} onClick={() => create.mutate()}>
+                      {create.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Cadastrar e selecionar"}
+                    </Button>
+                  </div>
                 )}
               </div>
-              <div className="text-[11px] text-muted-foreground">{c.meta} · {fmtBRL(c.price)}</div>
+            </CommandEmpty>
+            <CommandGroup>
+              {clients.map((c) => (
+                <CommandItem key={c.id} value={c.full_name} onSelect={() => { onChange(c.id, c.full_name); setOpen(false); }}>
+                  {c.full_name}{c.phone ? ` · ${c.phone}` : ""}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// ---------- Conflict dialog ----------
+function ConflictDialog({
+  conflicts, open, onOpenChange, onConfirm, pending,
+}: {
+  conflicts: ConflictItem[];
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onConfirm: () => void;
+  pending: boolean;
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{conflicts.length > 1 ? "Esse horário conflita com outros compromissos" : "Esse horário conflita com outro compromisso"}</AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <ul className="space-y-1">
+                {conflicts.map((c) => (
+                  <li key={c.id}>
+                    {fmtHour(hourOf(c.starts_at))}–{fmtHour(hourOf(c.ends_at))} · {c.label}
+                  </li>
+                ))}
+              </ul>
+              <p>Deseja agendar mesmo assim?</p>
             </div>
-            <Button size="sm" variant="outline" className="h-8 rounded-full text-xs">Oferecer</Button>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Não, escolher outro horário</AlertDialogCancel>
+          <AlertDialogAction onClick={onConfirm} disabled={pending}>
+            {pending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Agendar mesmo assim"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+// ---------- Complete / revert confirm dialogs ----------
+function CompleteConfirmDialog({
+  appointment, open, onOpenChange, onDone,
+}: {
+  appointment: Appointment;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onDone: () => void;
+}) {
+  const { data: preview, isLoading } = useQuery({
+    queryKey: ["complete-preview", appointment.id, appointment.service_id, appointment.price],
+    queryFn: () => getCompletionPreview(appointment.service_id, Number(appointment.price)),
+    enabled: open,
+  });
+  const mut = useMutation({
+    mutationFn: () => completeAppointment(appointment.id),
+    onSuccess: () => { toast.success("Atendimento concluído"); onOpenChange(false); onDone(); },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Erro ao concluir"),
+  });
+
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Concluir atendimento?</AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p>Isso vai gerar uma receita de <strong className="text-foreground">{formatBRL(Number(appointment.price))}</strong> no Financeiro.</p>
+              {isLoading ? (
+                <p>Calculando consumo de estoque…</p>
+              ) : preview && preview.materials.length > 0 ? (
+                <div>
+                  <p>E descontar do estoque:</p>
+                  <ul className="list-disc pl-4">
+                    {preview.materials.map((m, i) => <li key={i}>{m.quantity} {m.unit} de {m.productName}</li>)}
+                  </ul>
+                </div>
+              ) : (
+                <p>Esse serviço não tem ficha técnica de materiais cadastrada — nenhum item de estoque será descontado.</p>
+              )}
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction onClick={() => mut.mutate()} disabled={mut.isPending}>
+            {mut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Concluir e lançar"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function RevertConfirmDialog({
+  appointment, open, onOpenChange, onDone,
+}: {
+  appointment: Appointment;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onDone: () => void;
+}) {
+  const { data: preview, isLoading } = useQuery({
+    queryKey: ["revert-preview", appointment.id],
+    queryFn: () => getRevertPreview(appointment.id),
+    enabled: open,
+  });
+  const mut = useMutation({
+    mutationFn: () => revertCompleted(appointment.id),
+    onSuccess: () => { toast.success("Conclusão desfeita"); onOpenChange(false); onDone(); },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Erro ao desmarcar"),
+  });
+
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Desmarcar como concluído?</AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              {isLoading || !preview ? (
+                <p>Calculando o que será revertido…</p>
+              ) : (
+                <>
+                  <p>Isso vai reverter a receita de <strong className="text-foreground">{formatBRL(preview.revenueAmount)}</strong> lançada no Financeiro.</p>
+                  {preview.consumedItems.length > 0 && (
+                    <div>
+                      <p>E devolver ao estoque:</p>
+                      <ul className="list-disc pl-4">
+                        {preview.consumedItems.map((m, i) => <li key={i}>{m.quantity} {m.unit} de {m.productName}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  <p>O agendamento volta para "Confirmado" e você poderá editar tudo de novo.</p>
+                </>
+              )}
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Voltar</AlertDialogCancel>
+          <AlertDialogAction onClick={() => mut.mutate()} disabled={mut.isPending}>
+            {mut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Desmarcar conclusão"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+// ---------- Consumed products (real, só aparece em atendimentos concluídos) ----------
+function ConsumedProducts({ appointmentId }: { appointmentId: string }) {
+  const { data, isLoading } = useQuery({ queryKey: ["appointment-consumption", appointmentId], queryFn: () => getRevertPreview(appointmentId) });
+  if (isLoading || !data || data.consumedItems.length === 0) return null;
+  return (
+    <div className="rounded-2xl border border-border/50 overflow-hidden">
+      <div className="px-4 py-2.5 bg-secondary/40 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Produtos consumidos (estoque)</div>
+      <div className="divide-y divide-border/40">
+        {data.consumedItems.map((m, i) => (
+          <div key={i} className="flex items-center justify-between px-4 py-2.5 text-sm">
+            <span>{m.productName}</span>
+            <span className="text-muted-foreground text-xs">{m.quantity} {m.unit}</span>
           </div>
         ))}
       </div>
@@ -673,125 +897,499 @@ function WaitlistCard() {
   );
 }
 
-// ---------- Appointment Sheet ----------
-function AppointmentSheet({ appt, onClose }: { appt: Appt | null; onClose: () => void }) {
-  const open = !!appt;
-  const a = appt;
+// ---------- Appointment detail sheet ----------
+function AppointmentDetailSheet({
+  appointment, onClose, onEdit,
+}: {
+  appointment: Appointment | null;
+  onClose: () => void;
+  onEdit: (a: Appointment) => void;
+}) {
+  const qc = useQueryClient();
+  const [completeOpen, setCompleteOpen] = useState(false);
+  const [revertOpen, setRevertOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const open = !!appointment;
+  const a = appointment;
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["appointments"] });
+
+  const confirmMut = useMutation({
+    mutationFn: () => confirmAppointment(a!.id),
+    onSuccess: () => { toast.success("Agendamento confirmado"); invalidate(); },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Erro ao confirmar"),
+  });
+  const cancelMut = useMutation({
+    mutationFn: () => cancelAppointment(a!.id),
+    onSuccess: () => { toast.success("Agendamento cancelado"); invalidate(); setCancelOpen(false); onClose(); },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Erro ao cancelar"),
+  });
+
+  return (
+    <>
+      <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
+        <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col">
+          {a && (
+            <>
+              <SheetHeader className="px-6 pt-6 pb-2">
+                <SheetTitle className="sr-only">{a.client?.full_name ?? "Agendamento"}</SheetTitle>
+                <div className="flex items-center justify-between">
+                  <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    {fmtHour(hourOf(a.starts_at))} — {fmtHour(hourOf(a.ends_at))}
+                  </div>
+                  <span className={cn("text-[10px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-full", STATUS[a.status].badge)}>
+                    {STATUS[a.status].label}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex items-center gap-3">
+                  <Avatar name={a.client?.full_name ?? "Cliente"} />
+                  <div className="min-w-0">
+                    <div className="text-xl font-display font-medium truncate">{a.client?.full_name ?? "Cliente"}</div>
+                    <div className="text-xs text-muted-foreground truncate">{a.service_name ?? a.service?.name ?? "Atendimento"}</div>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  {a.status === "pending" && <ActionBtn icon={Check} label="Confirmar" onClick={() => confirmMut.mutate()} disabled={confirmMut.isPending} />}
+                  {(a.status === "pending" || a.status === "confirmed") && <ActionBtn icon={Pencil} label="Editar" onClick={() => onEdit(a)} />}
+                  {(a.status === "pending" || a.status === "confirmed") && <ActionBtn icon={X} label="Cancelar" onClick={() => setCancelOpen(true)} />}
+                  {a.status === "completed" && <ActionBtn icon={Pencil} label="Editar horário" onClick={() => onEdit(a)} />}
+                </div>
+              </SheetHeader>
+
+              <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
+                <div className="space-y-2 text-sm">
+                  <Row icon={Phone} label={a.client?.phone ?? "—"} />
+                  <Row icon={DollarSign} label="Valor" right={formatBRL(Number(a.price))} />
+                  <Row icon={Clock} label="Duração" right={`${Math.round((hourOf(a.ends_at) - hourOf(a.starts_at)) * 60)} min`} />
+                  <Row icon={User} label="Profissional" right={a.professional?.full_name ?? "Você"} />
+                </div>
+
+                {a.notes && (
+                  <div className="rounded-2xl border border-border/50 p-4">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2">Observações</div>
+                    <div className="text-sm text-foreground/80">{a.notes}</div>
+                  </div>
+                )}
+
+                {a.status === "completed" && <ConsumedProducts appointmentId={a.id} />}
+              </div>
+
+              <div className="p-4 border-t border-border/50 bg-background">
+                {(a.status === "pending" || a.status === "confirmed") && (
+                  <Button className="w-full h-12 rounded-2xl gap-2 text-sm" onClick={() => setCompleteOpen(true)}>
+                    <CheckCircle2 className="w-4 h-4" /> Concluir atendimento
+                  </Button>
+                )}
+                {a.status === "completed" && (
+                  <Button variant="outline" className="w-full h-12 rounded-2xl gap-2 text-sm" onClick={() => setRevertOpen(true)}>
+                    <RotateCcw className="w-4 h-4" /> Desmarcar conclusão
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {a && (
+        <>
+          <CompleteConfirmDialog appointment={a} open={completeOpen} onOpenChange={setCompleteOpen} onDone={() => { invalidate(); onClose(); }} />
+          <RevertConfirmDialog appointment={a} open={revertOpen} onOpenChange={setRevertOpen} onDone={() => { invalidate(); onClose(); }} />
+          <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Cancelar agendamento?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {a.client?.full_name ?? "Cliente"} · {a.service_name ?? "Atendimento"} às {fmtHour(hourOf(a.starts_at))}. Essa ação libera o horário na agenda.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Voltar</AlertDialogCancel>
+                <AlertDialogAction onClick={() => cancelMut.mutate()} disabled={cancelMut.isPending}>
+                  {cancelMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Cancelar agendamento"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
+    </>
+  );
+}
+
+// ---------- Block detail sheet ----------
+function BlockDetailSheet({ block, onClose }: { block: AgendaBlock | null; onClose: () => void }) {
+  const qc = useQueryClient();
+  const open = !!block;
+  const del = useMutation({
+    mutationFn: () => deleteBlock(block!.id),
+    onSuccess: () => { toast.success("Bloqueio removido"); qc.invalidateQueries({ queryKey: ["blocks"] }); onClose(); },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Erro ao remover"),
+  });
+
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col">
-        {a && (
-          <>
-            <SheetHeader className="px-6 pt-6 pb-2">
-              <SheetTitle className="sr-only">{a.name}</SheetTitle>
-              <div className="flex items-center justify-between">
-                <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                  {fmtHour(a.start)} — {fmtHour(a.start + a.duration)}
-                </div>
-                <span className={cn(
-                  "text-[10px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-full",
-                  a.status === "in_progress" && "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-                  a.status === "confirmed" && "bg-success/10 text-success",
-                  a.status === "waiting" && "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-                  a.status === "scheduled" && "bg-secondary text-muted-foreground",
-                  a.status === "cancelled" && "bg-destructive/10 text-destructive",
-                  a.status === "done" && "bg-purple-500/10 text-purple-600 dark:text-purple-400"
-                )}>
-                  {STATUS[a.status].label}
-                </span>
-              </div>
-
-              <div className="mt-3 flex items-center gap-3">
-                <div className="w-14 h-14 rounded-full bg-secondary flex items-center justify-center text-sm font-medium">
-                  {a.name.split(" ").slice(0, 2).map((n) => n[0]).join("")}
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xl font-display font-medium truncate">{a.name}</div>
-                  <div className="text-xs text-muted-foreground truncate">{a.service}</div>
-                </div>
-              </div>
-
-              <div className="mt-4 grid grid-cols-4 gap-2">
-                <ActionBtn icon={Check} label="Confirmar" />
-                <ActionBtn icon={RotateCcw} label="Remarcar" />
-                <ActionBtn icon={X} label="Cancelar" />
-                <ActionBtn icon={Copy} label="Mais" />
-              </div>
+      <SheetContent side="right" className="w-full sm:max-w-sm">
+        {block && (
+          <div className="space-y-4">
+            <SheetHeader>
+              <SheetTitle>Horário bloqueado</SheetTitle>
             </SheetHeader>
-
-            <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
-              <div className="space-y-2 text-sm">
-                <Row icon={Phone} label={a.phone ?? "—"} extra={<MessageCircle className="w-4 h-4 text-success" />} />
-                <Row icon={Instagram} label={a.instagram ?? "—"} />
-                <Row icon={DollarSign} label="Valor total" right={fmtBRL(a.price)} />
-                <Row icon={Clock} label="Tempo previsto" right={`${Math.round(a.duration * 60)} min`} />
-                <Row icon={User} label="Protocolo" right={a.service} />
-              </div>
-
-              <div className="rounded-2xl border border-border/50 overflow-hidden">
-                <div className="px-4 py-2.5 bg-secondary/40 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                  Produtos utilizados
-                </div>
-                <div className="divide-y divide-border/40">
-                  <ProductRow name="Fios 0.07D (Mix)" qty="0.15 usado" />
-                  <ProductRow name="Adesivo Master" qty="1 gota" />
-                  <ProductRow name="Pads Luxo" qty="1 unidade" />
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-border/50 p-4">
-                <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2">Observações</div>
-                <div className="text-sm text-foreground/80">Cliente prefere efeito natural. Alergia leve a adesivos comuns — usar Master.</div>
-              </div>
+            <div className="text-sm space-y-1">
+              <Row icon={Clock} label={`${fmtHour(hourOf(block.starts_at))} — ${fmtHour(hourOf(block.ends_at))}`} />
+              <Row icon={User} label={block.professional?.full_name ?? "Você"} />
+              {block.reason && <Row icon={Ban} label={block.reason} />}
             </div>
-
-            <div className="p-4 border-t border-border/50 bg-background">
-              <Button className="w-full h-12 rounded-2xl gap-2 text-sm">
-                <CheckCircle2 className="w-4 h-4" /> Concluir atendimento
-              </Button>
-            </div>
-          </>
+            <Button variant="destructive" className="w-full rounded-xl" onClick={() => del.mutate()} disabled={del.isPending}>
+              {del.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Remover bloqueio"}
+            </Button>
+          </div>
         )}
       </SheetContent>
     </Sheet>
   );
 }
 
-function ActionBtn({ icon: Icon, label }: { icon: React.ComponentType<{ className?: string }>; label: string }) {
-  return (
-    <button className="flex flex-col items-center gap-1.5 py-2.5 rounded-2xl bg-secondary/60 hover:bg-secondary transition">
-      <Icon className="w-4 h-4" />
-      <span className="text-[10px] font-medium">{label}</span>
-    </button>
-  );
+// ---------- Appointment create/edit form ----------
+type FormState = {
+  clientId: string;
+  clientName: string;
+  serviceId: string;
+  professionalId: string; // "self" ou id de team_members
+  date: string;
+  startTime: string;
+  endTime: string;
+  price: string;
+  notes: string;
+};
+
+function buildInitialForm(appointment: Appointment | undefined, prefillStart: Date | undefined): FormState {
+  if (appointment) {
+    const s = new Date(appointment.starts_at);
+    const e = new Date(appointment.ends_at);
+    return {
+      clientId: appointment.client_id,
+      clientName: appointment.client?.full_name ?? "",
+      serviceId: appointment.service_id ?? "",
+      professionalId: appointment.professional_id ?? "self",
+      date: toLocalDateStr(s),
+      startTime: toLocalTimeStr(s),
+      endTime: toLocalTimeStr(e),
+      price: String(appointment.price),
+      notes: appointment.notes ?? "",
+    };
+  }
+  const base = prefillStart ? new Date(prefillStart) : new Date();
+  if (!prefillStart) { base.setMinutes(0, 0, 0); if (base.getHours() < 8 || base.getHours() > 19) base.setHours(9); }
+  const end = new Date(base.getTime() + 60 * 60000);
+  return {
+    clientId: "", clientName: "", serviceId: "", professionalId: "self",
+    date: toLocalDateStr(base), startTime: toLocalTimeStr(base), endTime: toLocalTimeStr(end),
+    price: "0", notes: "",
+  };
 }
 
-function Row({
-  icon: Icon,
-  label,
-  right,
-  extra,
+function AppointmentFormSheet({
+  mode, appointment, prefillStart, clients, services, professionals, onClose,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  right?: string;
-  extra?: React.ReactNode;
+  mode: "create" | "edit";
+  appointment?: Appointment;
+  prefillStart?: Date;
+  clients: Client[];
+  services: Service[];
+  professionals: TeamMember[];
+  onClose: () => void;
 }) {
+  const qc = useQueryClient();
+  const isCompletedEdit = mode === "edit" && appointment?.status === "completed";
+  const [form, setForm] = useState<FormState>(() => buildInitialForm(appointment, prefillStart));
+  const [conflicts, setConflicts] = useState<ConflictItem[] | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  const selectedService = services.find((s) => s.id === form.serviceId);
+
+  const handleServiceChange = (serviceId: string) => {
+    const svc = services.find((s) => s.id === serviceId);
+    setForm((f) => {
+      if (!svc) return { ...f, serviceId };
+      const start = combineLocal(f.date, f.startTime);
+      const end = new Date(start.getTime() + svc.duration_min * 60000);
+      return { ...f, serviceId, price: String(svc.price), endTime: toLocalTimeStr(end) };
+    });
+  };
+
+  const handleStartTimeChange = (startTime: string) => {
+    setForm((f) => {
+      if (!selectedService) return { ...f, startTime };
+      const start = combineLocal(f.date, startTime);
+      const end = new Date(start.getTime() + selectedService.duration_min * 60000);
+      return { ...f, startTime, endTime: toLocalTimeStr(end) };
+    });
+  };
+
+  const saveMut = useMutation({
+    mutationFn: async (forceOverlap: boolean) => {
+      const startsAt = combineLocal(form.date, form.startTime).toISOString();
+      const endsAt = combineLocal(form.date, form.endTime).toISOString();
+      if (isCompletedEdit) {
+        return updateAppointmentTime(appointment!.id, startsAt, endsAt, forceOverlap);
+      }
+      const professionalId = form.professionalId === "self" ? null : form.professionalId;
+      if (mode === "create") {
+        return createAppointment({
+          client_id: form.clientId,
+          service_id: form.serviceId || null,
+          service_name: selectedService?.name ?? null,
+          professional_id: professionalId,
+          starts_at: startsAt,
+          ends_at: endsAt,
+          price: Number(form.price) || 0,
+          notes: form.notes || null,
+          forceOverlap,
+        });
+      }
+      return updateAppointment(appointment!.id, {
+        client_id: form.clientId,
+        service_id: form.serviceId || null,
+        service_name: selectedService?.name ?? appointment?.service_name ?? null,
+        professional_id: professionalId,
+        starts_at: startsAt,
+        ends_at: endsAt,
+        price: Number(form.price) || 0,
+        notes: form.notes || null,
+        forceOverlap,
+      });
+    },
+    onSuccess: () => {
+      toast.success(mode === "create" ? "Agendamento criado" : "Agendamento atualizado");
+      qc.invalidateQueries({ queryKey: ["appointments"] });
+      setConflicts(null);
+      onClose();
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
+  });
+
+  const handleSubmit = async () => {
+    if (!isCompletedEdit && !form.clientId) { toast.error("Selecione a cliente"); return; }
+    const startsAt = combineLocal(form.date, form.startTime);
+    const endsAt = combineLocal(form.date, form.endTime);
+    if (endsAt <= startsAt) { toast.error("O horário final precisa ser depois do início"); return; }
+
+    setChecking(true);
+    try {
+      const professionalId = isCompletedEdit ? (appointment!.professional_id ?? null) : (form.professionalId === "self" ? null : form.professionalId);
+      const found = await findConflicts({
+        professionalId,
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+        excludeAppointmentId: appointment?.id,
+      });
+      if (found.length > 0) setConflicts(found);
+      else saveMut.mutate(false);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao checar conflitos");
+    } finally {
+      setChecking(false);
+    }
+  };
+
   return (
-    <div className="flex items-center gap-3 py-1.5">
-      <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
-      <span className="flex-1 truncate">{label}</span>
-      {right && <span className="text-muted-foreground tabular-nums">{right}</span>}
-      {extra}
-    </div>
+    <>
+      <Sheet open onOpenChange={(v) => !v && onClose()}>
+        <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col">
+          <SheetHeader className="px-6 pt-6 pb-2">
+            <SheetTitle>{mode === "create" ? "Novo agendamento" : "Editar agendamento"}</SheetTitle>
+          </SheetHeader>
+          <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
+            {isCompletedEdit && (
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/5 p-4 text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+                Este atendimento já está concluído — aqui só é possível ajustar data e horário. Para alterar cliente,
+                serviço, profissional ou valor, feche esta tela e use "Desmarcar conclusão" no atendimento antes de editar.
+              </div>
+            )}
+
+            <Field label="Cliente">
+              {isCompletedEdit ? (
+                <div className="h-11 rounded-xl bg-secondary px-3 flex items-center text-sm text-muted-foreground">{form.clientName}</div>
+              ) : (
+                <ClientPicker clients={clients} value={form.clientId} onChange={(id, name) => setForm((f) => ({ ...f, clientId: id, clientName: name }))} />
+              )}
+            </Field>
+
+            <Field label="Serviço">
+              {isCompletedEdit ? (
+                <div className="h-11 rounded-xl bg-secondary px-3 flex items-center text-sm text-muted-foreground">{appointment?.service_name ?? "—"}</div>
+              ) : (
+                <Select value={form.serviceId} onValueChange={handleServiceChange}>
+                  <SelectTrigger className="h-11 rounded-xl bg-secondary border-0"><SelectValue placeholder="Selecionar serviço" /></SelectTrigger>
+                  <SelectContent>
+                    {services.filter((s) => s.active).map((s) => (
+                      <SelectItem key={s.id} value={s.id}>{s.name} · {formatBRL(s.price)} · {s.duration_min}min</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </Field>
+
+            <Field label="Profissional">
+              {isCompletedEdit ? (
+                <div className="h-11 rounded-xl bg-secondary px-3 flex items-center text-sm text-muted-foreground">{appointment?.professional?.full_name ?? "Você"}</div>
+              ) : (
+                <Select value={form.professionalId} onValueChange={(v) => setForm((f) => ({ ...f, professionalId: v }))}>
+                  <SelectTrigger className="h-11 rounded-xl bg-secondary border-0"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="self">Eu mesma</SelectItem>
+                    {professionals.map((p) => <SelectItem key={p.id} value={p.id}>{p.full_name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
+            </Field>
+
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Data">
+                <Input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} className="h-11 rounded-xl bg-secondary border-0" />
+              </Field>
+              <Field label="Início">
+                <Input type="time" value={form.startTime} onChange={(e) => handleStartTimeChange(e.target.value)} className="h-11 rounded-xl bg-secondary border-0" />
+              </Field>
+              <Field label="Fim">
+                <Input type="time" value={form.endTime} onChange={(e) => setForm((f) => ({ ...f, endTime: e.target.value }))} className="h-11 rounded-xl bg-secondary border-0" />
+              </Field>
+            </div>
+
+            <Field label="Valor">
+              {isCompletedEdit ? (
+                <div className="h-11 rounded-xl bg-secondary px-3 flex items-center text-sm text-muted-foreground">{formatBRL(Number(appointment?.price ?? 0))}</div>
+              ) : (
+                <Input type="number" step="0.01" min="0" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} className="h-11 rounded-xl bg-secondary border-0" />
+              )}
+            </Field>
+
+            <Field label="Observações">
+              <Textarea value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} rows={3} disabled={isCompletedEdit} className="rounded-xl bg-secondary border-0 resize-none" />
+            </Field>
+          </div>
+          <div className="p-4 border-t border-border/50 bg-background flex gap-2">
+            <Button variant="ghost" className="flex-1 rounded-xl" onClick={onClose}>Cancelar</Button>
+            <Button className="flex-1 rounded-xl" onClick={handleSubmit} disabled={checking || saveMut.isPending}>
+              {checking || saveMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <ConflictDialog
+        conflicts={conflicts ?? []}
+        open={!!conflicts}
+        onOpenChange={(v) => !v && setConflicts(null)}
+        onConfirm={() => saveMut.mutate(true)}
+        pending={saveMut.isPending}
+      />
+    </>
   );
 }
 
-function ProductRow({ name, qty }: { name: string; qty: string }) {
+// ---------- Block create form ----------
+function BlockFormSheet({
+  prefillStart, professionals, onClose,
+}: {
+  prefillStart?: Date;
+  professionals: TeamMember[];
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const base = useMemo(() => {
+    const d = prefillStart ? new Date(prefillStart) : new Date();
+    if (!prefillStart) { d.setMinutes(0, 0, 0); if (d.getHours() < 8 || d.getHours() > 19) d.setHours(12); }
+    return d;
+  }, [prefillStart]);
+  const [professionalId, setProfessionalId] = useState("self");
+  const [date, setDate] = useState(toLocalDateStr(base));
+  const [startTime, setStartTime] = useState(toLocalTimeStr(base));
+  const [endTime, setEndTime] = useState(toLocalTimeStr(new Date(base.getTime() + 30 * 60000)));
+  const [reason, setReason] = useState("");
+  const [conflicts, setConflicts] = useState<ConflictItem[] | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  const saveMut = useMutation({
+    mutationFn: (forceOverlap: boolean) => createBlock({
+      professional_id: professionalId === "self" ? null : professionalId,
+      starts_at: combineLocal(date, startTime).toISOString(),
+      ends_at: combineLocal(date, endTime).toISOString(),
+      reason: reason || null,
+      forceOverlap,
+    }),
+    onSuccess: () => {
+      toast.success("Horário bloqueado");
+      qc.invalidateQueries({ queryKey: ["blocks"] });
+      setConflicts(null);
+      onClose();
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Erro ao bloquear"),
+  });
+
+  const handleSubmit = async () => {
+    const startsAt = combineLocal(date, startTime);
+    const endsAt = combineLocal(date, endTime);
+    if (endsAt <= startsAt) { toast.error("O horário final precisa ser depois do início"); return; }
+    setChecking(true);
+    try {
+      const found = await findConflicts({
+        professionalId: professionalId === "self" ? null : professionalId,
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+      });
+      if (found.length > 0) setConflicts(found);
+      else saveMut.mutate(false);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao checar conflitos");
+    } finally {
+      setChecking(false);
+    }
+  };
+
   return (
-    <div className="flex items-center justify-between px-4 py-2.5 text-sm">
-      <span>{name}</span>
-      <span className="text-muted-foreground text-xs">{qty}</span>
-    </div>
+    <>
+      <Sheet open onOpenChange={(v) => !v && onClose()}>
+        <SheetContent side="right" className="w-full sm:max-w-sm p-0 flex flex-col">
+          <SheetHeader className="px-6 pt-6 pb-2"><SheetTitle>Bloquear horário</SheetTitle></SheetHeader>
+          <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
+            <Field label="Profissional">
+              <Select value={professionalId} onValueChange={setProfessionalId}>
+                <SelectTrigger className="h-11 rounded-xl bg-secondary border-0"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="self">Eu mesma</SelectItem>
+                  {professionals.map((p) => <SelectItem key={p.id} value={p.id}>{p.full_name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Data"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-xl bg-secondary border-0" /></Field>
+              <Field label="Início"><Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="h-11 rounded-xl bg-secondary border-0" /></Field>
+              <Field label="Fim"><Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="h-11 rounded-xl bg-secondary border-0" /></Field>
+            </div>
+            <Field label="Motivo (opcional)">
+              <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Almoço, compromisso pessoal…" className="h-11 rounded-xl bg-secondary border-0" />
+            </Field>
+          </div>
+          <div className="p-4 border-t border-border/50 bg-background flex gap-2">
+            <Button variant="ghost" className="flex-1 rounded-xl" onClick={onClose}>Cancelar</Button>
+            <Button className="flex-1 rounded-xl" onClick={handleSubmit} disabled={checking || saveMut.isPending}>
+              {checking || saveMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Bloquear"}
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <ConflictDialog
+        conflicts={conflicts ?? []}
+        open={!!conflicts}
+        onOpenChange={(v) => !v && setConflicts(null)}
+        onConfirm={() => saveMut.mutate(true)}
+        pending={saveMut.isPending}
+      />
+    </>
   );
 }
