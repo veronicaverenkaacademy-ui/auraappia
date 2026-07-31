@@ -215,8 +215,7 @@ export type EditAppointmentInput = {
 
 export async function updateAppointment(id: string, patch: EditAppointmentInput): Promise<Appointment> {
   const { forceOverlap, ...rest } = patch;
-  const payload: Record<string, unknown> = { ...rest };
-  if (forceOverlap !== undefined) payload.force_overlap = forceOverlap;
+  const payload = { ...rest, ...(forceOverlap !== undefined ? { force_overlap: forceOverlap } : {}) };
   const { data, error } = await supabase.from("appointments").update(payload).eq("id", id).select(APPT_SELECT).single();
   if (error) throw translateSaveError(error);
   return data as unknown as Appointment;
