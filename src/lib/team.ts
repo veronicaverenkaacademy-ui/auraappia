@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { normalizePhoneBR } from "@/lib/phone";
 import type { Resource, Action } from "./permissions";
 
 export type TeamMember = {
@@ -61,9 +62,10 @@ export async function getSelfTeamMember(): Promise<TeamMember | null> {
 }
 
 export async function updateTeamMember(id: string, patch: Partial<TeamMember>): Promise<TeamMember> {
+  const normalizedPatch = patch.phone ? { ...patch, phone: normalizePhoneBR(patch.phone) } : patch;
   const { data, error } = await supabase
     .from("team_members")
-    .update(patch)
+    .update(normalizedPatch)
     .eq("id", id)
     .select()
     .single();

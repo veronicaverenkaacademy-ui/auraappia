@@ -37,12 +37,35 @@ export type AgendaBlock = {
 // Usa getSession() (lê a sessão já em memória/local storage) em vez de getUser() (faz uma
 // chamada de rede ao vivo pra revalidar). Todo o resto da tela já depende só da sessão local
 // pro RLS funcionar — getUser() aqui era um ponto de falha extra e desnecessário.
+//
+// DIAGNÓSTICO TEMPORÁRIO — remover depois de confirmada a causa raiz real do
+// "Não autenticado". Loga o estado completo de sessão no console e embute o motivo
+// técnico na mensagem de erro exibida no toast.
 async function uid() {
   const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  const user = data.session?.user;
-  if (!user) throw new Error("Não autenticado");
-  return user.id;
+  const session = data.session;
+
+  if (error || !session?.user) {
+    const { data: userCheck, error: userError } = await supabase.auth.getUser();
+    const diagnostics = {
+      callSite: "lib/agenda.ts uid()",
+      sessionError: error ? { message: error.message, name: error.name } : null,
+      hasSession: !!session,
+      sessionExpiresAt: session?.expires_at ? new Date(session.expires_at * 1000).toISOString() : null,
+      nowIso: new Date().toISOString(),
+      getUserError: userError ? { message: userError.message, name: userError.name } : null,
+      getUserFoundUser: !!userCheck?.user,
+    };
+    // eslint-disable-next-line no-console
+    console.error("[agenda.uid] Falha de autenticação —", diagnostics);
+
+    const detail = error?.message
+      ?? userError?.message
+      ?? (session ? "sessão encontrada, mas sem usuário" : "nenhuma sessão encontrada no navegador (localStorage)");
+    throw new Error(`Não autenticado (agenda: ${detail})`);
+  }
+
+  return session.user.id;
 }
 
 const APPT_SELECT =
