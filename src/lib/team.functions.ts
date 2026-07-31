@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { normalizePhoneBR } from "@/lib/phone";
 import { z } from "zod";
 
 const CreateMemberInput = z.object({
@@ -37,12 +38,13 @@ export const createTeamMember = createServerFn({ method: "POST" })
 
     const email = (data.email ?? "").trim();
     const authEmail = email || `${data.booking_slug}+${Date.now()}@team.aura.local`;
+    const phone = data.phone ? normalizePhoneBR(data.phone) : null;
 
     const { data: created, error: authErr } = await supabaseAdmin.auth.admin.createUser({
       email: authEmail,
       password: data.password,
       email_confirm: true,
-      phone: data.phone,
+      phone: phone ?? undefined,
       user_metadata: { full_name: data.full_name, staff: true },
     });
     if (authErr || !created.user) throw new Error(authErr?.message ?? "Falha ao criar conta");
@@ -62,7 +64,7 @@ export const createTeamMember = createServerFn({ method: "POST" })
         owner_id: userId,
         user_id: newUserId,
         full_name: data.full_name,
-        phone: data.phone ?? null,
+        phone,
         email: email || null,
         role_title: data.role_title ?? null,
         profession: data.profession ?? null,

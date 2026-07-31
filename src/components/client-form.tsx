@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Loader2, X } from "lucide-react";
 import { upsertClient, type Client } from "@/lib/clients";
+import { normalizePhoneBR } from "@/lib/phone";
 
 const schema = z.object({
   full_name: z.string().trim().min(1, "Nome obrigatório").max(120),
@@ -38,7 +39,7 @@ export function ClientFormDialog({
       return upsertClient({
         ...(client?.id ? { id: client.id } : {}),
         full_name: parsed.full_name,
-        phone: parsed.phone || null,
+        phone: parsed.phone ? normalizePhoneBR(parsed.phone) : null,
         email: parsed.email || null,
         birthday: parsed.birthday || null,
         notes: parsed.notes || null,

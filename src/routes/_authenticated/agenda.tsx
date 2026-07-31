@@ -66,6 +66,7 @@ import {
 import { listClients, upsertClient, type Client } from "@/lib/clients";
 import { listServices, type Service } from "@/lib/catalog";
 import { listTeamMembers, type TeamMember } from "@/lib/team";
+import { normalizePhoneBR } from "@/lib/phone";
 
 export const Route = createFileRoute("/_authenticated/agenda")({
   head: () => ({
@@ -691,7 +692,7 @@ function ClientPicker({
   }, [clients, search]);
 
   const create = useMutation({
-    mutationFn: () => upsertClient({ full_name: newName.trim(), phone: newPhone.trim() || null }),
+    mutationFn: () => upsertClient({ full_name: newName.trim(), phone: newPhone.trim() ? normalizePhoneBR(newPhone) : null }),
     onSuccess: (c) => {
       qc.invalidateQueries({ queryKey: ["clients"] });
       onChange(c.id, c.full_name);
