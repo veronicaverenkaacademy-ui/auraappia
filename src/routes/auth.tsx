@@ -62,8 +62,6 @@ function AuthPage() {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const signupHref: string = search.next ? `/cadastro?next=${encodeURIComponent(search.next)}` : "/cadastro";
-
   const getDestination = () => {
     const storedNext = window.sessionStorage.getItem("aura_auth_next");
     const rawNext = search.next ?? storedNext;
@@ -131,17 +129,40 @@ function AuthPage() {
     navigateAfterAuth();
   };
 
-  const google = async () => {
-    window.sessionStorage.setItem("aura_auth_next", getDestination());
-    const res = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin + "/auth" });
-    if (res.error) toast.error("Não foi possível entrar com Google");
+  // DIAGNÓSTICO TEMPORÁRIO: sem try/catch aqui, qualquer erro lançado por
+  // lovable.auth.signInWithOAuth (rejeição de promise, não um {error} retornado)
+  // ficava completamente invisível — sem toast, sem log, a tela só "não fazia nada".
+  // Agora qualquer falha real aparece no toast com o motivo técnico e no console.
+  const socialSignIn = async (provider: "google" | "apple") => {
+    const label = provider === "google" ? "Google" : "a Apple";
+    setLoading(true);
+    try {
+      window.sessionStorage.setItem("aura_auth_next", getDestination());
+      const res = await lovable.auth.signInWithOAuth(provider, { redirect_uri: window.location.origin + "/auth" });
+      // Cast solto só pra esse log/checagem de diagnóstico — não confio no shape exato
+      // retornado pelo pacote externo (@lovable.dev/cloud-auth-js) sem ver o código-fonte dele.
+      const resLoose = res as unknown as Record<string, unknown>;
+      console.info(`[auth] signInWithOAuth(${provider}) retornou`, res);
+      if (res.error) {
+        const msg = res.error instanceof Error ? res.error.message : String(res.error);
+        toast.error(`Não foi possível entrar com ${label}: ${msg}`);
+      } else if (!resLoose.redirected) {
+        // Nem erro, nem redirecionamento — resultado inesperado, precisa aparecer pra investigar.
+        toast.error(`Não foi possível entrar com ${label}: nenhum redirecionamento foi iniciado.`);
+      }
+      // Se redirected === true, o navegador já deve estar saindo desta página;
+      // não há nada mais a fazer aqui.
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[auth] Falha ao entrar com ${provider}`, e);
+      toast.error(`Não foi possível entrar com ${label}: ${msg}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const apple = async () => {
-    window.sessionStorage.setItem("aura_auth_next", getDestination());
-    const res = await lovable.auth.signInWithOAuth("apple", { redirect_uri: window.location.origin + "/auth" });
-    if (res.error) toast.error("Não foi possível entrar com a Apple");
-  };
+  const google = () => socialSignIn("google");
+  const apple = () => socialSignIn("apple");
 
   const heading =
     step === "otp"
@@ -169,16 +190,28 @@ function AuthPage() {
 
           {step === "social" && (
             <div className="space-y-5">
-              <Button onClick={apple} className="w-full h-12 rounded-xl gap-2 bg-black text-white hover:bg-black/90">
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M16.365 1.43c0 1.14-.416 2.06-1.25 2.86-.833.79-1.83 1.25-2.99 1.16-.14-1.1.4-2.24 1.19-2.99C14.15.65 15.4.13 16.365.02c.03.14.06.28.06.41zM20.7 17.34c-.44.98-.65 1.42-1.22 2.29-.79 1.21-1.9 2.72-3.28 2.73-1.22.02-1.53-.79-3.19-.78-1.66.01-2 .8-3.22.78-1.38-.02-2.43-1.38-3.22-2.59-2.21-3.4-2.44-7.39-1.08-9.51.97-1.52 2.5-2.41 3.93-2.41 1.47 0 2.39.81 3.61.81 1.18 0 1.9-.81 3.61-.81 1.28 0 2.63.7 3.6 1.9-3.16 1.73-2.65 6.24.26 7.59z" />
-                </svg>
-                Continuar com a Apple
+              <Button onClick={apple} disabled={loading} className="w-full h-12 rounded-xl gap-2 bg-black text-white hover:bg-black/90">
+                {loading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M16.365 1.43c0 1.14-.416 2.06-1.25 2.86-.833.79-1.83 1.25-2.99 1.16-.14-1.1.4-2.24 1.19-2.99C14.15.65 15.4.13 16.365.02c.03.14.06.28.06.41zM20.7 17.34c-.44.98-.65 1.42-1.22 2.29-.79 1.21-1.9 2.72-3.28 2.73-1.22.02-1.53-.79-3.19-.78-1.66.01-2 .8-3.22.78-1.38-.02-2.43-1.38-3.22-2.59-2.21-3.4-2.44-7.39-1.08-9.51.97-1.52 2.5-2.41 3.93-2.41 1.47 0 2.39.81 3.61.81 1.18 0 1.9-.81 3.61-.81 1.28 0 2.63.7 3.6 1.9-3.16 1.73-2.65 6.24.26 7.59z" />
+                    </svg>
+                    Continuar com a Apple
+                  </>
+                )}
               </Button>
 
-              <Button variant="outline" onClick={google} className="w-full h-12 rounded-xl bg-background gap-2">
-                <svg className="w-4 h-4" viewBox="0 0 24 24"><path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A10.99 10.99 0 0 0 12 23z"/><path fill="currentColor" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.07H2.18a11 11 0 0 0 0 9.87l3.66-2.84z"/><path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"/></svg>
-                Continuar com Google
+              <Button variant="outline" onClick={google} disabled={loading} className="w-full h-12 rounded-xl bg-background gap-2">
+                {loading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" viewBox="0 0 24 24"><path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A10.99 10.99 0 0 0 12 23z"/><path fill="currentColor" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.07H2.18a11 11 0 0 0 0 9.87l3.66-2.84z"/><path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"/></svg>
+                    Continuar com Google
+                  </>
+                )}
               </Button>
 
               <button onClick={() => setStep("phone")} className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition pt-2">
@@ -188,7 +221,7 @@ function AuthPage() {
               {!search.signup && (
                 <p className="text-center text-xs text-muted-foreground pt-4">
                   Ainda não tem conta?{" "}
-                  <Link to={signupHref} className="text-foreground underline underline-offset-2">
+                  <Link to="/cadastro" search={{ next: search.next }} className="text-foreground underline underline-offset-2">
                     Criar conta
                   </Link>
                 </p>
