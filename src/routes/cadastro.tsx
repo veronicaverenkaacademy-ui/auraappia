@@ -31,31 +31,40 @@ function Cadastro() {
   const [phone, setPhone] = useState("");
   const [profession, setProfession] = useState("");
 
+  const phoneTouched = phone.trim().length > 0;
+  const phoneInvalid = phoneTouched && !isValidPhoneBR(phone);
   const canSubmit = fullName.trim().length >= 3 && businessName.trim().length >= 2 && isValidPhoneBR(phone);
 
-  const backToAuthHref: string = search.next ? `/auth?next=${encodeURIComponent(search.next)}` : "/auth";
-
+  // DIAGNÓSTICO TEMPORÁRIO: antes, um erro aqui (sessionStorage bloqueado, navegação
+  // falhando) não tinha nenhum feedback visível — a tela só "não fazia nada". Agora
+  // qualquer falha real aparece em toast + console.
   const handleSubmit = () => {
-    if (fullName.trim().length < 3) { toast.error("Digite seu nome completo"); return; }
-    if (businessName.trim().length < 2) { toast.error("Digite o nome do seu salão/estúdio"); return; }
-    if (!isValidPhoneBR(phone)) { toast.error("Digite um telefone válido (com DDD)"); return; }
+    try {
+      if (fullName.trim().length < 3) { toast.error("Digite seu nome completo"); return; }
+      if (businessName.trim().length < 2) { toast.error("Digite o nome do seu salão/estúdio"); return; }
+      if (!isValidPhoneBR(phone)) { toast.error("Digite um telefone válido (com DDD)"); return; }
 
-    const payload: PendingSignupData = {
-      full_name: fullName.trim(),
-      business_name: businessName.trim(),
-      phone: normalizePhoneBR(phone),
-      profession: profession.trim(),
-    };
-    window.sessionStorage.setItem(SIGNUP_STORAGE_KEY, JSON.stringify(payload));
-    const continueHref: string = search.next ? `/auth?signup=1&next=${encodeURIComponent(search.next)}` : "/auth?signup=1";
-    navigate({ to: continueHref });
+      const payload: PendingSignupData = {
+        full_name: fullName.trim(),
+        business_name: businessName.trim(),
+        phone: normalizePhoneBR(phone),
+        profession: profession.trim(),
+      };
+      window.sessionStorage.setItem(SIGNUP_STORAGE_KEY, JSON.stringify(payload));
+      navigate({ to: "/auth", search: { next: search.next, signup: true } });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[cadastro] Falha ao salvar dados e navegar para /auth", e);
+      toast.error(`Não foi possível continuar: ${msg}`);
+    }
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <header className="p-6">
         <Link
-          to={backToAuthHref}
+          to="/auth"
+          search={{ next: search.next, signup: false }}
           className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition"
         >
           <ArrowLeft className="w-4 h-4" /> Voltar
@@ -110,9 +119,13 @@ function Cadastro() {
                 placeholder="(11) 99999-9999"
                 className="h-12 rounded-xl bg-secondary border-0 text-base"
               />
-              <p className="text-[11px] text-muted-foreground">
-                Esse número será o WhatsApp vinculado à sua conta — usado para comunicação com clientes.
-              </p>
+              {phoneInvalid ? (
+                <p className="text-[11px] text-destructive">Telefone incompleto — inclua o DDD.</p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">
+                  Esse número será o WhatsApp vinculado à sua conta — usado para comunicação com clientes.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
