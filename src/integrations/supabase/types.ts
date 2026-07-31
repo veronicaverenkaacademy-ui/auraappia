@@ -14,58 +14,15 @@ export type Database = {
   }
   public: {
     Tables: {
-      agenda_blocks: {
-        Row: {
-          created_at: string
-          ends_at: string
-          force_overlap: boolean
-          id: string
-          owner_id: string
-          professional_id: string | null
-          reason: string | null
-          starts_at: string
-        }
-        Insert: {
-          created_at?: string
-          ends_at: string
-          force_overlap?: boolean
-          id?: string
-          owner_id: string
-          professional_id?: string | null
-          reason?: string | null
-          starts_at: string
-        }
-        Update: {
-          created_at?: string
-          ends_at?: string
-          force_overlap?: boolean
-          id?: string
-          owner_id?: string
-          professional_id?: string | null
-          reason?: string | null
-          starts_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "agenda_blocks_professional_id_fkey"
-            columns: ["professional_id"]
-            isOneToOne: false
-            referencedRelation: "team_members"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       appointments: {
         Row: {
           client_id: string
           created_at: string
           ends_at: string
-          force_overlap: boolean
           id: string
           notes: string | null
           owner_id: string
           price: number
-          professional_id: string | null
           service_id: string | null
           service_name: string | null
           starts_at: string
@@ -76,12 +33,10 @@ export type Database = {
           client_id: string
           created_at?: string
           ends_at: string
-          force_overlap?: boolean
           id?: string
           notes?: string | null
           owner_id: string
           price?: number
-          professional_id?: string | null
           service_id?: string | null
           service_name?: string | null
           starts_at: string
@@ -92,12 +47,10 @@ export type Database = {
           client_id?: string
           created_at?: string
           ends_at?: string
-          force_overlap?: boolean
           id?: string
           notes?: string | null
           owner_id?: string
           price?: number
-          professional_id?: string | null
           service_id?: string | null
           service_name?: string | null
           starts_at?: string
@@ -110,13 +63,6 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "appointments_professional_id_fkey"
-            columns: ["professional_id"]
-            isOneToOne: false
-            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
           {
