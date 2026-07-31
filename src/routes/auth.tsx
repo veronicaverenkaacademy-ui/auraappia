@@ -14,7 +14,10 @@ export const Route = createFileRoute("/auth")({
   ssr: false,
   validateSearch: (search: Record<string, unknown>) => ({
     next: typeof search.next === "string" ? search.next : undefined,
-    signup: search.signup === "1" || search.signup === true,
+    // Aceita qualquer forma plausível de serialização (boolean true, string "true" ou "1")
+    // — depois de duas rodadas em que a comparação estrita não bateu com o valor real
+    // recebido, ficou mais seguro não apostar num formato só.
+    signup: search.signup === true || search.signup === "true" || search.signup === "1" || search.signup === 1,
   }),
   head: () => ({
     meta: [
@@ -36,7 +39,6 @@ export const Route = createFileRoute("/auth")({
 async function applyPendingSignupData(userId: string) {
   const raw = window.sessionStorage.getItem(SIGNUP_STORAGE_KEY);
   if (!raw) return;
-  window.sessionStorage.removeItem(SIGNUP_STORAGE_KEY);
   try {
     const data = JSON.parse(raw) as PendingSignupData;
     const { error } = await supabase.from("profiles").upsert({
@@ -46,8 +48,15 @@ async function applyPendingSignupData(userId: string) {
       phone: data.phone,
       profession: data.profession || null,
     });
-    if (error) console.error("[auth] Falha ao salvar dados de cadastro pendentes", error);
+    if (error) {
+      // Não apaga o rascunho se o upsert falhou — assim não perde os dados digitados.
+      console.error("[auth] Falha ao salvar dados de cadastro pendentes (rascunho mantido)", error);
+      return;
+    }
+    window.sessionStorage.removeItem(SIGNUP_STORAGE_KEY);
   } catch (e) {
+    // JSON malformado — não tem como reaproveitar, aí sim descarta.
+    window.sessionStorage.removeItem(SIGNUP_STORAGE_KEY);
     console.error("[auth] Falha ao interpretar dados de cadastro pendentes", e);
   }
 }
@@ -58,9 +67,26 @@ function AuthPage() {
   const navigate = useNavigate();
   const search = Route.useSearch();
   const [step, setStep] = useState<Step>("social");
-  const [phone, setPhone] = useState("");
+  // Lê o rascunho de /cadastro (se houver) uma única vez, ao montar — usado pra
+  // pré-preencher o telefone e pro painel de diagnóstico abaixo.
+  const [pendingSignup] = useState<PendingSignupData | null>(() => {
+    if (typeof window === "undefined") return null;
+    const raw = window.sessionStorage.getItem(SIGNUP_STORAGE_KEY);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as PendingSignupData;
+    } catch {
+      return null;
+    }
+  });
+  const [phone, setPhone] = useState(() => pendingSignup?.phone.replace(/^\+55/, "") ?? "");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
+  const [rawUrlSearch, setRawUrlSearch] = useState("");
+
+  useEffect(() => {
+    setRawUrlSearch(window.location.search);
+  }, []);
 
   const getDestination = () => {
     const storedNext = window.sessionStorage.getItem("aura_auth_next");
@@ -186,6 +212,16 @@ function AuthPage() {
           <div className="mb-10 text-center">
             <div className="text-2xl font-display font-medium tracking-tight">AURA</div>
             <p className="mt-3 text-sm text-muted-foreground">{heading}</p>
+          </div>
+
+          {/* DIAGNÓSTICO TEMPORÁRIO — tire um print desta caixa ao reportar qualquer
+              problema neste fluxo. Remover depois de confirmado que /cadastro → /auth
+              está funcionando de ponta a ponta. */}
+          <div className="mb-6 rounded-xl border border-dashed border-amber-500/40 bg-amber-50/60 dark:bg-amber-500/5 p-3 text-[10px] leading-relaxed text-amber-800 dark:text-amber-400 font-mono break-all">
+            <div>URL desta página: {rawUrlSearch || "(sem query string)"}</div>
+            <div>search.signup (já processado pelo router) = {JSON.stringify(search.signup)}</div>
+            <div>search.next = {JSON.stringify(search.next ?? null)}</div>
+            <div>rascunho de /cadastro no sessionStorage = {pendingSignup ? `sim (${pendingSignup.full_name || "sem nome"})` : "não"}</div>
           </div>
 
           {step === "social" && (
