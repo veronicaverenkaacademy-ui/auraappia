@@ -7,7 +7,7 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "Agende com Marina · AURA" },
-      { name: "description", content: "Reserve seu horário em segundos. Estúdio Marina Bastos — Lash, brow e beauty." },
+      { name: "description", content: "Reserve seu horário em segundos." },
       { property: "og:title", content: "Agende com Marina · AURA" },
       { property: "og:description", content: "Reserve seu horário em segundos." },
     ],
