@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import { cn } from "@/lib/utils";
 import {
   cancelAppointment,
@@ -58,6 +59,7 @@ import {
   revertCompleted,
   updateAppointment,
   updateAppointmentTime,
+  type MaterialAdjustment,
   type AgendaBlock,
   type Appointment,
   type AppointmentStatus,
@@ -816,11 +818,30 @@ function CompleteConfirmDialog({
 }) {
   const { data: preview, isLoading } = useQuery({
     queryKey: ["complete-preview", appointment.id, appointment.service_id, appointment.price],
-    queryFn: () => getCompletionPreview(appointment.service_id, Number(appointment.price)),
+    queryFn: () => getCompletionPreview(appointment.service_id, Number(appointment.price), appointment.id),
     enabled: open,
   });
+
+  // Quantidades editadas localmente (productId -> quantidade). Só gravamos um ajuste se
+  // a profissional realmente mexer em algum campo — sem toque nenhum, usa a ficha técnica
+  // padrão (ou o ajuste já salvo de uma conclusão anterior, se houver).
+  const [edited, setEdited] = useState<Record<string, number>>({});
+  const [touched, setTouched] = useState(false);
+
+  useEffect(() => {
+    if (preview) {
+      setEdited(Object.fromEntries(preview.materials.map((m) => [m.productId, m.quantity])));
+      setTouched(false);
+    }
+  }, [preview]);
+
   const mut = useMutation({
-    mutationFn: () => completeAppointment(appointment.id),
+    mutationFn: () => {
+      const override: MaterialAdjustment[] | undefined = touched
+        ? Object.entries(edited).map(([product_id, quantity]) => ({ product_id, quantity }))
+        : undefined;
+      return completeAppointment(appointment.id, override);
+    },
     onSuccess: () => { toast.success("Atendimento concluído"); onOpenChange(false); onDone(); },
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Erro ao concluir"),
   });
@@ -831,16 +852,31 @@ function CompleteConfirmDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Concluir atendimento?</AlertDialogTitle>
           <AlertDialogDescription asChild>
-            <div className="space-y-2 text-sm text-muted-foreground">
+            <div className="space-y-3 text-sm text-muted-foreground">
               <p>Isso vai gerar uma receita de <strong className="text-foreground">{formatBRL(Number(appointment.price))}</strong> no Financeiro.</p>
               {isLoading ? (
                 <p>Calculando consumo de estoque…</p>
               ) : preview && preview.materials.length > 0 ? (
-                <div>
-                  <p>E descontar do estoque:</p>
-                  <ul className="list-disc pl-4">
-                    {preview.materials.map((m, i) => <li key={i}>{m.quantity} {m.unit} de {m.productName}</li>)}
-                  </ul>
+                <div className="space-y-2">
+                  <p>
+                    E descontar do estoque {preview.isOverride && !touched ? "(ajuste salvo anteriormente para este atendimento)" : "— ajuste se o consumo real foi diferente"}:
+                  </p>
+                  <div className="space-y-2">
+                    {preview.materials.map((m) => (
+                      <div key={m.productId} className="flex items-center gap-2">
+                        <span className="flex-1 text-foreground truncate">{m.productName}</span>
+                        <DecimalInput
+                          className="w-20 h-8 text-right"
+                          value={edited[m.productId] ?? m.quantity}
+                          onChange={(v) => {
+                            setTouched(true);
+                            setEdited((cur) => ({ ...cur, [m.productId]: v }));
+                          }}
+                        />
+                        <span className="text-xs w-8 shrink-0">{m.unit}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ) : (
                 <p>Esse serviço não tem ficha técnica de materiais cadastrada — nenhum item de estoque será descontado.</p>

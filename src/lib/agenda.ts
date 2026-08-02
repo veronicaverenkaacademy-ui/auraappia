@@ -248,8 +248,26 @@ export async function cancelAppointment(id: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Dispara consume_appointment_materials() e record_appointment_revenue() no banco. */
-export async function completeAppointment(id: string): Promise<void> {
+export type MaterialAdjustment = { product_id: string; quantity: number };
+
+/**
+ * Dispara consume_appointment_materials() e record_appointment_revenue() no banco.
+ * Se materialsOverride for passado (a profissional ajustou as quantidades no diálogo de
+ * conclusão), grava o consumo real desse atendimento específico em appointment_materials
+ * ANTES de marcar como concluído — o trigger prefere esse ajuste em vez da ficha técnica
+ * padrão do serviço. Sem override, comportamento idêntico ao de sempre (usa a ficha
+ * técnica). A ficha técnica do serviço nunca é alterada por esse ajuste.
+ */
+export async function completeAppointment(id: string, materialsOverride?: MaterialAdjustment[]): Promise<void> {
+  if (materialsOverride && materialsOverride.length > 0) {
+    const owner_id = await uid();
+    const { error: delErr } = await supabase.from("appointment_materials").delete().eq("appointment_id", id);
+    if (delErr) throw delErr;
+    const { error: insErr } = await supabase.from("appointment_materials").insert(
+      materialsOverride.map((m) => ({ owner_id, appointment_id: id, product_id: m.product_id, quantity: m.quantity })),
+    );
+    if (insErr) throw insErr;
+  }
   const { error } = await supabase.from("appointments").update({ status: "completed" }).eq("id", id);
   if (error) throw error;
 }
@@ -264,24 +282,41 @@ export async function revertCompleted(id: string): Promise<void> {
 
 export type CompletionPreview = {
   revenueAmount: number;
-  materials: { productName: string; quantity: number; unit: string }[];
+  materials: { productId: string; productName: string; quantity: number; unit: string }[];
+  /** true quando já existe um ajuste manual salvo pra esse atendimento (de uma conclusão anterior revertida). */
+  isOverride: boolean;
 };
 
-/** O que VAI acontecer se este agendamento for marcado como concluído (calculado a partir da ficha técnica do serviço). */
-export async function getCompletionPreview(serviceId: string | null, price: number): Promise<CompletionPreview> {
-  if (!serviceId) return { revenueAmount: price, materials: [] };
+/**
+ * O que VAI acontecer se este agendamento for marcado como concluído. Se já existir um
+ * ajuste manual salvo pra esse atendimento (appointment_materials), mostra ele — senão,
+ * calcula a partir da ficha técnica padrão do serviço.
+ */
+export async function getCompletionPreview(serviceId: string | null, price: number, appointmentId: string): Promise<CompletionPreview> {
+  type Row = { quantity: number; product: { id: string; name: string; unit: string } | null };
+
+  const { data: overrideRows, error: overrideErr } = await supabase
+    .from("appointment_materials")
+    .select("quantity, product:products(id, name, unit)")
+    .eq("appointment_id", appointmentId);
+  if (overrideErr) throw overrideErr;
+  if (overrideRows && overrideRows.length > 0) {
+    const materials = ((overrideRows ?? []) as unknown as Row[])
+      .filter((m) => m.product)
+      .map((m) => ({ productId: m.product!.id, productName: m.product!.name, quantity: Number(m.quantity), unit: m.product!.unit }));
+    return { revenueAmount: price, materials, isOverride: true };
+  }
+
+  if (!serviceId) return { revenueAmount: price, materials: [], isOverride: false };
   const { data, error } = await supabase
     .from("service_materials")
-    .select("quantity, product:products(name, unit)")
+    .select("quantity, product:products(id, name, unit)")
     .eq("service_id", serviceId);
   if (error) throw error;
-  type Row = { quantity: number; product: { name: string; unit: string } | null };
-  const materials = ((data ?? []) as unknown as Row[]).map((m) => ({
-    productName: m.product?.name ?? "Produto",
-    quantity: Number(m.quantity),
-    unit: m.product?.unit ?? "un",
-  }));
-  return { revenueAmount: price, materials };
+  const materials = ((data ?? []) as unknown as Row[])
+    .filter((m) => m.product)
+    .map((m) => ({ productId: m.product!.id, productName: m.product!.name, quantity: Number(m.quantity), unit: m.product!.unit }));
+  return { revenueAmount: price, materials, isOverride: false };
 }
 
 export type RevertPreview = {

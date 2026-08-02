@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
@@ -424,11 +425,11 @@ function PurchaseDialog({ open, onOpenChange, product }: { open: boolean; onOpen
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Quantidade ({product.unit})</Label>
-              <Input type="number" step="0.01" value={qty || ""} onChange={(e) => setQty(Number(e.target.value))} />
+              <DecimalInput value={qty} onChange={setQty} />
             </div>
             <div>
               <Label>Valor total (R$)</Label>
-              <Input type="number" step="0.01" value={total || ""} onChange={(e) => setTotal(Number(e.target.value))} />
+              <DecimalInput value={total} onChange={setTotal} />
             </div>
           </div>
           {qty > 0 && total > 0 && (
@@ -490,11 +491,11 @@ function BatchDialog({ open, onOpenChange, product, suppliers }: { open: boolean
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div><Label>Número do lote</Label><Input value={batch} onChange={(e) => setBatch(e.target.value)} /></div>
-            <div><Label>Quantidade ({product.unit})</Label><Input type="number" step="0.01" value={qty || ""} onChange={(e) => setQty(Number(e.target.value))} /></div>
+            <div><Label>Quantidade ({product.unit})</Label><DecimalInput value={qty} onChange={setQty} /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><Label>Validade</Label><Input type="date" value={expires} onChange={(e) => setExpires(e.target.value)} /></div>
-            <div><Label>Custo/un (R$)</Label><Input type="number" step="0.01" value={cost || ""} onChange={(e) => setCost(Number(e.target.value))} /></div>
+            <div><Label>Custo/un (R$)</Label><DecimalInput value={cost} onChange={setCost} /></div>
           </div>
           {suppliers.length > 0 && (
             <div>
@@ -542,7 +543,7 @@ function WasteDialog({ open, onOpenChange, product }: { open: boolean; onOpenCha
       <DialogContent className="max-w-sm">
         <DialogHeader><DialogTitle>Registrar desperdício</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <div><Label>Quantidade ({product.unit})</Label><Input type="number" step="0.01" value={qty || ""} onChange={(e) => setQty(Number(e.target.value))} /></div>
+          <div><Label>Quantidade ({product.unit})</Label><DecimalInput value={qty} onChange={setQty} /></div>
           <div><Label>Motivo</Label><Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder="Quebra, vencimento, erro..." /></div>
         </div>
         <DialogFooter>
@@ -610,16 +611,16 @@ function EditProductDialog({ open, onOpenChange, product, suppliers }: { open: b
             </div>
           </div>
           <div className="grid grid-cols-4 gap-3">
-            <div><Label>Estoque</Label><Input type="number" step="0.01" value={form.stock ?? 0} onChange={(e) => setForm((f) => ({ ...f, stock: Number(e.target.value) }))} /></div>
-            <div><Label>Mín.</Label><Input type="number" step="0.01" value={form.min_stock ?? 0} onChange={(e) => setForm((f) => ({ ...f, min_stock: Number(e.target.value) }))} /></div>
-            <div><Label>Ideal</Label><Input type="number" step="0.01" value={form.ideal_stock ?? ""} onChange={(e) => setForm((f) => ({ ...f, ideal_stock: Number(e.target.value) }))} /></div>
-            <div><Label>Máx.</Label><Input type="number" step="0.01" value={form.max_stock ?? ""} onChange={(e) => setForm((f) => ({ ...f, max_stock: Number(e.target.value) }))} /></div>
+            <div><Label>Estoque</Label><DecimalInput value={form.stock} onChange={(v) => setForm((f) => ({ ...f, stock: v }))} /></div>
+            <div><Label>Mín.</Label><DecimalInput value={form.min_stock} onChange={(v) => setForm((f) => ({ ...f, min_stock: v }))} /></div>
+            <div><Label>Ideal</Label><DecimalInput value={form.ideal_stock} onChange={(v) => setForm((f) => ({ ...f, ideal_stock: v }))} /></div>
+            <div><Label>Máx.</Label><DecimalInput value={form.max_stock} onChange={(v) => setForm((f) => ({ ...f, max_stock: v }))} /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><Label>Custo/un (R$)</Label><Input type="number" step="0.01" value={form.cost_per_unit ?? 0} onChange={(e) => setForm((f) => ({ ...f, cost_per_unit: Number(e.target.value) }))} /></div>
-            <div><Label>Rende por un.</Label><Input type="number" step="0.01" value={form.yield_per_unit ?? ""} onChange={(e) => setForm((f) => ({ ...f, yield_per_unit: Number(e.target.value) }))} /></div>
+            <div><Label>Custo/un (R$)</Label><DecimalInput value={form.cost_per_unit} onChange={(v) => setForm((f) => ({ ...f, cost_per_unit: v }))} /></div>
+            <div><Label>Rende por un.</Label><DecimalInput value={form.yield_per_unit} onChange={(v) => setForm((f) => ({ ...f, yield_per_unit: v }))} /></div>
           </div>
-          <div><Label>Localização</Label><Input value={form.location ?? ""} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} /></div>
+          <div><Label>Localização (opcional)</Label><Input value={form.location ?? ""} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} /></div>
           <div className="grid grid-cols-2 gap-3">
             <div><Label>SKU</Label><Input value={form.sku ?? ""} onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))} /></div>
             <div><Label>Código de barras</Label><Input value={form.barcode ?? ""} onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))} /></div>
