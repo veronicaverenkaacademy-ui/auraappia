@@ -476,6 +476,17 @@ function StockTab({ serviceId, materials }: { serviceId: string; materials: Mate
     onError: (e: Error) => toast.error(e.message),
   });
   const totalCost = materials.reduce((s, m) => s + Number(m.quantity) * Number(m.product?.cost_per_unit ?? 0), 0);
+  const updateQty = useMutation({
+    mutationFn: async ({ productId, quantity }: { productId: string; quantity: number }) => {
+      if (quantity <= 0) throw new Error("Quantidade inválida");
+      await addMaterial(serviceId, productId, quantity);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["materials", serviceId] });
+      toast.success("Quantidade atualizada");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
   return (
     <div className="space-y-5">
       <div className="rounded-3xl p-5 border border-emerald-500/20 bg-emerald-500/5">
@@ -495,19 +506,16 @@ function StockTab({ serviceId, materials }: { serviceId: string; materials: Mate
         )}
         <div>
           {materials.map((m) => (
-            <div key={m.id} className="flex items-center gap-3 py-3 border-b border-border/50 last:border-0">
-              <div className="flex-1 min-w-0">
-                <div className="text-sm truncate">{m.product?.name}</div>
-                <div className="text-[11px] text-muted-foreground">estoque atual: {Number(m.product?.stock ?? 0)} {m.product?.unit}</div>
-              </div>
-              <div className="text-xs text-muted-foreground tabular-nums shrink-0">
-                {Number(m.quantity)} {m.product?.unit} · {formatBRL(Number(m.quantity) * Number(m.product?.cost_per_unit ?? 0))}
-              </div>
-              <Button size="icon" variant="ghost" onClick={async () => {
+            <MaterialRow
+              key={m.id}
+              material={m}
+              saving={updateQty.isPending}
+              onSave={(quantity) => updateQty.mutate({ productId: m.product_id, quantity })}
+              onRemove={async () => {
                 await removeMaterial(m.id);
                 qc.invalidateQueries({ queryKey: ["materials", serviceId] });
-              }}><Trash2 className="w-4 h-4" /></Button>
-            </div>
+              }}
+            />
           ))}
         </div>
 
@@ -526,6 +534,50 @@ function StockTab({ serviceId, materials }: { serviceId: string; materials: Mate
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function MaterialRow({ material, saving, onSave, onRemove }: {
+  material: Material; saving: boolean; onSave: (quantity: number) => void; onRemove: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [qty, setQty] = useState<number>(Number(material.quantity));
+
+  if (!editing) {
+    return (
+      <div className="flex items-center gap-3 py-3 border-b border-border/50 last:border-0">
+        <div className="flex-1 min-w-0">
+          <div className="text-sm truncate">{material.product?.name}</div>
+          <div className="text-[11px] text-muted-foreground">estoque atual: {Number(material.product?.stock ?? 0)} {material.product?.unit}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => { setQty(Number(material.quantity)); setEditing(true); }}
+          className="text-xs text-muted-foreground tabular-nums shrink-0 hover:text-foreground hover:underline transition"
+        >
+          {Number(material.quantity)} {material.product?.unit} · {formatBRL(Number(material.quantity) * Number(material.product?.cost_per_unit ?? 0))}
+        </button>
+        <Button size="icon" variant="ghost" onClick={onRemove}><Trash2 className="w-4 h-4" /></Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-3 py-3 border-b border-border/50 last:border-0">
+      <div className="flex-1 min-w-0">
+        <div className="text-sm truncate">{material.product?.name}</div>
+        <div className="text-[11px] text-muted-foreground">estoque atual: {Number(material.product?.stock ?? 0)} {material.product?.unit}</div>
+      </div>
+      <DecimalInput className="w-20" value={qty} onChange={setQty} />
+      <Button
+        size="sm"
+        disabled={saving}
+        onClick={() => { onSave(qty); setEditing(false); }}
+      >
+        Salvar
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancelar</Button>
     </div>
   );
 }
