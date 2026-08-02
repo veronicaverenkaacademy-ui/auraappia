@@ -816,10 +816,11 @@ function CompleteConfirmDialog({
   onOpenChange: (v: boolean) => void;
   onDone: () => void;
 }) {
-  const { data: preview, isLoading } = useQuery({
+  const { data: preview, isLoading, isError, error } = useQuery({
     queryKey: ["complete-preview", appointment.id, appointment.service_id, appointment.price],
     queryFn: () => getCompletionPreview(appointment.service_id, Number(appointment.price), appointment.id),
     enabled: open,
+    retry: false,
   });
 
   // Quantidades editadas localmente (productId -> quantidade). Só gravamos um ajuste se
@@ -856,6 +857,10 @@ function CompleteConfirmDialog({
               <p>Isso vai gerar uma receita de <strong className="text-foreground">{formatBRL(Number(appointment.price))}</strong> no Financeiro.</p>
               {isLoading ? (
                 <p>Calculando consumo de estoque…</p>
+              ) : isError ? (
+                <p className="text-red-600">
+                  Não deu pra calcular a prévia de consumo de estoque: {error instanceof Error ? error.message : String(error)}. Isso é só a prévia — o desconto de estoque em si (pela ficha técnica padrão) acontece do mesmo jeito ao concluir.
+                </p>
               ) : preview && preview.materials.length > 0 ? (
                 <div className="space-y-2">
                   <p>
