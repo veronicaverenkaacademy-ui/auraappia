@@ -36,12 +36,40 @@ function NotFoundComponent() {
   );
 }
 
+// Falha ao buscar o JS de uma rota carregada sob demanda (comum logo após um deploy,
+// que troca os hashes dos arquivos, ou numa conexão instável) — assinatura conhecida
+// desse tipo de erro em bundlers baseados em Vite/Rollup/Rolldown.
+const CHUNK_LOAD_ERROR_RE =
+  /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed|Loading chunk .* failed|dynamically imported module/i;
+
+// Evita loop infinito: só tenta o reload automático uma vez por sessão de navegador.
+const CHUNK_RELOAD_FLAG = "aura_chunk_reload_attempted";
+
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
+  const message = error instanceof Error ? error.message : String(error);
+  const isChunkLoadError = CHUNK_LOAD_ERROR_RE.test(message);
+
   useEffect(() => {
     reportLovableError(error, { boundary: "tanstack_root_error_component" });
   }, [error]);
+
+  const alreadyAttemptedReload =
+    typeof window !== "undefined" && window.sessionStorage.getItem(CHUNK_RELOAD_FLAG) === "1";
+
+  useEffect(() => {
+    if (!isChunkLoadError || typeof window === "undefined" || alreadyAttemptedReload) return;
+    window.sessionStorage.setItem(CHUNK_RELOAD_FLAG, "1");
+    window.location.reload();
+  }, [isChunkLoadError, alreadyAttemptedReload]);
+
+  if (isChunkLoadError && !alreadyAttemptedReload) {
+    // Reload automático foi disparado no efeito acima — evita piscar a tela de erro.
+    // Se o reload não resolver (erro persiste), a próxima renderização já cai no bloco
+    // abaixo, com o flag marcado, e mostra a tela de erro normalmente.
+    return null;
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -52,6 +80,11 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
         <p className="mt-2 text-sm text-muted-foreground">
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
+        <div className="mt-4 rounded-md border border-border/60 bg-muted/40 p-3 text-left">
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Detalhe técnico</p>
+          <p className="mt-1 text-xs font-mono break-words text-foreground">{message}</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">rota: {router.state.location.pathname}</p>
+        </div>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
