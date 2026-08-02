@@ -52,12 +52,24 @@ function ProductDetailPage() {
   const [wasteOpen, setWasteOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
 
-  const { data: product } = useQuery({ queryKey: ["product", id], queryFn: () => fetchProduct(id) });
+  const { data: product, isError, error, refetch } = useQuery({ queryKey: ["product", id], queryFn: () => fetchProduct(id) });
   const { data: batches = [] } = useQuery({ queryKey: ["batches", id], queryFn: () => listBatches(id) });
   const { data: movements = [] } = useQuery({ queryKey: ["movements", id], queryFn: () => listMovements(id) });
   const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: listSuppliers });
 
   const supplier = suppliers.find((s) => s.id === product?.supplier_id) ?? null;
+
+  if (isError) {
+    return (
+      <AppShell className="p-8">
+        <div className="max-w-xl mx-auto space-y-4 text-center">
+          <div className="text-sm font-medium text-destructive">Não foi possível carregar o produto</div>
+          <div className="text-sm text-muted-foreground">{error?.message || "Erro desconhecido"}</div>
+          <Button variant="outline" onClick={() => refetch()}>Tentar novamente</Button>
+        </div>
+      </AppShell>
+    );
+  }
 
   if (!product) {
     return <AppShell className="p-8"><div className="text-sm text-muted-foreground">Carregando...</div></AppShell>;

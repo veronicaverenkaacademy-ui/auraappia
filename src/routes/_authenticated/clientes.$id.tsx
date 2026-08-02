@@ -169,7 +169,7 @@ function ClientDetail() {
   const qc = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
 
-  const { data: client, isLoading } = useQuery({ queryKey: ["client", id], queryFn: () => getClient(id) });
+  const { data: client, isLoading, isError, error, refetch } = useQuery({ queryKey: ["client", id], queryFn: () => getClient(id) });
   const { data: appts = [] } = useQuery({ queryKey: ["client", id, "appts"], queryFn: () => listAppointments(id) });
 
   const ins = useMemo(
@@ -185,6 +185,18 @@ function ClientDetail() {
       navigate({ to: "/clientes" });
     },
   });
+
+  if (isError) {
+    return (
+      <AppShell title="Perfil da Cliente" className="p-8">
+        <div className="max-w-xl mx-auto space-y-4 text-center">
+          <div className="text-sm font-medium text-destructive">Não foi possível carregar a cliente</div>
+          <div className="text-sm text-muted-foreground">{error?.message || "Erro desconhecido"}</div>
+          <Button variant="outline" onClick={() => refetch()}>Tentar novamente</Button>
+        </div>
+      </AppShell>
+    );
+  }
 
   if (isLoading || !ins) return <AppShell title="Perfil da Cliente" className="p-8 text-sm text-muted-foreground">Carregando…</AppShell>;
   if (!client) return <AppShell title="Perfil da Cliente" className="p-8 text-sm text-muted-foreground">Cliente não encontrada.</AppShell>;

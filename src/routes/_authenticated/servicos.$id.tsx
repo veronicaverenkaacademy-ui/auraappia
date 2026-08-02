@@ -76,7 +76,7 @@ function ServiceDetail() {
   const navigate = useNavigate();
   const qc = useQueryClient();
 
-  const { data: service, isLoading } = useQuery({ queryKey: ["service", id], queryFn: () => getService(id) });
+  const { data: service, isLoading, isError, error, refetch } = useQuery({ queryKey: ["service", id], queryFn: () => getService(id) });
   const { data: materials = [] } = useQuery({ queryKey: ["materials", id], queryFn: () => listMaterials(id) });
   const { data: appts = [] } = useQuery({ queryKey: ["service-appts", id], queryFn: () => fetchServiceAppointments(id) });
 
@@ -96,6 +96,18 @@ function ServiceDetail() {
       navigate({ to: "/servicos" });
     },
   });
+
+  if (isError) {
+    return (
+      <AppShell title="Serviço" className="px-4 md:px-8 py-10 max-w-4xl mx-auto">
+        <div className="max-w-xl mx-auto space-y-4 text-center">
+          <div className="text-sm font-medium text-destructive">Não foi possível carregar o serviço</div>
+          <div className="text-sm text-muted-foreground">{error?.message || "Erro desconhecido"}</div>
+          <Button variant="outline" onClick={() => refetch()}>Tentar novamente</Button>
+        </div>
+      </AppShell>
+    );
+  }
 
   if (isLoading || !service) {
     return (

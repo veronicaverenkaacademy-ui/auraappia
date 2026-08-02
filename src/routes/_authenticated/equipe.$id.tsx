@@ -20,7 +20,7 @@ function MemberDetail() {
   const { id } = Route.useParams();
   const nav = useNavigate();
   const qc = useQueryClient();
-  const { data: member } = useQuery({ queryKey: ["team-member", id], queryFn: () => getTeamMember(id) });
+  const { data: member, isError, error, refetch } = useQuery({ queryKey: ["team-member", id], queryFn: () => getTeamMember(id) });
   const [form, setForm] = useState<TeamMember | null>(null);
 
   useEffect(() => { if (member) setForm(member); }, [member]);
@@ -38,6 +38,16 @@ function MemberDetail() {
     mutationFn: () => deleteTeamMember(id),
     onSuccess: () => { toast.success("Colaborador removido."); nav({ to: "/equipe" }); },
   });
+
+  if (isError) {
+    return (
+      <div className="max-w-4xl mx-auto p-8 space-y-4 text-center">
+        <div className="text-sm font-medium text-destructive">Não foi possível carregar o colaborador</div>
+        <div className="text-sm text-muted-foreground">{error?.message || "Erro desconhecido"}</div>
+        <Button variant="outline" onClick={() => refetch()}>Tentar novamente</Button>
+      </div>
+    );
+  }
 
   if (!form) return <div className="text-sm text-muted-foreground">Carregando…</div>;
 
