@@ -278,6 +278,7 @@ export type Database = {
           phone: string | null
           tags: string[]
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           avatar_url?: string | null
@@ -291,6 +292,7 @@ export type Database = {
           phone?: string | null
           tags?: string[]
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           avatar_url?: string | null
@@ -304,6 +306,7 @@ export type Database = {
           phone?: string | null
           tags?: string[]
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -970,7 +973,20 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      public_professionals: {
+        Row: {
+          agenda_color: string | null
+          avatar_url: string | null
+          bio: string | null
+          booking_slug: string | null
+          full_name: string | null
+          id: string | null
+          instagram: string | null
+          owner_id: string | null
+          role_title: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       has_role: {
