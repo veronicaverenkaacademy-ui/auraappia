@@ -55,9 +55,9 @@ export type Material = {
 };
 
 async function uid() {
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) throw new Error("Não autenticado");
-  return data.user.id;
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data.session?.user) throw new Error("Não autenticado");
+  return data.session.user.id;
 }
 
 // PRODUCTS

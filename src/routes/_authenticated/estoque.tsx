@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -352,33 +353,33 @@ function NewProductDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
           <div className="grid grid-cols-4 gap-3">
             <div>
               <Label>Estoque</Label>
-              <Input type="number" step="0.01" value={form.stock ?? 0} onChange={(e) => setForm((f) => ({ ...f, stock: Number(e.target.value) }))} />
+              <DecimalInput value={form.stock} onChange={(v) => setForm((f) => ({ ...f, stock: v }))} />
             </div>
             <div>
               <Label>Mín.</Label>
-              <Input type="number" step="0.01" value={form.min_stock ?? 0} onChange={(e) => setForm((f) => ({ ...f, min_stock: Number(e.target.value) }))} />
+              <DecimalInput value={form.min_stock} onChange={(v) => setForm((f) => ({ ...f, min_stock: v }))} />
             </div>
             <div>
               <Label>Ideal</Label>
-              <Input type="number" step="0.01" value={form.ideal_stock ?? ""} onChange={(e) => setForm((f) => ({ ...f, ideal_stock: Number(e.target.value) }))} />
+              <DecimalInput value={form.ideal_stock} onChange={(v) => setForm((f) => ({ ...f, ideal_stock: v }))} />
             </div>
             <div>
               <Label>Máx.</Label>
-              <Input type="number" step="0.01" value={form.max_stock ?? ""} onChange={(e) => setForm((f) => ({ ...f, max_stock: Number(e.target.value) }))} />
+              <DecimalInput value={form.max_stock} onChange={(v) => setForm((f) => ({ ...f, max_stock: v }))} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Custo/un (R$)</Label>
-              <Input type="number" step="0.01" value={form.cost_per_unit ?? 0} onChange={(e) => setForm((f) => ({ ...f, cost_per_unit: Number(e.target.value) }))} />
+              <DecimalInput value={form.cost_per_unit} onChange={(v) => setForm((f) => ({ ...f, cost_per_unit: v }))} />
             </div>
             <div>
               <Label>Rende por un. (atendimentos)</Label>
-              <Input type="number" step="0.01" value={form.yield_per_unit ?? ""} onChange={(e) => setForm((f) => ({ ...f, yield_per_unit: Number(e.target.value) }))} />
+              <DecimalInput value={form.yield_per_unit} onChange={(v) => setForm((f) => ({ ...f, yield_per_unit: v }))} />
             </div>
           </div>
           <div>
-            <Label>Localização</Label>
+            <Label>Localização (opcional)</Label>
             <Input placeholder="Armário A · Gaveta 2" value={form.location ?? ""} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} />
           </div>
         </div>

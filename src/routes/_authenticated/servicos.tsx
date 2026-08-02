@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -247,6 +248,7 @@ function ServiceCard({ service }: { service: Service }) {
 
 function QuickCreateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [form, setForm] = useState<{ name: string; category: string; price: number; duration_min: number; description: string }>({
     name: "", category: "", price: 0, duration_min: 60, description: "",
   });
@@ -266,10 +268,11 @@ function QuickCreateDialog({ open, onOpenChange }: { open: boolean; onOpenChange
         active: true,
       });
     },
-    onSuccess: () => {
+    onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ["services"] });
-      toast.success("Serviço criado");
+      toast.success("Serviço criado — adicione os materiais da ficha técnica na aba Estoque");
       onOpenChange(false);
+      navigate({ to: "/servicos/$id", params: { id: created.id }, search: { tab: "estoque" } });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -284,13 +287,13 @@ function QuickCreateDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             <Input value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} placeholder="ex: Extensão de Cílios" /></div>
           <div className="grid grid-cols-2 gap-3">
             <div><Label>Preço (R$)</Label>
-              <Input type="number" step="0.01" value={form.price || ""} onChange={(e) => setForm((f) => ({ ...f, price: Number(e.target.value) }))} /></div>
+              <DecimalInput value={form.price} onChange={(v) => setForm((f) => ({ ...f, price: v }))} /></div>
             <div><Label>Duração (min)</Label>
               <Input type="number" value={form.duration_min || ""} onChange={(e) => setForm((f) => ({ ...f, duration_min: Number(e.target.value) }))} /></div>
           </div>
           <div><Label>Descrição curta</Label>
             <Textarea rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Fio a fio, mega volume, etc." /></div>
-          <p className="text-[11px] text-muted-foreground">Protocolo completo, materiais, comissão e mensagens podem ser configurados depois na página do serviço.</p>
+          <p className="text-[11px] text-muted-foreground">Ao criar, você já vai direto pra página do serviço pra montar a ficha técnica (materiais), protocolo, comissão e mensagens.</p>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancelar</Button>

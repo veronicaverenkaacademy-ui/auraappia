@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import {
   ChevronLeft, Sparkles, MoreHorizontal, Clock, Package, DollarSign,
   Megaphone, Image as ImageIcon, Wand2, FileText, Camera, ShoppingBag,
@@ -29,6 +30,9 @@ import {
 } from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/_authenticated/servicos/$id")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab: typeof search.tab === "string" ? search.tab : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Protocolo — AURA" },
@@ -52,6 +56,8 @@ function fmtDuration(min: number) {
   return `${min}min`;
 }
 
+const SERVICE_TABS = ["resumo", "info", "protocolo", "estoque", "financeiro", "marketing", "fotos", "ia"] as const;
+
 type ApptRow = { id: string; price: number; starts_at: string; ends_at: string; status: string; client_id: string };
 
 async function fetchServiceAppointments(serviceId: string): Promise<ApptRow[]> {
@@ -66,6 +72,7 @@ async function fetchServiceAppointments(serviceId: string): Promise<ApptRow[]> {
 
 function ServiceDetail() {
   const { id } = Route.useParams();
+  const { tab } = Route.useSearch();
   const navigate = useNavigate();
   const qc = useQueryClient();
 
@@ -169,7 +176,7 @@ function ServiceDetail() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="resumo" className="w-full">
+      <Tabs defaultValue={tab && SERVICE_TABS.includes(tab as typeof SERVICE_TABS[number]) ? tab : "resumo"} className="w-full">
         <TabsList className="bg-transparent p-0 h-auto gap-1 mb-6 overflow-x-auto flex-nowrap justify-start w-full no-scrollbar">
           {[
             { v: "resumo", l: "Resumo" },
@@ -353,7 +360,7 @@ function InfoTab({ service }: { service: Service }) {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div><Label>Preço padrão (R$)</Label>
-            <Input type="number" step="0.01" value={form.price || ""} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} /></div>
+            <DecimalInput value={form.price} onChange={(v) => setForm({ ...form, price: v })} /></div>
           <div><Label>Duração (min)</Label>
             <Input type="number" value={form.duration_min || ""} onChange={(e) => setForm({ ...form, duration_min: Number(e.target.value) })} /></div>
         </div>
@@ -502,7 +509,7 @@ function StockTab({ serviceId, materials }: { serviceId: string; materials: Mate
               <SelectTrigger className="flex-1"><SelectValue placeholder="Adicionar produto" /></SelectTrigger>
               <SelectContent>{products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name} ({p.unit})</SelectItem>)}</SelectContent>
             </Select>
-            <Input type="number" step="0.01" className="md:w-24" value={qty || ""} onChange={(e) => setQty(Number(e.target.value))} placeholder="Qtd" />
+            <DecimalInput className="md:w-24" value={qty} onChange={setQty} placeholder="Qtd" />
             <Button onClick={() => add.mutate()} disabled={add.isPending}>Adicionar</Button>
           </div>
         )}
