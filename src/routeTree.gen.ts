@@ -9,6 +9,8 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TermosRouteImport } from './routes/termos'
+import { Route as PrivacidadeRouteImport } from './routes/privacidade'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as CadastroRouteImport } from './routes/cadastro'
 import { Route as AuthRouteImport } from './routes/auth'
@@ -57,6 +59,16 @@ import { Route as AuthenticatedBiClientesRouteImport } from './routes/_authentic
 import { Route as AuthenticatedAuraIaConselhoRouteImport } from './routes/_authenticated/aura-ia.conselho'
 import { Route as AuthenticatedAuraIaChatRouteImport } from './routes/_authenticated/aura-ia.chat'
 
+const TermosRoute = TermosRouteImport.update({
+  id: '/termos',
+  path: '/termos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacidadeRoute = PrivacidadeRouteImport.update({
+  id: '/privacidade',
+  path: '/privacidade',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PortalRoute = PortalRouteImport.update({
   id: '/portal',
   path: '/portal',
@@ -315,6 +327,8 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/cadastro': typeof CadastroRoute
   '/portal': typeof PortalRoute
+  '/privacidade': typeof PrivacidadeRoute
+  '/termos': typeof TermosRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/aura-ia': typeof AuthenticatedAuraIaRouteWithChildren
   '/bi': typeof AuthenticatedBiRouteWithChildren
@@ -363,6 +377,8 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/cadastro': typeof CadastroRoute
   '/portal': typeof PortalRoute
+  '/privacidade': typeof PrivacidadeRoute
+  '/termos': typeof TermosRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/configuracoes': typeof AuthenticatedConfiguracoesRoute
@@ -407,6 +423,8 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/cadastro': typeof CadastroRoute
   '/portal': typeof PortalRoute
+  '/privacidade': typeof PrivacidadeRoute
+  '/termos': typeof TermosRoute
   '/_authenticated/agenda': typeof AuthenticatedAgendaRoute
   '/_authenticated/aura-ia': typeof AuthenticatedAuraIaRouteWithChildren
   '/_authenticated/bi': typeof AuthenticatedBiRouteWithChildren
@@ -457,6 +475,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/cadastro'
     | '/portal'
+    | '/privacidade'
+    | '/termos'
     | '/agenda'
     | '/aura-ia'
     | '/bi'
@@ -505,6 +525,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/cadastro'
     | '/portal'
+    | '/privacidade'
+    | '/termos'
     | '/agenda'
     | '/clientes'
     | '/configuracoes'
@@ -548,6 +570,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/cadastro'
     | '/portal'
+    | '/privacidade'
+    | '/termos'
     | '/_authenticated/agenda'
     | '/_authenticated/aura-ia'
     | '/_authenticated/bi'
@@ -598,11 +622,27 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   CadastroRoute: typeof CadastroRoute
   PortalRoute: typeof PortalRoute
+  PrivacidadeRoute: typeof PrivacidadeRoute
+  TermosRoute: typeof TermosRoute
   LSlugRoute: typeof LSlugRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/termos': {
+      id: '/termos'
+      path: '/termos'
+      fullPath: '/termos'
+      preLoaderRoute: typeof TermosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacidade': {
+      id: '/privacidade'
+      path: '/privacidade'
+      fullPath: '/privacidade'
+      preLoaderRoute: typeof PrivacidadeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/portal': {
       id: '/portal'
       path: '/portal'
@@ -1126,6 +1166,8 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   CadastroRoute: CadastroRoute,
   PortalRoute: PortalRoute,
+  PrivacidadeRoute: PrivacidadeRoute,
+  TermosRoute: TermosRoute,
   LSlugRoute: LSlugRoute,
 }
 export const routeTree = rootRouteImport
