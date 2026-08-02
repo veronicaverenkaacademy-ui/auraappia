@@ -50,7 +50,56 @@ export type Database = {
             foreignKeyName: "agenda_blocks_professional_id_fkey"
             columns: ["professional_id"]
             isOneToOne: false
+            referencedRelation: "public_professionals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agenda_blocks_professional_id_fkey"
+            columns: ["professional_id"]
+            isOneToOne: false
             referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      appointment_materials: {
+        Row: {
+          appointment_id: string
+          created_at: string
+          id: string
+          owner_id: string
+          product_id: string
+          quantity: number
+        }
+        Insert: {
+          appointment_id: string
+          created_at?: string
+          id?: string
+          owner_id: string
+          product_id: string
+          quantity?: number
+        }
+        Update: {
+          appointment_id?: string
+          created_at?: string
+          id?: string
+          owner_id?: string
+          product_id?: string
+          quantity?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointment_materials_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_materials_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
             referencedColumns: ["id"]
           },
         ]
@@ -116,6 +165,13 @@ export type Database = {
             foreignKeyName: "appointments_professional_id_fkey"
             columns: ["professional_id"]
             isOneToOne: false
+            referencedRelation: "public_professionals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointments_professional_id_fkey"
+            columns: ["professional_id"]
+            isOneToOne: false
             referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
@@ -124,48 +180,6 @@ export type Database = {
             columns: ["service_id"]
             isOneToOne: false
             referencedRelation: "services"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      appointment_materials: {
-        Row: {
-          appointment_id: string
-          created_at: string
-          id: string
-          owner_id: string
-          product_id: string
-          quantity: number
-        }
-        Insert: {
-          appointment_id: string
-          created_at?: string
-          id?: string
-          owner_id: string
-          product_id: string
-          quantity?: number
-        }
-        Update: {
-          appointment_id?: string
-          created_at?: string
-          id?: string
-          owner_id?: string
-          product_id?: string
-          quantity?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "appointment_materials_appointment_id_fkey"
-            columns: ["appointment_id"]
-            isOneToOne: false
-            referencedRelation: "appointments"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "appointment_materials_product_id_fkey"
-            columns: ["product_id"]
-            isOneToOne: false
-            referencedRelation: "products"
             referencedColumns: ["id"]
           },
         ]
@@ -984,6 +998,13 @@ export type Database = {
             foreignKeyName: "team_permissions_member_id_fkey"
             columns: ["member_id"]
             isOneToOne: false
+            referencedRelation: "public_professionals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_permissions_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
             referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
@@ -1026,6 +1047,28 @@ export type Database = {
           instagram: string | null
           owner_id: string | null
           role_title: string | null
+        }
+        Insert: {
+          agenda_color?: string | null
+          avatar_url?: string | null
+          bio?: string | null
+          booking_slug?: string | null
+          full_name?: string | null
+          id?: string | null
+          instagram?: string | null
+          owner_id?: string | null
+          role_title?: string | null
+        }
+        Update: {
+          agenda_color?: string | null
+          avatar_url?: string | null
+          bio?: string | null
+          booking_slug?: string | null
+          full_name?: string | null
+          id?: string | null
+          instagram?: string | null
+          owner_id?: string | null
+          role_title?: string | null
         }
         Relationships: []
       }
