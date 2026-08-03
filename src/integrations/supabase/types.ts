@@ -576,6 +576,8 @@ export type Database = {
           barcode: string | null
           brand: string | null
           category: string | null
+          consumption_ratio: number | null
+          consumption_unit: string | null
           cost_per_unit: number
           created_at: string
           description: string | null
@@ -605,6 +607,8 @@ export type Database = {
           barcode?: string | null
           brand?: string | null
           category?: string | null
+          consumption_ratio?: number | null
+          consumption_unit?: string | null
           cost_per_unit?: number
           created_at?: string
           description?: string | null
@@ -634,6 +638,8 @@ export type Database = {
           barcode?: string | null
           brand?: string | null
           category?: string | null
+          consumption_ratio?: number | null
+          consumption_unit?: string | null
           cost_per_unit?: number
           created_at?: string
           description?: string | null
