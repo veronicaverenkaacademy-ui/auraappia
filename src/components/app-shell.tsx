@@ -37,7 +37,7 @@ export function AppShell({ children, title, right, hideTrigger, className }: App
             {right && <div className="ml-auto flex items-center gap-2 shrink-0">{right}</div>}
           </header>
 
-          <main className={cn("flex-1", className)}>{children}</main>
+          <main className={cn("flex-1 w-full min-w-0", className)}>{children}</main>
 
           {isMobile && (
             <MobileBottomNav className="fixed bottom-0 left-0 right-0 md:hidden" />
