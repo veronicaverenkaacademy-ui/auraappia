@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp
 import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { SIGNUP_STORAGE_KEY, type PendingSignupData } from "@/lib/signup";
+import { formatCEP, lookupCEP } from "@/lib/cep";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
@@ -17,12 +18,19 @@ export const Route = createFileRoute("/auth")({
     // Aceita qualquer forma plausível de serialização (boolean true, string "true" ou "1")
     // — depois de duas rodadas em que a comparação estrita não bateu com o valor real
     // recebido, ficou mais seguro não apostar num formato só.
-    signup: search.signup === true || search.signup === "true" || search.signup === "1" || search.signup === 1,
+    signup:
+      search.signup === true ||
+      search.signup === "true" ||
+      search.signup === "1" ||
+      search.signup === 1,
   }),
   head: () => ({
     meta: [
       { title: "Entrar — AURA" },
-      { name: "description", content: "Acesse sua conta AURA para gerenciar sua agenda, clientes e finanças." },
+      {
+        name: "description",
+        content: "Acesse sua conta AURA para gerenciar sua agenda, clientes e finanças.",
+      },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -47,6 +55,12 @@ async function applyPendingSignupData(userId: string) {
       business_name: data.business_name,
       phone: data.phone,
       profession: data.profession || null,
+      // Endereço é opcional (etapa 2 do cadastro) — se o usuário pulou, fica null e
+      // continua editável depois em Configurações.
+      cep: data.cep || null,
+      city: data.city || null,
+      state: data.state || null,
+      address: data.address || null,
     });
     if (error) {
       // Não apaga o rascunho se o upsert falhou — assim não perde os dados digitados.
@@ -82,6 +96,61 @@ function AuthPage() {
   const [phone, setPhone] = useState(() => pendingSignup?.phone.replace(/^\+55/, "") ?? "");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Bloco de endereço (etapa 2, opcional). Inicializa do rascunho se o usuário já
+  // tinha preenchido e voltou/recarregou a página, pra não perder o que já digitou.
+  const [address, setAddress] = useState(() => ({
+    cep: pendingSignup?.cep ?? "",
+    city: pendingSignup?.city ?? "",
+    state: pendingSignup?.state ?? "",
+    address: pendingSignup?.address ?? "",
+  }));
+  const [cepLoading, setCepLoading] = useState(false);
+  const latestCepDigitsRef = useRef("");
+
+  // Mantém o estado local em sincronia com o rascunho em sessionStorage a cada
+  // alteração, pra não perder o endereço se o usuário navegar pra trás e voltar
+  // (o componente remonta e relê o rascunho). Se não existir rascunho (ex.: chegou
+  // direto em /auth?signup=true sem passar por /cadastro), fica só no estado local.
+  const updateAddress = (patch: Partial<typeof address>) => {
+    setAddress((prev) => {
+      const next = { ...prev, ...patch };
+      try {
+        const raw = window.sessionStorage.getItem(SIGNUP_STORAGE_KEY);
+        if (raw) {
+          const draft = JSON.parse(raw) as PendingSignupData;
+          window.sessionStorage.setItem(SIGNUP_STORAGE_KEY, JSON.stringify({ ...draft, ...next }));
+        }
+      } catch {
+        // Rascunho ilegível — segue só com o estado local, sem travar a digitação.
+      }
+      return next;
+    });
+  };
+
+  const handleCepChange = (raw: string) => {
+    const formatted = formatCEP(raw);
+    updateAddress({ cep: formatted });
+    const digits = formatted.replace(/\D/g, "");
+    latestCepDigitsRef.current = digits;
+    if (digits.length !== 8) {
+      setCepLoading(false);
+      return;
+    }
+    setCepLoading(true);
+    lookupCEP(formatted).then((result) => {
+      // CEP inválido/API fora do ar: lookupCEP já retorna null silenciosamente —
+      // não bloqueia o formulário, cidade/estado seguem editáveis manualmente.
+      if (latestCepDigitsRef.current !== digits) return; // usuário já digitou outro CEP
+      setCepLoading(false);
+      if (result) {
+        updateAddress({
+          ...(result.city ? { city: result.city } : {}),
+          ...(result.state ? { state: result.state } : {}),
+        });
+      }
+    });
+  };
 
   const getDestination = () => {
     const storedNext = window.sessionStorage.getItem("aura_auth_next");
@@ -142,7 +211,11 @@ function AuthPage() {
     });
     setLoading(false);
     if (error) {
-      toast.error(error.message.includes("provider") ? "SMS ainda não configurado. Ative um provedor SMS em Cloud → Auth." : error.message);
+      toast.error(
+        error.message.includes("provider")
+          ? "SMS ainda não configurado. Ative um provedor SMS em Cloud → Auth."
+          : error.message,
+      );
       return;
     }
     toast.success("Código enviado por SMS");
@@ -152,7 +225,11 @@ function AuthPage() {
   const verify = async () => {
     if (code.length !== 6) return;
     setLoading(true);
-    const { error } = await supabase.auth.verifyOtp({ phone: normalized(phone), token: code, type: "sms" });
+    const { error } = await supabase.auth.verifyOtp({
+      phone: normalized(phone),
+      token: code,
+      type: "sms",
+    });
     setLoading(false);
     if (error) return toast.error("Código inválido");
     navigateAfterAuth();
@@ -167,7 +244,9 @@ function AuthPage() {
     setLoading(true);
     try {
       window.sessionStorage.setItem("aura_auth_next", getDestination());
-      const res = await lovable.auth.signInWithOAuth(provider, { redirect_uri: window.location.origin + "/auth" });
+      const res = await lovable.auth.signInWithOAuth(provider, {
+        redirect_uri: window.location.origin + "/auth",
+      });
       // Cast solto só pra esse log/checagem de diagnóstico — não confio no shape exato
       // retornado pelo pacote externo (@lovable.dev/cloud-auth-js) sem ver o código-fonte dele.
       const resLoose = res as unknown as Record<string, unknown>;
@@ -205,7 +284,10 @@ function AuthPage() {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <header className="p-6">
-        <Link to="/" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition"
+        >
           <ArrowLeft className="w-4 h-4" /> Voltar
         </Link>
       </header>
@@ -214,12 +296,104 @@ function AuthPage() {
         <div className="w-full max-w-sm">
           <div className="mb-10 text-center">
             <div className="text-2xl font-display font-medium tracking-tight">AURA</div>
+            {search.signup && (
+              <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-primary">
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground">
+                  2
+                </span>
+                Passo 2 de 2 — Finalize seu cadastro
+              </div>
+            )}
             <p className="mt-3 text-sm text-muted-foreground">{heading}</p>
           </div>
 
           {step === "social" && (
             <div className="space-y-5">
-              <Button onClick={apple} disabled={loading} className="w-full h-12 rounded-xl gap-2 bg-black text-white hover:bg-black/90">
+              {search.signup && (
+                <div className="space-y-4 rounded-2xl border border-border/60 bg-secondary/40 p-4">
+                  <div>
+                    <p className="text-sm font-medium">Endereço do salão (opcional)</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Pode preencher agora ou deixar pra depois em Configurações.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label
+                      htmlFor="cep"
+                      className="text-xs font-normal text-muted-foreground uppercase tracking-wider"
+                    >
+                      CEP
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="cep"
+                        inputMode="numeric"
+                        placeholder="00000-000"
+                        value={address.cep}
+                        onChange={(e) => handleCepChange(e.target.value)}
+                        maxLength={9}
+                        className="h-11 rounded-xl bg-background border-0 text-sm pr-9"
+                      />
+                      {cepLoading && (
+                        <Loader2 className="w-4 h-4 animate-spin absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label
+                      htmlFor="city"
+                      className="text-xs font-normal text-muted-foreground uppercase tracking-wider"
+                    >
+                      Cidade
+                    </Label>
+                    <Input
+                      id="city"
+                      value={address.city}
+                      onChange={(e) => updateAddress({ city: e.target.value })}
+                      className="h-11 rounded-xl bg-background border-0 text-sm"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label
+                      htmlFor="state"
+                      className="text-xs font-normal text-muted-foreground uppercase tracking-wider"
+                    >
+                      Estado
+                    </Label>
+                    <Input
+                      id="state"
+                      value={address.state}
+                      onChange={(e) => updateAddress({ state: e.target.value })}
+                      className="h-11 rounded-xl bg-background border-0 text-sm"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label
+                      htmlFor="address"
+                      className="text-xs font-normal text-muted-foreground uppercase tracking-wider"
+                    >
+                      Endereço
+                    </Label>
+                    <Input
+                      id="address"
+                      placeholder="Rua, número, bairro"
+                      value={address.address}
+                      onChange={(e) => updateAddress({ address: e.target.value })}
+                      className="h-11 rounded-xl bg-background border-0 text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <Button
+                onClick={apple}
+                disabled={loading}
+                className="w-full h-12 rounded-xl gap-2 bg-black text-white hover:bg-black/90"
+              >
                 {loading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
@@ -232,25 +406,54 @@ function AuthPage() {
                 )}
               </Button>
 
-              <Button variant="outline" onClick={google} disabled={loading} className="w-full h-12 rounded-xl bg-background gap-2">
+              <Button
+                variant="outline"
+                onClick={google}
+                disabled={loading}
+                className="w-full h-12 rounded-xl bg-background gap-2"
+              >
                 {loading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <>
-                    <svg className="w-4 h-4" viewBox="0 0 24 24"><path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A10.99 10.99 0 0 0 12 23z"/><path fill="currentColor" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.07H2.18a11 11 0 0 0 0 9.87l3.66-2.84z"/><path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"/></svg>
+                    <svg className="w-4 h-4" viewBox="0 0 24 24">
+                      <path
+                        fill="currentColor"
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                      />
+                      <path
+                        fill="currentColor"
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A10.99 10.99 0 0 0 12 23z"
+                      />
+                      <path
+                        fill="currentColor"
+                        d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.07H2.18a11 11 0 0 0 0 9.87l3.66-2.84z"
+                      />
+                      <path
+                        fill="currentColor"
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"
+                      />
+                    </svg>
                     Continuar com Google
                   </>
                 )}
               </Button>
 
-              <button onClick={() => setStep("phone")} className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition pt-2">
+              <button
+                onClick={() => setStep("phone")}
+                className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition pt-2"
+              >
                 Prefere entrar por telefone?
               </button>
 
               {!search.signup && (
                 <p className="text-center text-xs text-muted-foreground pt-4">
                   Ainda não tem conta?{" "}
-                  <Link to="/cadastro" search={{ next: search.next }} className="text-foreground underline underline-offset-2">
+                  <Link
+                    to="/cadastro"
+                    search={{ next: search.next }}
+                    className="text-foreground underline underline-offset-2"
+                  >
                     Criar conta
                   </Link>
                 </p>
@@ -261,7 +464,10 @@ function AuthPage() {
           {step === "phone" && (
             <div className="space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="phone" className="text-xs font-normal text-muted-foreground uppercase tracking-wider">
+                <Label
+                  htmlFor="phone"
+                  className="text-xs font-normal text-muted-foreground uppercase tracking-wider"
+                >
                   Telefone
                 </Label>
                 <Input
@@ -278,7 +484,10 @@ function AuthPage() {
               <Button onClick={sendCode} disabled={loading} className="w-full h-12 rounded-xl">
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Enviar código"}
               </Button>
-              <button onClick={() => setStep("social")} className="w-full text-xs text-muted-foreground hover:text-foreground transition">
+              <button
+                onClick={() => setStep("social")}
+                className="w-full text-xs text-muted-foreground hover:text-foreground transition"
+              >
                 Voltar
               </button>
             </div>
@@ -289,23 +498,39 @@ function AuthPage() {
               <div className="flex justify-center">
                 <InputOTP maxLength={6} value={code} onChange={setCode}>
                   <InputOTPGroup>
-                    {[0,1,2,3,4,5].map((i) => (
-                      <InputOTPSlot key={i} index={i} className="w-11 h-12 text-base bg-secondary border-0" />
+                    {[0, 1, 2, 3, 4, 5].map((i) => (
+                      <InputOTPSlot
+                        key={i}
+                        index={i}
+                        className="w-11 h-12 text-base bg-secondary border-0"
+                      />
                     ))}
                   </InputOTPGroup>
                 </InputOTP>
               </div>
-              <Button onClick={verify} disabled={loading || code.length !== 6} className="w-full h-12 rounded-xl">
+              <Button
+                onClick={verify}
+                disabled={loading || code.length !== 6}
+                className="w-full h-12 rounded-xl"
+              >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirmar"}
               </Button>
-              <button onClick={() => { setStep("phone"); setCode(""); }} className="w-full text-xs text-muted-foreground hover:text-foreground transition">
+              <button
+                onClick={() => {
+                  setStep("phone");
+                  setCode("");
+                }}
+                className="w-full text-xs text-muted-foreground hover:text-foreground transition"
+              >
                 Usar outro número
               </button>
             </div>
           )}
 
           <p className="mt-10 text-center text-xs text-muted-foreground/70 leading-relaxed">
-            Ao continuar você concorda com nossos<br />Termos de Uso e Política de Privacidade.
+            Ao continuar você concorda com nossos
+            <br />
+            Termos de Uso e Política de Privacidade.
           </p>
         </div>
       </div>
