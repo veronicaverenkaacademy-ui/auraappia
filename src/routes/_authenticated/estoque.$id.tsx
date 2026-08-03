@@ -3,7 +3,7 @@ import { AppShell } from "@/components/app-shell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  upsertProduct, deleteProduct, registerPurchase, adjustStock, formatBRL, UNITS, type Product,
+  upsertProduct, deleteProduct, registerPurchase, adjustStock, formatBRL, UNITS, fixedConversionRatio, type Product,
 } from "@/lib/catalog";
 import {
   listBatches, listMovements, addBatch, registerWaste,
@@ -573,6 +573,7 @@ function WasteDialog({ open, onOpenChange, product }: { open: boolean; onOpenCha
 function EditProductDialog({ open, onOpenChange, product, suppliers }: { open: boolean; onOpenChange: (v: boolean) => void; product: Product; suppliers: Supplier[] }) {
   const qc = useQueryClient();
   const [form, setForm] = useState<Partial<Product>>(product);
+  const fixedRatio = form.unit && form.consumption_unit ? fixedConversionRatio(form.unit, form.consumption_unit) : null;
 
   const save = useMutation({
     mutationFn: async () => upsertProduct({
@@ -596,7 +597,9 @@ function EditProductDialog({ open, onOpenChange, product, suppliers }: { open: b
       description: form.description ?? null,
       notes: form.notes ?? null,
       consumption_unit: form.consumption_unit || null,
-      consumption_ratio: form.consumption_unit && form.consumption_ratio ? Number(form.consumption_ratio) : null,
+      consumption_ratio: form.consumption_unit
+        ? (fixedRatio ?? (form.consumption_ratio ? Number(form.consumption_ratio) : null))
+        : null,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["product", product.id] });
@@ -654,7 +657,15 @@ function EditProductDialog({ open, onOpenChange, product, suppliers }: { open: b
             {form.consumption_unit && (
               <div>
                 <Label>{UNITS.find((u) => u.value === form.consumption_unit)?.label ?? form.consumption_unit} por 1 {form.unit ?? "un"}</Label>
-                <DecimalInput placeholder="ex: 60" value={form.consumption_ratio} onChange={(v) => setForm((f) => ({ ...f, consumption_ratio: v }))} />
+                <DecimalInput
+                  placeholder="ex: 60"
+                  value={fixedRatio ?? form.consumption_ratio}
+                  onChange={(v) => setForm((f) => ({ ...f, consumption_ratio: v }))}
+                  disabled={fixedRatio !== null}
+                />
+                {fixedRatio !== null && (
+                  <p className="text-[11px] text-muted-foreground mt-1">Conversão fixa, não editável.</p>
+                )}
               </div>
             )}
           </div>

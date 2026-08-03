@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 
-export type Unit = "un" | "ml" | "g" | "par" | "gts" | "m" | "cm";
+export type Unit = "un" | "ml" | "g" | "par" | "gts" | "m" | "cm" | "l" | "kg";
 export const UNITS: { value: Unit; label: string }[] = [
   { value: "un", label: "unidade" },
   { value: "ml", label: "ml" },
@@ -9,7 +9,27 @@ export const UNITS: { value: Unit; label: string }[] = [
   { value: "gts", label: "gotas" },
   { value: "m", label: "metros" },
   { value: "cm", label: "centímetros" },
+  { value: "l", label: "litros" },
+  { value: "kg", label: "quilogramas" },
 ];
+
+/**
+ * Pares de unidade de estoque -> unidade de consumo cuja conversão é fixa por definição
+ * (métrica), não específica de produto. Pra esses, o campo de taxa é preenchido
+ * automaticamente e travado — evita o erro de alguém digitar um número errado pra uma
+ * conversão que não deveria nem ser editável. Qualquer par fora dessa lista (ex.:
+ * ml -> gotas) continua manual, porque depende do produto físico (ex.: o conta-gotas).
+ */
+const FIXED_UNIT_CONVERSIONS: Record<string, Record<string, number>> = {
+  m: { cm: 100 },
+  l: { ml: 1000 },
+  kg: { g: 1000 },
+};
+
+/** Taxa de conversão fixa entre unidade de estoque e unidade de consumo, ou null se esse par não tem conversão universal (precisa ser informada manualmente). */
+export function fixedConversionRatio(stockUnit: string, consumptionUnit: string): number | null {
+  return FIXED_UNIT_CONVERSIONS[stockUnit]?.[consumptionUnit] ?? null;
+}
 
 export type Product = {
   id: string;

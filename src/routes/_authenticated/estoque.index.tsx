@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { listProducts, upsertProduct, registerPurchase, UNITS, formatBRL, type Product } from "@/lib/catalog";
+import { listProducts, upsertProduct, registerPurchase, UNITS, formatBRL, fixedConversionRatio, type Product } from "@/lib/catalog";
 import { computeSummary, computePredictions, listExpiringBatches, listSuppliers, categoryEmoji, formatDaysBadge } from "@/lib/inventory";
 import { useMemo, useState } from "react";
 import { Plus, Search, AlertTriangle, Hourglass, Sparkles, ChevronRight, Package } from "lucide-react";
@@ -279,6 +279,7 @@ function NewProductDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   const navigate = useNavigate();
   const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: listSuppliers });
   const [form, setForm] = useState<Partial<Product>>({ unit: "un", stock: 0, min_stock: 0, cost_per_unit: 0 });
+  const fixedRatio = form.unit && form.consumption_unit ? fixedConversionRatio(form.unit, form.consumption_unit) : null;
 
   const save = useMutation({
     mutationFn: async () => {
@@ -297,7 +298,9 @@ function NewProductDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
         supplier_id: form.supplier_id ?? null,
         yield_per_unit: form.yield_per_unit ? Number(form.yield_per_unit) : null,
         consumption_unit: form.consumption_unit || null,
-        consumption_ratio: form.consumption_unit && form.consumption_ratio ? Number(form.consumption_ratio) : null,
+        consumption_ratio: form.consumption_unit
+          ? (fixedRatio ?? (form.consumption_ratio ? Number(form.consumption_ratio) : null))
+          : null,
       });
       return created;
     },
@@ -401,7 +404,15 @@ function NewProductDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
             {form.consumption_unit && (
               <div>
                 <Label>{UNITS.find((u) => u.value === form.consumption_unit)?.label ?? form.consumption_unit} por 1 {form.unit ?? "un"}</Label>
-                <DecimalInput placeholder="ex: 60" value={form.consumption_ratio} onChange={(v) => setForm((f) => ({ ...f, consumption_ratio: v }))} />
+                <DecimalInput
+                  placeholder="ex: 60"
+                  value={fixedRatio ?? form.consumption_ratio}
+                  onChange={(v) => setForm((f) => ({ ...f, consumption_ratio: v }))}
+                  disabled={fixedRatio !== null}
+                />
+                {fixedRatio !== null && (
+                  <p className="text-[11px] text-muted-foreground mt-1">Conversão fixa, não editável.</p>
+                )}
               </div>
             )}
           </div>
