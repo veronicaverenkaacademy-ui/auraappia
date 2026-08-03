@@ -296,6 +296,8 @@ function NewProductDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
         location: form.location ?? null,
         supplier_id: form.supplier_id ?? null,
         yield_per_unit: form.yield_per_unit ? Number(form.yield_per_unit) : null,
+        consumption_unit: form.consumption_unit || null,
+        consumption_ratio: form.consumption_unit && form.consumption_ratio ? Number(form.consumption_ratio) : null,
       });
       return created;
     },
@@ -381,6 +383,27 @@ function NewProductDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
           <div>
             <Label>Localização (opcional)</Label>
             <Input placeholder="Armário A · Gaveta 2" value={form.location ?? ""} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/50">
+            <div>
+              <Label>Consumido numa unidade menor? (opcional)</Label>
+              <Select
+                value={form.consumption_unit ?? "__none"}
+                onValueChange={(v) => setForm((f) => ({ ...f, consumption_unit: v === "__none" ? null : v }))}
+              >
+                <SelectTrigger><SelectValue placeholder="Mesma do estoque" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">Mesma do estoque</SelectItem>
+                  {UNITS.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            {form.consumption_unit && (
+              <div>
+                <Label>{UNITS.find((u) => u.value === form.consumption_unit)?.label ?? form.consumption_unit} por 1 {form.unit ?? "un"}</Label>
+                <DecimalInput placeholder="ex: 60" value={form.consumption_ratio} onChange={(v) => setForm((f) => ({ ...f, consumption_ratio: v }))} />
+              </div>
+            )}
           </div>
         </div>
         <DialogFooter>
