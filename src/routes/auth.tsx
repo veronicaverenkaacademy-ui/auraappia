@@ -82,11 +82,6 @@ function AuthPage() {
   const [phone, setPhone] = useState(() => pendingSignup?.phone.replace(/^\+55/, "") ?? "");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
-  const [rawUrlSearch, setRawUrlSearch] = useState("");
-
-  useEffect(() => {
-    setRawUrlSearch(window.location.search);
-  }, []);
 
   const getDestination = () => {
     const storedNext = window.sessionStorage.getItem("aura_auth_next");
@@ -212,16 +207,6 @@ function AuthPage() {
           <div className="mb-10 text-center">
             <div className="text-2xl font-display font-medium tracking-tight">AURA</div>
             <p className="mt-3 text-sm text-muted-foreground">{heading}</p>
-          </div>
-
-          {/* DIAGNÓSTICO TEMPORÁRIO — tire um print desta caixa ao reportar qualquer
-              problema neste fluxo. Remover depois de confirmado que /cadastro → /auth
-              está funcionando de ponta a ponta. */}
-          <div className="mb-6 rounded-xl border border-dashed border-amber-500/40 bg-amber-50/60 dark:bg-amber-500/5 p-3 text-[10px] leading-relaxed text-amber-800 dark:text-amber-400 font-mono break-all">
-            <div>URL desta página: {rawUrlSearch || "(sem query string)"}</div>
-            <div>search.signup (já processado pelo router) = {JSON.stringify(search.signup)}</div>
-            <div>search.next = {JSON.stringify(search.next ?? null)}</div>
-            <div>rascunho de /cadastro no sessionStorage = {pendingSignup ? `sim (${pendingSignup.full_name || "sem nome"})` : "não"}</div>
           </div>
 
           {step === "social" && (
