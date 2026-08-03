@@ -179,6 +179,9 @@ function ProductDetailPage() {
             ["Localização", product.location ?? "—"],
             ["Valor médio de compra", formatBRL(Number(product.cost_per_unit))],
             ["Rende por " + product.unit, atendimentos !== null ? `~${atendimentos} atendimentos` : "—"],
+            ...(product.consumption_unit
+              ? [["Consumo registrado em", `${product.consumption_ratio ?? "—"} ${product.consumption_unit} por ${product.unit}`] as [string, string]]
+              : []),
           ]} />
           <div className="mt-6">
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-3">Histórico de movimentação</div>
@@ -592,6 +595,8 @@ function EditProductDialog({ open, onOpenChange, product, suppliers }: { open: b
       yield_per_unit: form.yield_per_unit ? Number(form.yield_per_unit) : null,
       description: form.description ?? null,
       notes: form.notes ?? null,
+      consumption_unit: form.consumption_unit || null,
+      consumption_ratio: form.consumption_unit && form.consumption_ratio ? Number(form.consumption_ratio) : null,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["product", product.id] });
@@ -631,6 +636,27 @@ function EditProductDialog({ open, onOpenChange, product, suppliers }: { open: b
           <div className="grid grid-cols-2 gap-3">
             <div><Label>Custo/un (R$)</Label><DecimalInput value={form.cost_per_unit} onChange={(v) => setForm((f) => ({ ...f, cost_per_unit: v }))} /></div>
             <div><Label>Rende por un.</Label><DecimalInput value={form.yield_per_unit} onChange={(v) => setForm((f) => ({ ...f, yield_per_unit: v }))} /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/50">
+            <div>
+              <Label>Consumido numa unidade menor? (opcional)</Label>
+              <Select
+                value={form.consumption_unit ?? "__none"}
+                onValueChange={(v) => setForm((f) => ({ ...f, consumption_unit: v === "__none" ? null : v }))}
+              >
+                <SelectTrigger><SelectValue placeholder="Mesma do estoque" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">Mesma do estoque</SelectItem>
+                  {UNITS.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            {form.consumption_unit && (
+              <div>
+                <Label>{UNITS.find((u) => u.value === form.consumption_unit)?.label ?? form.consumption_unit} por 1 {form.unit ?? "un"}</Label>
+                <DecimalInput placeholder="ex: 60" value={form.consumption_ratio} onChange={(v) => setForm((f) => ({ ...f, consumption_ratio: v }))} />
+              </div>
+            )}
           </div>
           <div><Label>Localização (opcional)</Label><Input value={form.location ?? ""} onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))} /></div>
           <div className="grid grid-cols-2 gap-3">

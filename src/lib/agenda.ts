@@ -293,29 +293,30 @@ export type CompletionPreview = {
  * calcula a partir da ficha técnica padrão do serviço.
  */
 export async function getCompletionPreview(serviceId: string | null, price: number, appointmentId: string): Promise<CompletionPreview> {
-  type Row = { quantity: number; product: { id: string; name: string; unit: string } | null };
+  type Row = { quantity: number; product: { id: string; name: string; unit: string; consumption_unit: string | null } | null };
+  const displayUnit = (p: { unit: string; consumption_unit: string | null }) => p.consumption_unit || p.unit;
 
   const { data: overrideRows, error: overrideErr } = await supabase
     .from("appointment_materials")
-    .select("quantity, product:products(id, name, unit)")
+    .select("quantity, product:products(id, name, unit, consumption_unit)")
     .eq("appointment_id", appointmentId);
   if (overrideErr) throw overrideErr;
   if (overrideRows && overrideRows.length > 0) {
     const materials = ((overrideRows ?? []) as unknown as Row[])
       .filter((m) => m.product)
-      .map((m) => ({ productId: m.product!.id, productName: m.product!.name, quantity: Number(m.quantity), unit: m.product!.unit }));
+      .map((m) => ({ productId: m.product!.id, productName: m.product!.name, quantity: Number(m.quantity), unit: displayUnit(m.product!) }));
     return { revenueAmount: price, materials, isOverride: true };
   }
 
   if (!serviceId) return { revenueAmount: price, materials: [], isOverride: false };
   const { data, error } = await supabase
     .from("service_materials")
-    .select("quantity, product:products(id, name, unit)")
+    .select("quantity, product:products(id, name, unit, consumption_unit)")
     .eq("service_id", serviceId);
   if (error) throw error;
   const materials = ((data ?? []) as unknown as Row[])
     .filter((m) => m.product)
-    .map((m) => ({ productId: m.product!.id, productName: m.product!.name, quantity: Number(m.quantity), unit: m.product!.unit }));
+    .map((m) => ({ productId: m.product!.id, productName: m.product!.name, quantity: Number(m.quantity), unit: displayUnit(m.product!) }));
   return { revenueAmount: price, materials, isOverride: false };
 }
 

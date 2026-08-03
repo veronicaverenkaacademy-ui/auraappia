@@ -34,6 +34,10 @@ export type Product = {
   description: string | null;
   yield_per_unit: number | null;
   supplier_id: string | null;
+  /** Unidade em que o consumo por atendimento é registrado, se diferente da unidade de estoque (ex.: "gts" para um produto estocado em "ml"). */
+  consumption_unit: string | null;
+  /** Quantas unidades de consumption_unit equivalem a 1 unidade de estoque (ex.: 60 gotas = 1 ml). */
+  consumption_ratio: number | null;
 };
 
 export type Service = {
@@ -166,8 +170,31 @@ export async function removeMaterial(id: string) {
   if (error) throw error;
 }
 
+/** Converte a quantidade de um material (registrada na unidade de consumo, ex.: gotas) para a unidade de estoque (ex.: ml), usando a taxa de conversão do produto. Sem taxa definida, quantidade e unidade de estoque são a mesma coisa (comportamento de sempre). */
+export function materialQtyInStockUnit(m: Material): number {
+  const ratio = Number(m.product?.consumption_ratio ?? 0);
+  return ratio > 0 ? Number(m.quantity) / ratio : Number(m.quantity);
+}
+
+/** Unidade que deve aparecer para a profissional ao lançar/ver a quantidade de um material: a de consumo, se o produto tiver uma definida; senão, a de estoque. */
+export function materialDisplayUnit(product?: Product | null): string {
+  return product?.consumption_unit || product?.unit || "un";
+}
+
+export function materialCost(m: Material): number {
+  return materialQtyInStockUnit(m) * Number(m.product?.cost_per_unit ?? 0);
+}
+
+/** Quantos atendimentos ainda são possíveis com o estoque atual de um produto, dado o quanto cada atendimento consome (na unidade de consumo do produto). */
+export function possibleAppointments(product: Product, quantityPerAppointment: number): number | null {
+  if (!quantityPerAppointment || quantityPerAppointment <= 0) return null;
+  const ratio = Number(product.consumption_ratio ?? 0);
+  const stockInConsumptionUnit = ratio > 0 ? Number(product.stock) * ratio : Number(product.stock);
+  return Math.floor(stockInConsumptionUnit / quantityPerAppointment);
+}
+
 export function serviceCost(materials: Material[]): number {
-  return materials.reduce((s, m) => s + Number(m.quantity) * Number(m.product?.cost_per_unit ?? 0), 0);
+  return materials.reduce((s, m) => s + materialCost(m), 0);
 }
 
 export function marginPct(price: number, cost: number): number {

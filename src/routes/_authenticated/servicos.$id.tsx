@@ -19,7 +19,8 @@ import {
 import {
   getService, upsertService, deleteService,
   listMaterials, addMaterial, removeMaterial, listProducts,
-  serviceCost, marginPct, formatBRL, type Service, type Material,
+  serviceCost, marginPct, formatBRL, materialCost, materialDisplayUnit, possibleAppointments,
+  type Service, type Material,
 } from "@/lib/catalog";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -451,7 +452,7 @@ function ProtocolTab({ service, materials }: { service: Service; materials: Mate
               <Row
                 key={m.id}
                 label={m.product?.name ?? "—"}
-                value={<span className="tabular-nums">{Number(m.quantity)} {m.product?.unit} · {formatBRL(Number(m.quantity) * Number(m.product?.cost_per_unit ?? 0))}</span>}
+                value={<span className="tabular-nums">{Number(m.quantity)} {materialDisplayUnit(m.product)} · {formatBRL(materialCost(m))}</span>}
               />
             ))}
           </div>
@@ -475,7 +476,7 @@ function StockTab({ serviceId, materials }: { serviceId: string; materials: Mate
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["materials", serviceId] }); setProdId(""); setQty(1); },
     onError: (e: Error) => toast.error(e.message),
   });
-  const totalCost = materials.reduce((s, m) => s + Number(m.quantity) * Number(m.product?.cost_per_unit ?? 0), 0);
+  const totalCost = serviceCost(materials);
   const updateQty = useMutation({
     mutationFn: async ({ productId, quantity }: { productId: string; quantity: number }) => {
       if (quantity <= 0) throw new Error("Quantidade inválida");
@@ -527,7 +528,7 @@ function StockTab({ serviceId, materials }: { serviceId: string; materials: Mate
           <div className="flex flex-col md:flex-row gap-2 pt-4 mt-2 border-t border-border/50">
             <Select value={prodId} onValueChange={setProdId}>
               <SelectTrigger className="flex-1"><SelectValue placeholder="Adicionar produto" /></SelectTrigger>
-              <SelectContent>{products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name} ({p.unit})</SelectItem>)}</SelectContent>
+              <SelectContent>{products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name} ({materialDisplayUnit(p)})</SelectItem>)}</SelectContent>
             </Select>
             <DecimalInput className="md:w-24" value={qty} onChange={setQty} placeholder="Qtd" />
             <Button onClick={() => add.mutate()} disabled={add.isPending}>Adicionar</Button>
@@ -544,19 +545,28 @@ function MaterialRow({ material, saving, onSave, onRemove }: {
   const [editing, setEditing] = useState(false);
   const [qty, setQty] = useState<number>(Number(material.quantity));
 
+  const displayUnit = materialDisplayUnit(material.product);
+  const stockNote = material.product
+    ? (() => {
+        const left = possibleAppointments(material.product, Number(material.quantity));
+        const stockLine = `estoque atual: ${Number(material.product.stock)} ${material.product.unit}`;
+        return left !== null ? `${stockLine} · dá para ~${left} atendimentos` : stockLine;
+      })()
+    : "";
+
   if (!editing) {
     return (
       <div className="flex items-center gap-3 py-3 border-b border-border/50 last:border-0">
         <div className="flex-1 min-w-0">
           <div className="text-sm truncate">{material.product?.name}</div>
-          <div className="text-[11px] text-muted-foreground">estoque atual: {Number(material.product?.stock ?? 0)} {material.product?.unit}</div>
+          <div className="text-[11px] text-muted-foreground">{stockNote}</div>
         </div>
         <button
           type="button"
           onClick={() => { setQty(Number(material.quantity)); setEditing(true); }}
           className="text-xs text-muted-foreground tabular-nums shrink-0 hover:text-foreground hover:underline transition"
         >
-          {Number(material.quantity)} {material.product?.unit} · {formatBRL(Number(material.quantity) * Number(material.product?.cost_per_unit ?? 0))}
+          {Number(material.quantity)} {displayUnit} · {formatBRL(materialCost(material))}
         </button>
         <Button size="icon" variant="ghost" onClick={onRemove}><Trash2 className="w-4 h-4" /></Button>
       </div>
@@ -567,9 +577,10 @@ function MaterialRow({ material, saving, onSave, onRemove }: {
     <div className="flex items-center gap-3 py-3 border-b border-border/50 last:border-0">
       <div className="flex-1 min-w-0">
         <div className="text-sm truncate">{material.product?.name}</div>
-        <div className="text-[11px] text-muted-foreground">estoque atual: {Number(material.product?.stock ?? 0)} {material.product?.unit}</div>
+        <div className="text-[11px] text-muted-foreground">{stockNote}</div>
       </div>
       <DecimalInput className="w-20" value={qty} onChange={setQty} />
+      <span className="text-xs text-muted-foreground shrink-0">{displayUnit}</span>
       <Button
         size="sm"
         disabled={saving}
