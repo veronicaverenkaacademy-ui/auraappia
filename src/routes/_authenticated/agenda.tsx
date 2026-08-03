@@ -869,16 +869,35 @@ function CompleteConfirmDialog({
                   <div className="space-y-2">
                     {preview.materials.map((m) => (
                       <div key={m.productId} className="flex items-center gap-2">
-                        <span className="flex-1 text-foreground truncate">{m.productName}</span>
-                        <DecimalInput
-                          className="w-20 h-8 text-right"
-                          value={edited[m.productId] ?? m.quantity}
-                          onChange={(v) => {
-                            setTouched(true);
-                            setEdited((cur) => ({ ...cur, [m.productId]: v }));
-                          }}
-                        />
-                        <span className="text-xs w-8 shrink-0">{m.unit}</span>
+                        {m.hasConsumptionUnit ? (
+                          <>
+                            <span className="flex-1 text-foreground truncate">{m.productName}</span>
+                            <DecimalInput
+                              className="w-20 h-8 text-right"
+                              value={edited[m.productId] ?? m.quantity}
+                              onChange={(v) => {
+                                setTouched(true);
+                                setEdited((cur) => ({ ...cur, [m.productId]: v }));
+                              }}
+                            />
+                            <span className="text-xs w-8 shrink-0">{m.unit}</span>
+                          </>
+                        ) : (
+                          <>
+                            {/* Sem consumption_unit: a quantidade normalmente é uma fração do item
+                                inteiro (ex.: 0,10 de um chicote) — "0,10 un" não diz nada, então
+                                mostra como "0,10 × Chicote 8mm" em vez de número + unidade solta. */}
+                            <DecimalInput
+                              className="w-20 h-8 text-right shrink-0"
+                              value={edited[m.productId] ?? m.quantity}
+                              onChange={(v) => {
+                                setTouched(true);
+                                setEdited((cur) => ({ ...cur, [m.productId]: v }));
+                              }}
+                            />
+                            <span className="flex-1 text-foreground truncate">× {m.productName}</span>
+                          </>
+                        )}
                       </div>
                     ))}
                   </div>
