@@ -56,7 +56,8 @@ async function fetchBySlug(slug: string): Promise<Member | null> {
     console.error("[l.$slug] Falha ao buscar profissional pública", error);
     return null;
   }
-  return data;
+  if (!data || !data.id || !data.owner_id || !data.full_name) return null;
+  return data as Member;
 }
 
 function BookingLink() {
