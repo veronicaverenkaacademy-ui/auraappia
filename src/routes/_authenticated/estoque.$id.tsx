@@ -59,6 +59,18 @@ function ProductDetailPage() {
 
   const supplier = suppliers.find((s) => s.id === product?.supplier_id) ?? null;
 
+  // avg consumption last 30d (units/day) — precisa ficar antes de qualquer "return" abaixo:
+  // hooks têm que rodar sempre na mesma ordem em todo render, senão o React quebra com o
+  // erro #310 ("Rendered more hooks than during the previous render") assim que "product"
+  // deixa de ser undefined entre um render e o outro.
+  const dailyConsumption = useMemo(() => {
+    const cutoff = Date.now() - 30 * 86400000;
+    const total = movements
+      .filter((m) => new Date(m.created_at).getTime() >= cutoff && (m.kind === "consumption" || m.kind === "waste"))
+      .reduce((s, m) => s + Math.abs(Number(m.quantity)), 0);
+    return total / 30;
+  }, [movements]);
+
   if (isError) {
     return (
       <AppShell className="p-8">
@@ -80,15 +92,6 @@ function ProductDetailPage() {
   const ideal = Number(product.ideal_stock ?? 0);
   const max = Number(product.max_stock ?? 0);
   const isCritical = min > 0 && stock <= min;
-
-  // avg consumption last 30d (units/day)
-  const dailyConsumption = useMemo(() => {
-    const cutoff = Date.now() - 30 * 86400000;
-    const total = movements
-      .filter((m) => new Date(m.created_at).getTime() >= cutoff && (m.kind === "consumption" || m.kind === "waste"))
-      .reduce((s, m) => s + Math.abs(Number(m.quantity)), 0);
-    return total / 30;
-  }, [movements]);
 
   const daysRemaining = dailyConsumption > 0 ? Math.floor(stock / dailyConsumption) : null;
   const atendimentos = product.yield_per_unit && product.yield_per_unit > 0
