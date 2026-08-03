@@ -131,7 +131,15 @@ function AuthPage() {
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({ phone: normalized(phone) });
+    const { error } = await supabase.auth.signInWithOtp({
+      phone: normalized(phone),
+      // Metadata só é gravada se essa verificação criar um auth.users novo (login de
+      // telefone já existente ignora). O trigger grant_admin_on_new_user só concede
+      // admin quando acha user_type:"professional" aqui — sem isso (inclusive o futuro
+      // login do portal da cliente, que usa a mesma signInWithOtp), a conta nasce sem
+      // role nenhuma.
+      ...(search.signup ? { options: { data: { user_type: "professional" } } } : {}),
+    });
     setLoading(false);
     if (error) {
       toast.error(error.message.includes("provider") ? "SMS ainda não configurado. Ative um provedor SMS em Cloud → Auth." : error.message);
