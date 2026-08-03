@@ -1,12 +1,14 @@
 import { supabase } from "@/integrations/supabase/client";
 
-export type Unit = "un" | "ml" | "g" | "par" | "gts";
+export type Unit = "un" | "ml" | "g" | "par" | "gts" | "m" | "cm";
 export const UNITS: { value: Unit; label: string }[] = [
   { value: "un", label: "unidade" },
   { value: "ml", label: "ml" },
   { value: "g", label: "g" },
   { value: "par", label: "par" },
   { value: "gts", label: "gotas" },
+  { value: "m", label: "metros" },
+  { value: "cm", label: "centímetros" },
 ];
 
 export type Product = {
