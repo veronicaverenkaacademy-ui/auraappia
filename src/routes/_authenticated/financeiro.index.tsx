@@ -1,12 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
-import { useQuery } from "@tanstack/react-query";
-import { listTransactions, listGoals, computeSummary, formatBRL, type FinanceTx } from "@/lib/finance";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { listTransactions, listGoals, computeSummary, formatBRL, upsertTx, type FinanceTx, type TxKind, type TxStatus } from "@/lib/finance";
 import { FinTabs } from "./financeiro";
 import { ArrowDownRight, ArrowUpRight, Download, Plus, Sparkles, Target, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { DecimalInput } from "@/components/ui/decimal-input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/financeiro/")({
   component: FinanceiroPainel,
@@ -16,6 +22,7 @@ function FinanceiroPainel() {
   const { data: txs = [] } = useQuery({ queryKey: ["finance", "tx"], queryFn: () => listTransactions() });
   const { data: goals = [] } = useQuery({ queryKey: ["finance", "goals"], queryFn: listGoals });
   const summary = useMemo(() => computeSummary(txs, goals), [txs, goals]);
+  const [newTxOpen, setNewTxOpen] = useState(false);
 
   const today = useMemo(() => {
     const start = new Date(); start.setHours(0,0,0,0);
@@ -36,7 +43,7 @@ function FinanceiroPainel() {
       right={
         <>
           <Button variant="ghost" size="icon" className="rounded-full h-8 w-8"><Download className="w-4 h-4" /></Button>
-          <Button size="sm" className="rounded-full h-8 gap-1.5"><Plus className="w-3.5 h-3.5" />Lançar</Button>
+          <Button size="sm" className="rounded-full h-8 gap-1.5" onClick={() => setNewTxOpen(true)}><Plus className="w-3.5 h-3.5" />Lançar</Button>
         </>
       }
       className="px-4 md:px-8 py-6 md:py-10 max-w-5xl mx-auto pb-24 md:pb-12"
@@ -158,7 +165,112 @@ function FinanceiroPainel() {
           <span className="text-xs text-muted-foreground">›</span>
         </div>
       </Link>
+
+      <NewTransactionDialog open={newTxOpen} onOpenChange={setNewTxOpen} />
     </AppShell>
+  );
+}
+
+function NewTransactionDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const qc = useQueryClient();
+  const todayISO = () => new Date().toISOString().slice(0, 10);
+  const [form, setForm] = useState<{
+    kind: TxKind; description: string; amount: number; date: string; category: string; status: TxStatus;
+  }>({ kind: "income", description: "", amount: 0, date: todayISO(), category: "", status: "paid" });
+
+  const reset = () => setForm({ kind: "income", description: "", amount: 0, date: todayISO(), category: "", status: "paid" });
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (!form.description.trim()) throw new Error("Descrição obrigatória");
+      if (form.amount <= 0) throw new Error("Valor inválido");
+      const dateISO = new Date(`${form.date}T12:00:00`).toISOString();
+      await upsertTx({
+        kind: form.kind,
+        amount: form.amount,
+        description: form.description.trim(),
+        category: form.category.trim() || null,
+        status: form.status,
+        paid_at: form.status === "paid" ? dateISO : null,
+        due_date: form.status === "pending" ? form.date : null,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["finance", "tx"] });
+      toast.success(form.kind === "income" ? "Receita lançada" : "Despesa lançada");
+      onOpenChange(false);
+      reset();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>Lançar transação</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>Tipo</Label>
+            <div className="grid grid-cols-2 gap-2 mt-1.5">
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, kind: "income" }))}
+                className={cn(
+                  "h-10 rounded-xl text-sm font-medium border transition",
+                  form.kind === "income" ? "bg-success/10 border-success text-success" : "border-border/60 text-muted-foreground",
+                )}
+              >
+                Receita
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, kind: "expense" }))}
+                className={cn(
+                  "h-10 rounded-xl text-sm font-medium border transition",
+                  form.kind === "expense" ? "bg-destructive/10 border-destructive text-destructive" : "border-border/60 text-muted-foreground",
+                )}
+              >
+                Despesa
+              </button>
+            </div>
+          </div>
+          <div>
+            <Label>Descrição</Label>
+            <Input value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="ex: Compra de material, Comissão..." />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Valor (R$)</Label>
+              <DecimalInput value={form.amount} onChange={(v) => setForm((f) => ({ ...f, amount: v }))} />
+            </div>
+            <div>
+              <Label>Data</Label>
+              <Input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Categoria (opcional)</Label>
+              <Input value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} placeholder="ex: Insumos, Aluguel..." />
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Select value={form.status} onValueChange={(v) => setForm((f) => ({ ...f, status: v as TxStatus }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="paid">{form.kind === "income" ? "Recebido" : "Pago"}</SelectItem>
+                  <SelectItem value="pending">Pendente</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button onClick={() => save.mutate()} disabled={save.isPending}>Lançar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
