@@ -282,7 +282,14 @@ export async function revertCompleted(id: string): Promise<void> {
 
 export type CompletionPreview = {
   revenueAmount: number;
-  materials: { productId: string; productName: string; quantity: number; unit: string }[];
+  materials: {
+    productId: string;
+    productName: string;
+    quantity: number;
+    unit: string;
+    /** false quando o produto não tem consumption_unit definido — nesse caso "unit" é só a unidade de estoque (ex.: "un"), e a quantidade normalmente é uma fração do item inteiro (ex.: 0,10 de um chicote), não uma contagem em unidade própria. A tela usa isso pra decidir como exibir. */
+    hasConsumptionUnit: boolean;
+  }[];
   /** true quando já existe um ajuste manual salvo pra esse atendimento (de uma conclusão anterior revertida). */
   isOverride: boolean;
 };
@@ -304,7 +311,7 @@ export async function getCompletionPreview(serviceId: string | null, price: numb
   if (overrideRows && overrideRows.length > 0) {
     const materials = ((overrideRows ?? []) as unknown as Row[])
       .filter((m) => m.product)
-      .map((m) => ({ productId: m.product!.id, productName: m.product!.name, quantity: Number(m.quantity), unit: displayUnit(m.product!) }));
+      .map((m) => ({ productId: m.product!.id, productName: m.product!.name, quantity: Number(m.quantity), unit: displayUnit(m.product!), hasConsumptionUnit: !!m.product!.consumption_unit }));
     return { revenueAmount: price, materials, isOverride: true };
   }
 
@@ -316,7 +323,7 @@ export async function getCompletionPreview(serviceId: string | null, price: numb
   if (error) throw error;
   const materials = ((data ?? []) as unknown as Row[])
     .filter((m) => m.product)
-    .map((m) => ({ productId: m.product!.id, productName: m.product!.name, quantity: Number(m.quantity), unit: displayUnit(m.product!) }));
+    .map((m) => ({ productId: m.product!.id, productName: m.product!.name, quantity: Number(m.quantity), unit: displayUnit(m.product!), hasConsumptionUnit: !!m.product!.consumption_unit }));
   return { revenueAmount: price, materials, isOverride: false };
 }
 
