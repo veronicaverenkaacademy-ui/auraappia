@@ -15,6 +15,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as CadastroRouteImport } from './routes/cadastro'
 import { Route as PoliticaDePrivacidadeRouteImport } from './routes/politica-de-privacidade'
 import { Route as PortalRouteImport } from './routes/portal'
+import { Route as TermoConsentimentoRouteImport } from './routes/termo-consentimento'
 import { Route as TermosDeUsoRouteImport } from './routes/termos-de-uso'
 import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
 import { Route as AuthenticatedAssinaturaRouteImport } from './routes/_authenticated/assinatura'
@@ -98,6 +99,11 @@ const PoliticaDePrivacidadeRoute = PoliticaDePrivacidadeRouteImport.update({
 const PortalRoute = PortalRouteImport.update({
   id: '/portal',
   path: '/portal',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermoConsentimentoRoute = TermoConsentimentoRouteImport.update({
+  id: '/termo-consentimento',
+  path: '/termo-consentimento',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TermosDeUsoRoute = TermosDeUsoRouteImport.update({
@@ -405,6 +411,7 @@ export interface FileRoutesByFullPath {
   '/cadastro': typeof CadastroRoute
   '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
   '/portal': typeof PortalRoute
+  '/termo-consentimento': typeof TermoConsentimentoRoute
   '/termos-de-uso': typeof TermosDeUsoRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/assinatura': typeof AuthenticatedAssinaturaRoute
@@ -467,6 +474,7 @@ export interface FileRoutesByTo {
   '/cadastro': typeof CadastroRoute
   '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
   '/portal': typeof PortalRoute
+  '/termo-consentimento': typeof TermoConsentimentoRoute
   '/termos-de-uso': typeof TermosDeUsoRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/assinatura': typeof AuthenticatedAssinaturaRoute
@@ -522,6 +530,7 @@ export interface FileRoutesById {
   '/cadastro': typeof CadastroRoute
   '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
   '/portal': typeof PortalRoute
+  '/termo-consentimento': typeof TermoConsentimentoRoute
   '/termos-de-uso': typeof TermosDeUsoRoute
   '/_authenticated/agenda': typeof AuthenticatedAgendaRoute
   '/_authenticated/assinatura': typeof AuthenticatedAssinaturaRoute
@@ -586,6 +595,7 @@ export interface FileRouteTypes {
     | '/cadastro'
     | '/politica-de-privacidade'
     | '/portal'
+    | '/termo-consentimento'
     | '/termos-de-uso'
     | '/agenda'
     | '/assinatura'
@@ -648,6 +658,7 @@ export interface FileRouteTypes {
     | '/cadastro'
     | '/politica-de-privacidade'
     | '/portal'
+    | '/termo-consentimento'
     | '/termos-de-uso'
     | '/agenda'
     | '/assinatura'
@@ -702,6 +713,7 @@ export interface FileRouteTypes {
     | '/cadastro'
     | '/politica-de-privacidade'
     | '/portal'
+    | '/termo-consentimento'
     | '/termos-de-uso'
     | '/_authenticated/agenda'
     | '/_authenticated/assinatura'
@@ -766,6 +778,7 @@ export interface RootRouteChildren {
   CadastroRoute: typeof CadastroRoute
   PoliticaDePrivacidadeRoute: typeof PoliticaDePrivacidadeRoute
   PortalRoute: typeof PortalRoute
+  TermoConsentimentoRoute: typeof TermoConsentimentoRoute
   TermosDeUsoRoute: typeof TermosDeUsoRoute
   LSlugRoute: typeof LSlugRoute
 }
@@ -812,6 +825,13 @@ declare module '@tanstack/react-router' {
       path: '/portal'
       fullPath: '/portal'
       preLoaderRoute: typeof PortalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/termo-consentimento': {
+      id: '/termo-consentimento'
+      path: '/termo-consentimento'
+      fullPath: '/termo-consentimento'
+      preLoaderRoute: typeof TermoConsentimentoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/termos-de-uso': {
@@ -1418,6 +1438,7 @@ const rootRouteChildren: RootRouteChildren = {
   CadastroRoute: CadastroRoute,
   PoliticaDePrivacidadeRoute: PoliticaDePrivacidadeRoute,
   PortalRoute: PortalRoute,
+  TermoConsentimentoRoute: TermoConsentimentoRoute,
   TermosDeUsoRoute: TermosDeUsoRoute,
   LSlugRoute: LSlugRoute,
 }
