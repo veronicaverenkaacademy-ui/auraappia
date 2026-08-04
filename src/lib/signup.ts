@@ -11,4 +11,7 @@ export type PendingSignupData = {
   city?: string;
   state?: string;
   address?: string;
+  // Timestamp exato de quando o checkbox de aceite dos Termos/Política foi marcado
+  // (etapa 2 do cadastro). Ausente enquanto não marcado.
+  terms_accepted_at?: string;
 };
