@@ -308,11 +308,11 @@ function BookingLink() {
               <Checkbox checked={acceptedTerms} onCheckedChange={(v) => setAcceptedTerms(v === true)} className="mt-0.5" />
               <span>
                 Li e aceito os{" "}
-                <Link to="/termos" target="_blank" className="text-foreground underline underline-offset-2">
+                <Link to="/termos-de-uso" target="_blank" className="text-foreground underline underline-offset-2">
                   Termos de Uso
                 </Link>{" "}
                 e a{" "}
-                <Link to="/privacidade" target="_blank" className="text-foreground underline underline-offset-2">
+                <Link to="/politica-de-privacidade" target="_blank" className="text-foreground underline underline-offset-2">
                   Política de Privacidade
                 </Link>
                 .

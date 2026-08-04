@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 
-export const Route = createFileRoute("/privacidade")({
+export const Route = createFileRoute("/politica-de-privacidade")({
   head: () => ({
     meta: [
       { title: "Política de Privacidade — AURA" },
@@ -12,7 +12,7 @@ export const Route = createFileRoute("/privacidade")({
 });
 
 const intro = [
-  "Esta Política de Privacidade descreve como [Razão Social / Nome do titular do CNPJ], inscrita no CNPJ sob o nº [000.000.000/0000-00] (\"AURA\", \"nós\"), coleta, utiliza, armazena, compartilha e protege dados pessoais no âmbito da plataforma AURA (\"Plataforma\"), em conformidade com a Lei nº 13.709/2018 (Lei Geral de Proteção de Dados Pessoais — LGPD) e demais normas aplicáveis.",
+  "Esta Política de Privacidade descreve como VERÔNICA VERENKA MARTINS, inscrita no CNPJ sob o nº 40.605.681/0001-36 (\"AURA\", \"nós\"), coleta, utiliza, armazena, compartilha e protege dados pessoais no âmbito da plataforma AURA (\"Plataforma\"), em conformidade com a Lei nº 13.709/2018 (Lei Geral de Proteção de Dados Pessoais — LGPD) e demais normas aplicáveis.",
   "Esta Política é parte integrante dos Termos de Uso da Plataforma e aplica-se a todos os dados tratados por meio dela: os dados do Assinante e de seus Usuários Colaboradores, e os dados dos Clientes Finais inseridos pelo Assinante para operar seu negócio.",
 ];
 
@@ -96,7 +96,7 @@ const sections: { title: string; paragraphs: string[] }[] = [
   {
     title: "12. Encarregado de Dados (DPO) e Contato",
     paragraphs: [
-      "Para exercer seus direitos, tirar dúvidas sobre esta Política ou reportar incidentes relacionados a dados pessoais, entre em contato com nosso Encarregado de Proteção de Dados (DPO): Nome/Empresa responsável: [inserir nome do encarregado ou empresa]; E-mail: [inserir e-mail de privacidade/DPO]; WhatsApp/Telefone: [inserir contato de suporte].",
+      "Para exercer seus direitos, tirar dúvidas sobre esta Política ou reportar incidentes relacionados a dados pessoais, entre em contato com nosso Encarregado de Proteção de Dados (DPO): Nome/Empresa responsável: VERÔNICA VERENKA MARTINS; E-mail: suporte@auraagendaia.com; WhatsApp/Telefone: (47) 98868-0883.",
     ],
   },
   {
@@ -123,17 +123,9 @@ function PoliticaDePrivacidade() {
       </header>
 
       <div className="mx-auto max-w-2xl px-6 py-12">
-        <div className="mb-8 rounded-xl border border-dashed border-amber-500/40 bg-amber-50/60 dark:bg-amber-500/5 p-4 text-xs leading-relaxed text-amber-800 dark:text-amber-400">
-          <strong>Rascunho.</strong> Este documento ainda tem campos entre colchetes não preenchidos
-          (razão social, CNPJ, contato do encarregado de dados/DPO). Ele serve como ponto de partida
-          e não substitui revisão por um advogado especializado em Direito Digital e Proteção de
-          Dados antes de ser considerado definitivo — em especial por envolver dados sensíveis de
-          saúde (fichas de anamnese).
-        </div>
-
         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">AURA</p>
         <h1 className="mt-2 text-3xl font-display">Política de Privacidade</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Última atualização: [inserir data]</p>
+        <p className="mt-1 text-sm text-muted-foreground">Última atualização: 04 de agosto de 2026</p>
 
         <div className="mt-8 space-y-4 text-sm leading-relaxed text-foreground/85">
           {intro.map((p, i) => (

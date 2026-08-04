@@ -5,6 +5,7 @@ import { lovable } from "@/integrations/lovable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
@@ -61,6 +62,7 @@ async function applyPendingSignupData(userId: string) {
       city: data.city || null,
       state: data.state || null,
       address: data.address || null,
+      terms_accepted_at: data.terms_accepted_at || null,
     });
     if (error) {
       // Não apaga o rascunho se o upsert falhou — assim não perde os dados digitados.
@@ -126,6 +128,26 @@ function AuthPage() {
       }
       return next;
     });
+  };
+
+  // Aceite explícito dos Termos/Política (etapa 2, obrigatório). Persiste no rascunho
+  // igual ao endereço, pra não se perder se o usuário navegar pra trás e voltar.
+  const [termsAccepted, setTermsAccepted] = useState(() => !!pendingSignup?.terms_accepted_at);
+
+  const handleTermsChange = (checked: boolean) => {
+    setTermsAccepted(checked);
+    try {
+      const raw = window.sessionStorage.getItem(SIGNUP_STORAGE_KEY);
+      if (raw) {
+        const draft = JSON.parse(raw) as PendingSignupData;
+        const next: PendingSignupData = { ...draft };
+        if (checked) next.terms_accepted_at = new Date().toISOString();
+        else delete next.terms_accepted_at;
+        window.sessionStorage.setItem(SIGNUP_STORAGE_KEY, JSON.stringify(next));
+      }
+    } catch {
+      // Rascunho ilegível — segue só no estado local.
+    }
   };
 
   const handleCepChange = (raw: string) => {
@@ -389,9 +411,38 @@ function AuthPage() {
                 </div>
               )}
 
+              {search.signup && (
+                <label className="flex items-start gap-2.5 text-xs text-muted-foreground leading-relaxed">
+                  <Checkbox
+                    checked={termsAccepted}
+                    onCheckedChange={(v) => handleTermsChange(v === true)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Li e aceito os{" "}
+                    <Link
+                      to="/termos-de-uso"
+                      target="_blank"
+                      className="text-foreground underline underline-offset-2"
+                    >
+                      Termos de Uso
+                    </Link>{" "}
+                    e a{" "}
+                    <Link
+                      to="/politica-de-privacidade"
+                      target="_blank"
+                      className="text-foreground underline underline-offset-2"
+                    >
+                      Política de Privacidade
+                    </Link>
+                    .
+                  </span>
+                </label>
+              )}
+
               <Button
                 onClick={apple}
-                disabled={loading}
+                disabled={loading || (search.signup && !termsAccepted)}
                 className="w-full h-12 rounded-xl gap-2 bg-black text-white hover:bg-black/90"
               >
                 {loading ? (
@@ -409,7 +460,7 @@ function AuthPage() {
               <Button
                 variant="outline"
                 onClick={google}
-                disabled={loading}
+                disabled={loading || (search.signup && !termsAccepted)}
                 className="w-full h-12 rounded-xl bg-background gap-2"
               >
                 {loading ? (
@@ -441,7 +492,8 @@ function AuthPage() {
 
               <button
                 onClick={() => setStep("phone")}
-                className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition pt-2"
+                disabled={search.signup && !termsAccepted}
+                className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition pt-2 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Prefere entrar por telefone?
               </button>
@@ -527,11 +579,20 @@ function AuthPage() {
             </div>
           )}
 
-          <p className="mt-10 text-center text-xs text-muted-foreground/70 leading-relaxed">
-            Ao continuar você concorda com nossos
-            <br />
-            Termos de Uso e Política de Privacidade.
-          </p>
+          {!search.signup && (
+            <p className="mt-10 text-center text-xs text-muted-foreground/70 leading-relaxed">
+              Ao continuar você concorda com nossos
+              <br />
+              <Link to="/termos-de-uso" target="_blank" className="underline underline-offset-2">
+                Termos de Uso
+              </Link>{" "}
+              e{" "}
+              <Link to="/politica-de-privacidade" target="_blank" className="underline underline-offset-2">
+                Política de Privacidade
+              </Link>
+              .
+            </p>
+          )}
         </div>
       </div>
     </div>

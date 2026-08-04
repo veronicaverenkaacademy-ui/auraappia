@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 
-export const Route = createFileRoute("/termos")({
+export const Route = createFileRoute("/termos-de-uso")({
   head: () => ({
     meta: [
       { title: "Termos de Uso — AURA" },
@@ -12,7 +12,7 @@ export const Route = createFileRoute("/termos")({
 });
 
 const intro = [
-  "Estes Termos de Uso (\"Termos\") regem a utilização da plataforma AURA (\"Plataforma\", \"Sistema\" ou \"Serviço\"), de titularidade de [Razão Social / Nome do titular do CNPJ], inscrita no CNPJ sob o nº [000.000.000/0000-00] (\"AURA\", \"nós\" ou \"Empresa\"), por pessoas físicas ou jurídicas que utilizem o Serviço na qualidade de assinantes (\"Usuário\", \"Cliente\" ou \"você\").",
+  "Estes Termos de Uso (\"Termos\") regem a utilização da plataforma AURA (\"Plataforma\", \"Sistema\" ou \"Serviço\"), de titularidade de VERÔNICA VERENKA MARTINS, inscrita no CNPJ sob o nº 40.605.681/0001-36 (\"AURA\", \"nós\" ou \"Empresa\"), por pessoas físicas ou jurídicas que utilizem o Serviço na qualidade de assinantes (\"Usuário\", \"Cliente\" ou \"você\").",
   "Ao criar uma conta, acessar ou utilizar a Plataforma, você declara que leu, compreendeu e concorda integralmente com estes Termos e com a nossa Política de Privacidade, que é parte integrante deste documento. Caso não concorde com qualquer disposição aqui prevista, você não deverá utilizar a Plataforma.",
 ];
 
@@ -137,14 +137,14 @@ const sections: { title: string; paragraphs: string[] }[] = [
   {
     title: "16. Legislação Aplicável e Foro",
     paragraphs: [
-      "Estes Termos são regidos pelas leis da República Federativa do Brasil. Fica eleito o foro da comarca de [cidade/UF do Assinante da Plataforma], com renúncia expressa a qualquer outro, por mais privilegiado que seja, para dirimir eventuais controvérsias decorrentes destes Termos, ressalvada a competência dos Juizados Especiais e a proteção conferida ao consumidor pela legislação aplicável.",
+      "Estes Termos são regidos pelas leis da República Federativa do Brasil. Fica eleito o foro da comarca de Joinville/SC, com renúncia expressa a qualquer outro, por mais privilegiado que seja, para dirimir eventuais controvérsias decorrentes destes Termos, ressalvada a competência dos Juizados Especiais e a proteção conferida ao consumidor pela legislação aplicável.",
     ],
   },
   {
     title: "17. Disposições Gerais",
     paragraphs: [
       "Caso qualquer disposição destes Termos seja considerada inválida ou inexequível, as demais disposições permanecerão em pleno vigor e efeito. A tolerância da AURA quanto ao eventual descumprimento de qualquer disposição destes Termos não constituirá renúncia ao direito de exigir o cumprimento das demais disposições.",
-      "Dúvidas, solicitações ou reclamações relacionadas a estes Termos poderão ser encaminhadas para o canal de suporte oficial da AURA: [e-mail de suporte] ou [WhatsApp/telefone de suporte].",
+      "Dúvidas, solicitações ou reclamações relacionadas a estes Termos poderão ser encaminhadas para o canal de suporte oficial da AURA: suporte@auraagendaia.com ou (47) 98868-0883.",
     ],
   },
 ];
@@ -159,16 +159,9 @@ function TermosDeUso() {
       </header>
 
       <div className="mx-auto max-w-2xl px-6 py-12">
-        <div className="mb-8 rounded-xl border border-dashed border-amber-500/40 bg-amber-50/60 dark:bg-amber-500/5 p-4 text-xs leading-relaxed text-amber-800 dark:text-amber-400">
-          <strong>Rascunho.</strong> Este documento ainda tem campos entre colchetes não preenchidos
-          (razão social, CNPJ, cidade/UF do foro, e-mail de suporte). Ele serve como ponto de partida
-          e não substitui revisão por um advogado especializado em Direito Digital e Proteção de
-          Dados antes de ser considerado definitivo.
-        </div>
-
         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">AURA</p>
         <h1 className="mt-2 text-3xl font-display">Termos de Uso</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Última atualização: [inserir data]</p>
+        <p className="mt-1 text-sm text-muted-foreground">Última atualização: 04 de agosto de 2026</p>
 
         <div className="mt-8 space-y-4 text-sm leading-relaxed text-foreground/85">
           {intro.map((p, i) => (
