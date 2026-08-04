@@ -30,7 +30,7 @@ function PreditivoPage() {
   const wasteDown = summary && summary.wasteDeltaPct < 0;
 
   return (
-    <AppShell hideTrigger className="px-4 md:px-8 py-6 md:py-10 max-w-3xl mx-auto pb-28 md:pb-12">
+    <AppShell className="px-4 md:px-8 py-6 md:py-10 max-w-3xl mx-auto pb-28 md:pb-12">
       <div className="flex items-center justify-between mb-6">
         <Button variant="ghost" size="icon" className="rounded-full" onClick={() => navigate({ to: "/estoque" })}>
           <ChevronLeft className="w-5 h-5" />
