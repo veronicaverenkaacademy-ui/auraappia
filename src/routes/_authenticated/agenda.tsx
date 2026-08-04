@@ -157,7 +157,6 @@ function Agenda() {
 
   return (
     <AppShell
-      hideTrigger
       title={
         <div className="flex items-center gap-2">
           <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Agenda</span>

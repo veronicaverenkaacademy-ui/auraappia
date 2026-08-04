@@ -1,12 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Building2, Palette, Calendar, Users, Sparkles, DollarSign, Megaphone, Bot, UserCog,
   Shield, Lock, Plug, Bell, CreditCard, Database, Settings2, LayoutDashboard, Search,
   ChevronRight, CheckCircle2, Circle, AlertTriangle, Zap, ShieldCheck, Wifi, WifiOff,
-  Sparkle, ArrowRight, FileText, HardDrive, ScrollText,
+  Sparkle, ArrowRight, FileText, HardDrive, ScrollText, LogOut,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
+import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -36,7 +38,7 @@ export const Route = createFileRoute("/_authenticated/configuracoes")({
 type SectionKey =
   | "governance" | "company" | "brand" | "agenda" | "clients" | "services" | "finance"
   | "marketing" | "ai" | "team" | "permissions" | "security" | "integrations"
-  | "notifications" | "subscription" | "data" | "system";
+  | "notifications" | "subscription" | "data" | "system" | "signout";
 
 const SECTIONS: { key: SectionKey; label: string; icon: typeof Building2; group: string; desc?: string }[] = [
   { key: "governance", label: "Centro de Governança", icon: LayoutDashboard, group: "Visão", desc: "Health Score e recomendações" },
@@ -56,12 +58,30 @@ const SECTIONS: { key: SectionKey; label: string; icon: typeof Building2; group:
   { key: "subscription", label: "Assinatura", icon: CreditCard, group: "Conta", desc: "Plano atual, limites e cobranças" },
   { key: "data", label: "Dados", icon: Database, group: "Conta", desc: "Importação, exportação e migração" },
   { key: "system", label: "Sistema", icon: Settings2, group: "Conta", desc: "Configurações gerais e atualizações" },
+  { key: "signout", label: "Sair", icon: LogOut, group: "Conta", desc: "Encerrar sessão" },
 ];
 
 function ControlCenter() {
   const cc = useControlCenter();
   const [active, setActive] = useState<SectionKey>("governance");
   const [query, setQuery] = useState("");
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+
+  const signOut = async () => {
+    await qc.cancelQueries();
+    qc.clear();
+    await supabase.auth.signOut();
+    navigate({ to: "/auth", replace: true });
+  };
+
+  const selectSection = (key: SectionKey) => {
+    if (key === "signout") {
+      void signOut();
+      return;
+    }
+    setActive(key);
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -112,15 +132,17 @@ function ControlCenter() {
                     return (
                       <button
                         key={s.key}
-                        onClick={() => setActive(s.key)}
+                        onClick={() => selectSection(s.key)}
                         className={cn(
                           "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors text-left",
-                          isActive
-                            ? "bg-foreground text-background"
-                            : "text-foreground/80 hover:bg-secondary/70"
+                          s.key === "signout"
+                            ? "text-destructive hover:bg-destructive/10"
+                            : isActive
+                              ? "bg-foreground text-background"
+                              : "text-foreground/80 hover:bg-secondary/70"
                         )}
                       >
-                        <Icon className={cn("w-4 h-4 shrink-0", isActive ? "" : "text-muted-foreground")} />
+                        <Icon className={cn("w-4 h-4 shrink-0", s.key === "signout" ? "" : isActive ? "" : "text-muted-foreground")} />
                         <span className="flex-1 truncate">{s.label}</span>
                         {s.key === "governance" && (
                           <span className={cn(
