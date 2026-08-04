@@ -101,7 +101,7 @@ function ProductDetailPage() {
   const nextBatch = batches.find((b) => b.expires_at && Number(b.remaining_quantity) > 0);
 
   return (
-    <AppShell className="px-4 md:px-8 py-6 md:py-10 max-w-3xl mx-auto pb-28 md:pb-12">
+    <AppShell hideTrigger className="px-4 md:px-8 py-6 md:py-10 max-w-3xl mx-auto pb-28 md:pb-12">
       {/* Top bar */}
       <div className="flex items-center justify-between mb-6">
         <Button variant="ghost" size="icon" className="rounded-full" onClick={() => navigate({ to: "/estoque" })}>

@@ -191,6 +191,7 @@ function Dashboard() {
 
   return (
     <AppShell
+      hideTrigger
       title={<span className="font-display text-lg tracking-[0.28em] font-medium">AURA</span>}
       right={
         <>
