@@ -13,9 +13,10 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as CadastroRouteImport } from './routes/cadastro'
+import { Route as PoliticaDePrivacidadeRouteImport } from './routes/politica-de-privacidade'
 import { Route as PortalRouteImport } from './routes/portal'
-import { Route as PrivacidadeRouteImport } from './routes/privacidade'
-import { Route as TermosRouteImport } from './routes/termos'
+import { Route as TermoConsentimentoRouteImport } from './routes/termo-consentimento'
+import { Route as TermosDeUsoRouteImport } from './routes/termos-de-uso'
 import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
 import { Route as AuthenticatedAssinaturaRouteImport } from './routes/_authenticated/assinatura'
 import { Route as AuthenticatedAuraIaRouteImport } from './routes/_authenticated/aura-ia'
@@ -90,19 +91,24 @@ const CadastroRoute = CadastroRouteImport.update({
   path: '/cadastro',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PoliticaDePrivacidadeRoute = PoliticaDePrivacidadeRouteImport.update({
+  id: '/politica-de-privacidade',
+  path: '/politica-de-privacidade',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PortalRoute = PortalRouteImport.update({
   id: '/portal',
   path: '/portal',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PrivacidadeRoute = PrivacidadeRouteImport.update({
-  id: '/privacidade',
-  path: '/privacidade',
+const TermoConsentimentoRoute = TermoConsentimentoRouteImport.update({
+  id: '/termo-consentimento',
+  path: '/termo-consentimento',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TermosRoute = TermosRouteImport.update({
-  id: '/termos',
-  path: '/termos',
+const TermosDeUsoRoute = TermosDeUsoRouteImport.update({
+  id: '/termos-de-uso',
+  path: '/termos-de-uso',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAgendaRoute = AuthenticatedAgendaRouteImport.update({
@@ -403,9 +409,10 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/cadastro': typeof CadastroRoute
+  '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
   '/portal': typeof PortalRoute
-  '/privacidade': typeof PrivacidadeRoute
-  '/termos': typeof TermosRoute
+  '/termo-consentimento': typeof TermoConsentimentoRoute
+  '/termos-de-uso': typeof TermosDeUsoRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/assinatura': typeof AuthenticatedAssinaturaRoute
   '/aura-ia': typeof AuthenticatedAuraIaRouteWithChildren
@@ -465,9 +472,10 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/cadastro': typeof CadastroRoute
+  '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
   '/portal': typeof PortalRoute
-  '/privacidade': typeof PrivacidadeRoute
-  '/termos': typeof TermosRoute
+  '/termo-consentimento': typeof TermoConsentimentoRoute
+  '/termos-de-uso': typeof TermosDeUsoRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/assinatura': typeof AuthenticatedAssinaturaRoute
   '/dados': typeof AuthenticatedDadosRoute
@@ -520,9 +528,10 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/cadastro': typeof CadastroRoute
+  '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
   '/portal': typeof PortalRoute
-  '/privacidade': typeof PrivacidadeRoute
-  '/termos': typeof TermosRoute
+  '/termo-consentimento': typeof TermoConsentimentoRoute
+  '/termos-de-uso': typeof TermosDeUsoRoute
   '/_authenticated/agenda': typeof AuthenticatedAgendaRoute
   '/_authenticated/assinatura': typeof AuthenticatedAssinaturaRoute
   '/_authenticated/aura-ia': typeof AuthenticatedAuraIaRouteWithChildren
@@ -584,9 +593,10 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/cadastro'
+    | '/politica-de-privacidade'
     | '/portal'
-    | '/privacidade'
-    | '/termos'
+    | '/termo-consentimento'
+    | '/termos-de-uso'
     | '/agenda'
     | '/assinatura'
     | '/aura-ia'
@@ -646,9 +656,10 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/cadastro'
+    | '/politica-de-privacidade'
     | '/portal'
-    | '/privacidade'
-    | '/termos'
+    | '/termo-consentimento'
+    | '/termos-de-uso'
     | '/agenda'
     | '/assinatura'
     | '/dados'
@@ -700,9 +711,10 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/cadastro'
+    | '/politica-de-privacidade'
     | '/portal'
-    | '/privacidade'
-    | '/termos'
+    | '/termo-consentimento'
+    | '/termos-de-uso'
     | '/_authenticated/agenda'
     | '/_authenticated/assinatura'
     | '/_authenticated/aura-ia'
@@ -764,9 +776,10 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   CadastroRoute: typeof CadastroRoute
+  PoliticaDePrivacidadeRoute: typeof PoliticaDePrivacidadeRoute
   PortalRoute: typeof PortalRoute
-  PrivacidadeRoute: typeof PrivacidadeRoute
-  TermosRoute: typeof TermosRoute
+  TermoConsentimentoRoute: typeof TermoConsentimentoRoute
+  TermosDeUsoRoute: typeof TermosDeUsoRoute
   LSlugRoute: typeof LSlugRoute
 }
 
@@ -800,6 +813,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CadastroRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/politica-de-privacidade': {
+      id: '/politica-de-privacidade'
+      path: '/politica-de-privacidade'
+      fullPath: '/politica-de-privacidade'
+      preLoaderRoute: typeof PoliticaDePrivacidadeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/portal': {
       id: '/portal'
       path: '/portal'
@@ -807,18 +827,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortalRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/privacidade': {
-      id: '/privacidade'
-      path: '/privacidade'
-      fullPath: '/privacidade'
-      preLoaderRoute: typeof PrivacidadeRouteImport
+    '/termo-consentimento': {
+      id: '/termo-consentimento'
+      path: '/termo-consentimento'
+      fullPath: '/termo-consentimento'
+      preLoaderRoute: typeof TermoConsentimentoRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/termos': {
-      id: '/termos'
-      path: '/termos'
-      fullPath: '/termos'
-      preLoaderRoute: typeof TermosRouteImport
+    '/termos-de-uso': {
+      id: '/termos-de-uso'
+      path: '/termos-de-uso'
+      fullPath: '/termos-de-uso'
+      preLoaderRoute: typeof TermosDeUsoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/agenda': {
@@ -1416,9 +1436,10 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   CadastroRoute: CadastroRoute,
+  PoliticaDePrivacidadeRoute: PoliticaDePrivacidadeRoute,
   PortalRoute: PortalRoute,
-  PrivacidadeRoute: PrivacidadeRoute,
-  TermosRoute: TermosRoute,
+  TermoConsentimentoRoute: TermoConsentimentoRoute,
+  TermosDeUsoRoute: TermosDeUsoRoute,
   LSlugRoute: LSlugRoute,
 }
 export const routeTree = rootRouteImport
