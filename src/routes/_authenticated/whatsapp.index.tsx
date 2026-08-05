@@ -1,21 +1,44 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import {
   conversations,
-  connection,
-  PROVIDER_LABEL,
   HANDLER_LABEL,
   TAG_LABEL,
   whatsappStats,
   type ConversationHandler,
   type Conversation,
 } from "@/lib/whatsapp";
+import { getWhatsAppConfig } from "@/lib/communication.functions";
+import type { ProviderConnectionStatus } from "@/lib/communication/types";
 import {
   Search, MessageSquare, Bot, User2, CheckCheck, Circle, Sparkles,
-  Signal, ChevronRight, Plus,
+  Signal, ChevronRight, Plus, AlertTriangle, Clock3, CheckCircle2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+
+const CONNECTION_LABEL: Record<ProviderConnectionStatus, string> = {
+  not_configured: "WhatsApp não configurado ainda",
+  pending_approval: "Aguardando aprovação do WhatsApp/Meta",
+  connected: "Conectado via 360dialog",
+  error: "Erro na conexão do WhatsApp",
+};
+
+const CONNECTION_ICON: Record<ProviderConnectionStatus, typeof Signal> = {
+  not_configured: AlertTriangle,
+  pending_approval: Clock3,
+  connected: CheckCircle2,
+  error: AlertTriangle,
+};
+
+const CONNECTION_TONE: Record<ProviderConnectionStatus, string> = {
+  not_configured: "text-muted-foreground",
+  pending_approval: "text-amber-600 dark:text-amber-400",
+  connected: "text-emerald-500",
+  error: "text-rose-600 dark:text-rose-400",
+};
 
 export const Route = createFileRoute("/_authenticated/whatsapp/")({
   component: WhatsAppInbox,
@@ -24,6 +47,14 @@ export const Route = createFileRoute("/_authenticated/whatsapp/")({
 type Filter = "all" | ConversationHandler;
 
 function WhatsAppInbox() {
+  const fetchConfig = useServerFn(getWhatsAppConfig);
+  const { data: config } = useQuery({
+    queryKey: ["whatsapp-config"],
+    queryFn: () => fetchConfig(),
+  });
+  const connectionStatus = config?.status ?? "not_configured";
+  const ConnectionIcon = CONNECTION_ICON[connectionStatus];
+
   const [filter, setFilter] = useState<Filter>("all");
   const [q, setQ] = useState("");
 
@@ -49,8 +80,9 @@ function WhatsAppInbox() {
             Central de conversas
           </h1>
           <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
-            <Signal className="w-3.5 h-3.5 text-emerald-500" />
-            Conectado via {PROVIDER_LABEL[connection.provider]} · {connection.phone}
+            <ConnectionIcon className={cn("w-3.5 h-3.5", CONNECTION_TONE[connectionStatus])} />
+            {CONNECTION_LABEL[connectionStatus]}
+            {config?.phone_number ? ` · ${config.phone_number}` : ""}
           </p>
         </div>
         <Link
