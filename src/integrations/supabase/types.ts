@@ -366,6 +366,119 @@ export type Database = {
         }
         Relationships: []
       }
+      communication_provider_config: {
+        Row: {
+          channel: string
+          channel_id: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          last_error: string | null
+          last_synced_at: string | null
+          messaging_limit: string | null
+          owner_id: string
+          phone_number: string | null
+          provider: string
+          quality_rating: string | null
+          status: string
+          updated_at: string
+          waba_id: string | null
+        }
+        Insert: {
+          channel?: string
+          channel_id?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          last_error?: string | null
+          last_synced_at?: string | null
+          messaging_limit?: string | null
+          owner_id: string
+          phone_number?: string | null
+          provider?: string
+          quality_rating?: string | null
+          status?: string
+          updated_at?: string
+          waba_id?: string | null
+        }
+        Update: {
+          channel?: string
+          channel_id?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          last_error?: string | null
+          last_synced_at?: string | null
+          messaging_limit?: string | null
+          owner_id?: string
+          phone_number?: string | null
+          provider?: string
+          quality_rating?: string | null
+          status?: string
+          updated_at?: string
+          waba_id?: string | null
+        }
+        Relationships: []
+      }
+      conversations: {
+        Row: {
+          channel: string
+          client_id: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string
+          external_id: string | null
+          handler: string
+          id: string
+          last_message_at: string | null
+          owner_id: string
+          provider: string
+          status: string
+          unread_count: number
+          updated_at: string
+        }
+        Insert: {
+          channel?: string
+          client_id?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          external_id?: string | null
+          handler?: string
+          id?: string
+          last_message_at?: string | null
+          owner_id: string
+          provider?: string
+          status?: string
+          unread_count?: number
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          client_id?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          external_id?: string | null
+          handler?: string
+          id?: string
+          last_message_at?: string | null
+          owner_id?: string
+          provider?: string
+          status?: string
+          unread_count?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversations_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       finance_goals: {
         Row: {
           active: boolean
@@ -506,6 +619,123 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      message_templates: {
+        Row: {
+          body: string
+          category: string
+          channel: string
+          created_at: string
+          id: string
+          language: string
+          name: string
+          owner_id: string
+          provider: string
+          provider_template_name: string | null
+          status: string
+          updated_at: string
+          variables: string[]
+          version: number
+        }
+        Insert: {
+          body: string
+          category?: string
+          channel?: string
+          created_at?: string
+          id?: string
+          language?: string
+          name: string
+          owner_id: string
+          provider?: string
+          provider_template_name?: string | null
+          status?: string
+          updated_at?: string
+          variables?: string[]
+          version?: number
+        }
+        Update: {
+          body?: string
+          category?: string
+          channel?: string
+          created_at?: string
+          id?: string
+          language?: string
+          name?: string
+          owner_id?: string
+          provider?: string
+          provider_template_name?: string | null
+          status?: string
+          updated_at?: string
+          variables?: string[]
+          version?: number
+        }
+        Relationships: []
+      }
+      messages: {
+        Row: {
+          content: string | null
+          conversation_id: string
+          created_at: string
+          direction: string
+          error: string | null
+          external_id: string | null
+          id: string
+          kind: string
+          media_url: string | null
+          owner_id: string
+          provider: string
+          sent_by: string | null
+          status: string
+          template_id: string | null
+        }
+        Insert: {
+          content?: string | null
+          conversation_id: string
+          created_at?: string
+          direction: string
+          error?: string | null
+          external_id?: string | null
+          id?: string
+          kind?: string
+          media_url?: string | null
+          owner_id: string
+          provider?: string
+          sent_by?: string | null
+          status?: string
+          template_id?: string | null
+        }
+        Update: {
+          content?: string | null
+          conversation_id?: string
+          created_at?: string
+          direction?: string
+          error?: string | null
+          external_id?: string | null
+          id?: string
+          kind?: string
+          media_url?: string | null
+          owner_id?: string
+          provider?: string
+          sent_by?: string | null
+          status?: string
+          template_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "message_templates"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       product_batches: {
         Row: {
