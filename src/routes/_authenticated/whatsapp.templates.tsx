@@ -37,11 +37,19 @@ function TemplatesPage() {
     <div className="px-4 md:px-8 py-6 md:py-10 max-w-5xl mx-auto space-y-6">
       <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
-          <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight">
-            Central de templates
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight">
+              Central de templates
+            </h1>
+            <span className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-dashed border-amber-300 dark:border-amber-800">
+              Dados de exemplo
+            </span>
+          </div>
           <p className="text-sm text-muted-foreground mt-1">
             Modelos aprovados pela WhatsApp Business Platform para iniciar conversas.
+          </p>
+          <p className="text-xs text-muted-foreground/80 mt-1">
+            Os templates abaixo são exemplos ilustrativos — ainda não foram submetidos/aprovados de verdade.
           </p>
         </div>
         <button className="inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-foreground text-background text-sm font-medium self-start md:self-auto">
