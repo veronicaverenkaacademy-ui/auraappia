@@ -76,13 +76,21 @@ function WhatsAppInbox() {
     <div className="px-4 md:px-8 py-6 md:py-10 max-w-5xl mx-auto space-y-6">
       <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
-          <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight">
-            Central de conversas
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight">
+              Central de conversas
+            </h1>
+            <span className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-dashed border-amber-300 dark:border-amber-800">
+              Dados de exemplo
+            </span>
+          </div>
           <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
             <ConnectionIcon className={cn("w-3.5 h-3.5", CONNECTION_TONE[connectionStatus])} />
             {CONNECTION_LABEL[connectionStatus]}
             {config?.phone_number ? ` · ${config.phone_number}` : ""}
+          </p>
+          <p className="text-xs text-muted-foreground/80 mt-1">
+            As conversas abaixo são exemplos ilustrativos — ainda não refletem mensagens reais de clientes.
           </p>
         </div>
         <Link

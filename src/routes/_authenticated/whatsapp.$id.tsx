@@ -73,7 +73,12 @@ function WhatsAppConversation() {
             {conv.initials}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium truncate">{conv.clientName}</div>
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-medium truncate">{conv.clientName}</div>
+              <span className="inline-flex items-center shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-dashed border-amber-300 dark:border-amber-800">
+                Exemplo
+              </span>
+            </div>
             <div className="text-[11px] text-muted-foreground truncate">
               {conv.lastAppointment ?? "Sem histórico recente"}
               {conv.nextMaintenance ? ` · Retorno ${conv.nextMaintenance}` : ""}
