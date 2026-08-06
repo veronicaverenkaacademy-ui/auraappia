@@ -226,6 +226,140 @@ export type Database = {
         }
         Relationships: []
       }
+      automation_templates: {
+        Row: {
+          allowed_hours_end: string
+          allowed_hours_start: string
+          audience_description: string
+          category: string
+          channel: string
+          created_at: string
+          description: string | null
+          icon: string
+          id: string
+          is_recommended: boolean
+          max_frequency_per_day: number
+          message_body: string
+          message_buttons: string[]
+          name: string
+          slug: string
+          sort_order: number
+          trigger_description: string
+          updated_at: string
+        }
+        Insert: {
+          allowed_hours_end?: string
+          allowed_hours_start?: string
+          audience_description?: string
+          category: string
+          channel?: string
+          created_at?: string
+          description?: string | null
+          icon?: string
+          id?: string
+          is_recommended?: boolean
+          max_frequency_per_day?: number
+          message_body?: string
+          message_buttons?: string[]
+          name: string
+          slug: string
+          sort_order?: number
+          trigger_description?: string
+          updated_at?: string
+        }
+        Update: {
+          allowed_hours_end?: string
+          allowed_hours_start?: string
+          audience_description?: string
+          category?: string
+          channel?: string
+          created_at?: string
+          description?: string | null
+          icon?: string
+          id?: string
+          is_recommended?: boolean
+          max_frequency_per_day?: number
+          message_body?: string
+          message_buttons?: string[]
+          name?: string
+          slug?: string
+          sort_order?: number
+          trigger_description?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      automations: {
+        Row: {
+          active: boolean
+          allowed_hours_end: string
+          allowed_hours_start: string
+          audience_description: string
+          category: string
+          channel: string
+          created_at: string
+          description: string | null
+          icon: string
+          id: string
+          max_frequency_per_day: number
+          message_body: string
+          message_buttons: string[]
+          name: string
+          owner_id: string
+          source_template_id: string | null
+          trigger_description: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          allowed_hours_end?: string
+          allowed_hours_start?: string
+          audience_description?: string
+          category: string
+          channel?: string
+          created_at?: string
+          description?: string | null
+          icon?: string
+          id?: string
+          max_frequency_per_day?: number
+          message_body?: string
+          message_buttons?: string[]
+          name: string
+          owner_id: string
+          source_template_id?: string | null
+          trigger_description?: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          allowed_hours_end?: string
+          allowed_hours_start?: string
+          audience_description?: string
+          category?: string
+          channel?: string
+          created_at?: string
+          description?: string | null
+          icon?: string
+          id?: string
+          max_frequency_per_day?: number
+          message_body?: string
+          message_buttons?: string[]
+          name?: string
+          owner_id?: string
+          source_template_id?: string | null
+          trigger_description?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automations_source_template_id_fkey"
+            columns: ["source_template_id"]
+            isOneToOne: false
+            referencedRelation: "automation_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_anamnesis: {
         Row: {
           allergies: string | null
@@ -619,6 +753,254 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      journey_step_templates: {
+        Row: {
+          channel: string
+          created_at: string
+          detail: string | null
+          id: string
+          journey_template_id: string
+          message_body: string
+          offset_label: string
+          position: number
+          title: string
+        }
+        Insert: {
+          channel?: string
+          created_at?: string
+          detail?: string | null
+          id?: string
+          journey_template_id: string
+          message_body?: string
+          offset_label: string
+          position: number
+          title: string
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          detail?: string | null
+          id?: string
+          journey_template_id?: string
+          message_body?: string
+          offset_label?: string
+          position?: number
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "journey_step_templates_journey_template_id_fkey"
+            columns: ["journey_template_id"]
+            isOneToOne: false
+            referencedRelation: "journey_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      journey_steps: {
+        Row: {
+          channel: string
+          created_at: string
+          detail: string | null
+          id: string
+          journey_id: string
+          message_body: string
+          offset_label: string
+          owner_id: string
+          position: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          channel?: string
+          created_at?: string
+          detail?: string | null
+          id?: string
+          journey_id: string
+          message_body?: string
+          offset_label: string
+          owner_id: string
+          position: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          detail?: string | null
+          id?: string
+          journey_id?: string
+          message_body?: string
+          offset_label?: string
+          owner_id?: string
+          position?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "journey_steps_journey_id_fkey"
+            columns: ["journey_id"]
+            isOneToOne: false
+            referencedRelation: "journeys"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      journey_templates: {
+        Row: {
+          category: string
+          created_at: string
+          description: string | null
+          id: string
+          is_recommended: boolean
+          name: string
+          segment_config: Json
+          segment_key: string
+          slug: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_recommended?: boolean
+          name: string
+          segment_config?: Json
+          segment_key: string
+          slug: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_recommended?: boolean
+          name?: string
+          segment_config?: Json
+          segment_key?: string
+          slug?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      journeys: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          owner_id: string
+          segment_config: Json
+          segment_key: string
+          source_template_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          owner_id: string
+          segment_config?: Json
+          segment_key: string
+          source_template_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          owner_id?: string
+          segment_config?: Json
+          segment_key?: string
+          source_template_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "journeys_source_template_id_fkey"
+            columns: ["source_template_id"]
+            isOneToOne: false
+            referencedRelation: "journey_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      marketing_sends: {
+        Row: {
+          automation_id: string | null
+          client_id: string | null
+          created_at: string
+          id: string
+          journey_step_id: string | null
+          message_id: string | null
+          owner_id: string
+          revenue_attributed: number | null
+          status: string
+        }
+        Insert: {
+          automation_id?: string | null
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          journey_step_id?: string | null
+          message_id?: string | null
+          owner_id: string
+          revenue_attributed?: number | null
+          status?: string
+        }
+        Update: {
+          automation_id?: string | null
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          journey_step_id?: string | null
+          message_id?: string | null
+          owner_id?: string
+          revenue_attributed?: number | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketing_sends_automation_id_fkey"
+            columns: ["automation_id"]
+            isOneToOne: false
+            referencedRelation: "automations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "marketing_sends_journey_step_id_fkey"
+            columns: ["journey_step_id"]
+            isOneToOne: false
+            referencedRelation: "journey_steps"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "marketing_sends_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "marketing_sends_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       message_templates: {
         Row: {

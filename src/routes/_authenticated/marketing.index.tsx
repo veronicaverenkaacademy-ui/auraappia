@@ -1,16 +1,19 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import {
-  automations,
-  marketingStats,
-  currency,
-  CHANNEL_LABEL,
-  type AutomationCategory,
-  type Automation,
-} from "@/lib/marketing";
+  listAutomations,
+  setAutomationActive,
+  createBlankAutomation,
+  getMarketingOverview,
+  getMarketingAIInsight,
+} from "@/lib/marketing.functions";
+import { CHANNEL_LABEL } from "@/lib/marketing/types";
+import type { AutomationWithMetrics } from "@/lib/marketing/types";
 import {
   Sparkles, Search, Plus, TrendingUp, MessageCircle, MailOpen, Wallet,
-  ChevronRight, Zap,
+  ChevronRight, Zap, Clock3, Pause,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
@@ -19,39 +22,87 @@ export const Route = createFileRoute("/_authenticated/marketing/")({
   component: MarketingHome,
 });
 
-const FILTERS: { id: "all" | AutomationCategory; label: string }[] = [
+const FILTERS: { id: string; label: string }[] = [
   { id: "all", label: "Todas" },
   { id: "agenda", label: "Agenda" },
-  { id: "pos", label: "Pós-atendimento" },
-  { id: "fidelizacao", label: "Fidelização" },
+  { id: "aniversario", label: "Aniversário" },
   { id: "reativacao", label: "Reativação" },
-  { id: "datas", label: "Datas" },
+  { id: "pacotes", label: "Pacotes" },
+  { id: "financeiro", label: "Financeiro" },
+  { id: "fidelidade", label: "Fidelidade" },
+  { id: "aura_ia", label: "Aura IA" },
 ];
 
+function categoryLabel(id: string) {
+  return FILTERS.find((f) => f.id === id)?.label ?? id;
+}
+
 function MarketingHome() {
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all");
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  const fetchAutomations = useServerFn(listAutomations);
+  const fetchOverview = useServerFn(getMarketingOverview);
+  const fetchInsight = useServerFn(getMarketingAIInsight);
+  const fetchCreateBlank = useServerFn(createBlankAutomation);
+  const fetchSetActive = useServerFn(setAutomationActive);
+
+  const { data: automations, isLoading } = useQuery({
+    queryKey: ["marketing-automations"],
+    queryFn: () => fetchAutomations(),
+  });
+  const { data: overview } = useQuery({
+    queryKey: ["marketing-overview"],
+    queryFn: () => fetchOverview(),
+  });
+  const { data: insight } = useQuery({
+    queryKey: ["marketing-ai-insight"],
+    queryFn: () => fetchInsight(),
+  });
+
+  const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
-  const [states, setStates] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(automations.map((a) => [a.id, a.active])),
-  );
+  const [creating, setCreating] = useState(false);
+
+  const list = useMemo(() => automations ?? [], [automations]);
 
   const filtered = useMemo(() => {
-    return automations.filter((a) => {
+    return list.filter((a) => {
       if (filter !== "all" && a.category !== filter) return false;
-      if (search && !`${a.name} ${a.description}`.toLowerCase().includes(search.toLowerCase())) return false;
+      if (search && !`${a.name} ${a.description ?? ""}`.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
-  }, [filter, search]);
+  }, [list, filter, search]);
 
   const grouped = useMemo(() => {
-    const map = new Map<string, Automation[]>();
+    const map = new Map<string, AutomationWithMetrics[]>();
     for (const a of filtered) {
-      const list = map.get(a.categoryLabel) ?? [];
-      list.push(a);
-      map.set(a.categoryLabel, list);
+      const key = categoryLabel(a.category);
+      const items = map.get(key) ?? [];
+      items.push(a);
+      map.set(key, items);
     }
     return Array.from(map.entries());
   }, [filtered]);
+
+  const handleToggle = async (id: string, active: boolean) => {
+    queryClient.setQueryData<AutomationWithMetrics[]>(["marketing-automations"], (old) =>
+      old?.map((a) => (a.id === id ? { ...a, active, state: active ? (a.metrics.sentCount > 0 ? "active" : "no_history") : "paused" } : a)),
+    );
+    await fetchSetActive({ data: { id, active } });
+    queryClient.invalidateQueries({ queryKey: ["marketing-automations"] });
+    queryClient.invalidateQueries({ queryKey: ["marketing-overview"] });
+  };
+
+  const handleNewBlank = async () => {
+    setCreating(true);
+    try {
+      const { id } = await fetchCreateBlank();
+      navigate({ to: "/marketing/$id", params: { id } });
+    } finally {
+      setCreating(false);
+    }
+  };
 
   return (
     <div className="px-4 md:px-8 py-6 md:py-10 max-w-5xl mx-auto space-y-8">
@@ -64,21 +115,44 @@ function MarketingHome() {
             Suas automações trabalhando 24h por dia pelo seu negócio.
           </p>
         </div>
-        <button className="hidden md:inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-foreground text-background text-sm font-medium">
+        <button
+          onClick={handleNewBlank}
+          disabled={creating}
+          className="hidden md:inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-foreground text-background text-sm font-medium disabled:opacity-60"
+        >
           <Plus className="w-4 h-4" /> Nova automação
         </button>
       </header>
 
-      {/* KPI grid */}
+      {/* KPI grid — Estados Inteligentes */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Kpi icon={Zap} label="Automações ativas" value={`${marketingStats.activeAutomations}`}
-          sub={`de ${marketingStats.totalAutomations} criadas`} />
-        <Kpi icon={MessageCircle} label="Enviadas hoje" value={`${marketingStats.sentToday}`}
-          sub={`${marketingStats.deliveryRate}% entregues`} />
-        <Kpi icon={MailOpen} label="Taxa de resposta" value={`${marketingStats.responseRate}%`}
-          sub={`+${marketingStats.responseTrend}% este mês`} tone="positive" />
-        <Kpi icon={Wallet} label="Receita atribuída" value={currency(marketingStats.attributedRevenue)}
-          sub={`${marketingStats.recoveredClients} clientes recuperadas`} tone="positive" />
+        <Kpi
+          icon={Zap}
+          label="Automações ativas"
+          value={overview ? `${overview.activeAutomations}` : "—"}
+          sub={overview ? `de ${overview.totalAutomations} criadas` : ""}
+        />
+        <KpiSmart
+          icon={MessageCircle}
+          label="Enviadas hoje"
+          hasHistory={overview ? overview.state === "active" : false}
+          value={overview?.sentToday != null ? `${overview.sentToday}` : undefined}
+          sub={overview?.deliveryRate != null ? `${overview.deliveryRate}% entregues` : undefined}
+        />
+        <KpiSmart
+          icon={MailOpen}
+          label="Taxa de resposta"
+          hasHistory={overview ? overview.state === "active" : false}
+          value={overview?.responseRate != null ? `${overview.responseRate}%` : undefined}
+          tone="positive"
+        />
+        <KpiSmart
+          icon={Wallet}
+          label="Receita atribuída"
+          hasHistory={overview ? overview.state === "active" : false}
+          value={overview?.attributedRevenue != null ? currency(overview.attributedRevenue) : undefined}
+          tone="positive"
+        />
       </section>
 
       {/* AI insight banner */}
@@ -90,17 +164,30 @@ function MarketingHome() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-[11px] uppercase tracking-wider text-background/60">AURA IA — Marketing</div>
-            <p className="mt-2 text-[15px] leading-relaxed">
-              <span className="text-primary-foreground font-medium">Lembretes às 18h</span> confirmam
-              22% mais que às 09h. Quer que eu ajuste o horário do lembrete 24h?
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <PillAction>Ajustar horário</PillAction>
-              <PillAction>Enviar teste</PillAction>
-              <Link to="/marketing/ia" className="inline-flex items-center gap-1 h-9 px-4 rounded-xl bg-background/10 text-xs font-medium hover:bg-background/15">
-                Ver todos os insights <ChevronRight className="w-3 h-3" />
-              </Link>
-            </div>
+            {insight ? (
+              <>
+                <p className="mt-2 text-[15px] leading-relaxed">{insight.message}</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {!insight.hasConfig ? (
+                    <Link
+                      to="/marketing/biblioteca"
+                      className="inline-flex items-center gap-1 h-9 px-4 rounded-xl bg-background/10 text-xs font-medium hover:bg-background/15"
+                    >
+                      Ver biblioteca de templates <ChevronRight className="w-3 h-3" />
+                    </Link>
+                  ) : (
+                    <Link
+                      to="/marketing/ia"
+                      className="inline-flex items-center gap-1 h-9 px-4 rounded-xl bg-background/10 text-xs font-medium hover:bg-background/15"
+                    >
+                      Ver AURA IA <ChevronRight className="w-3 h-3" />
+                    </Link>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="mt-2 text-[15px] leading-relaxed text-background/60">Carregando análise da Aura...</p>
+            )}
           </div>
         </div>
       </section>
@@ -136,25 +223,47 @@ function MarketingHome() {
 
       {/* Automation groups */}
       <section className="space-y-8">
-        {grouped.map(([label, list]) => (
+        {isLoading && (
+          <div className="rounded-2xl border border-dashed border-border/60 p-10 text-center text-sm text-muted-foreground">
+            Carregando automações...
+          </div>
+        )}
+        {!isLoading && list.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-border/60 p-10 text-center space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Você ainda não tem nenhuma automação. Comece pela biblioteca de templates prontos ou crie uma do zero.
+            </p>
+            <div className="flex justify-center gap-2">
+              <Link
+                to="/marketing/biblioteca"
+                className="inline-flex items-center gap-1 h-9 px-4 rounded-xl bg-foreground text-background text-xs font-medium"
+              >
+                Ver biblioteca
+              </Link>
+              <button
+                onClick={handleNewBlank}
+                disabled={creating}
+                className="inline-flex items-center gap-1 h-9 px-4 rounded-xl bg-secondary text-xs font-medium disabled:opacity-60"
+              >
+                Criar do zero
+              </button>
+            </div>
+          </div>
+        )}
+        {!isLoading && list.length > 0 && grouped.map(([label, items]) => (
           <div key={label} className="space-y-3">
             <div className="flex items-center justify-between px-1">
               <h2 className="text-sm font-semibold tracking-tight">{label}</h2>
-              <span className="text-xs text-muted-foreground">{list.length} automações</span>
+              <span className="text-xs text-muted-foreground">{items.length} automações</span>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              {list.map((a) => (
-                <AutomationCard
-                  key={a.id}
-                  a={a}
-                  active={states[a.id]}
-                  onToggle={(v) => setStates((s) => ({ ...s, [a.id]: v }))}
-                />
+              {items.map((a) => (
+                <AutomationCard key={a.id} a={a} onToggle={(v) => handleToggle(a.id, v)} />
               ))}
             </div>
           </div>
         ))}
-        {grouped.length === 0 && (
+        {!isLoading && list.length > 0 && grouped.length === 0 && (
           <div className="rounded-2xl border border-dashed border-border/60 p-10 text-center text-sm text-muted-foreground">
             Nenhuma automação encontrada.
           </div>
@@ -188,13 +297,39 @@ function MarketingHome() {
   );
 }
 
+function currency(v: number) {
+  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
 function Kpi({
-  icon: Icon, label, value, sub, tone,
+  icon: Icon, label, value, sub,
 }: {
   icon: typeof TrendingUp;
   label: string;
   value: string;
   sub: string;
+}) {
+  return (
+    <div className="rounded-2xl bg-card border border-border/60 p-4">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Icon className="w-3.5 h-3.5" />
+        <span className="text-[11px] uppercase tracking-wider">{label}</span>
+      </div>
+      <div className="mt-2 text-2xl font-medium tracking-tight">{value}</div>
+      <div className="mt-1 text-xs text-muted-foreground">{sub}</div>
+    </div>
+  );
+}
+
+/** Estados Inteligentes: sem valor real ainda -> mensagem, nunca "0". */
+function KpiSmart({
+  icon: Icon, label, hasHistory, value, sub, tone,
+}: {
+  icon: typeof TrendingUp;
+  label: string;
+  hasHistory: boolean;
+  value?: string;
+  sub?: string;
   tone?: "positive";
 }) {
   return (
@@ -203,25 +338,26 @@ function Kpi({
         <Icon className="w-3.5 h-3.5" />
         <span className="text-[11px] uppercase tracking-wider">{label}</span>
       </div>
-      <div className={"mt-2 text-2xl font-medium tracking-tight " + (tone === "positive" ? "text-emerald-600 dark:text-emerald-400" : "")}>
-        {value}
-      </div>
-      <div className="mt-1 text-xs text-muted-foreground">{sub}</div>
+      {hasHistory && value != null ? (
+        <>
+          <div className={"mt-2 text-2xl font-medium tracking-tight " + (tone === "positive" ? "text-emerald-600 dark:text-emerald-400" : "")}>
+            {value}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">{sub}</div>
+        </>
+      ) : (
+        <div className="mt-2 flex items-center gap-1.5 text-muted-foreground">
+          <Clock3 className="w-3.5 h-3.5" />
+          <span className="text-sm font-medium">Sem histórico ainda</span>
+        </div>
+      )}
     </div>
   );
 }
 
-function PillAction({ children }: { children: React.ReactNode }) {
-  return (
-    <button className="h-9 px-4 rounded-xl bg-background/10 hover:bg-background/15 text-xs font-medium">
-      {children}
-    </button>
-  );
-}
-
 function AutomationCard({
-  a, active, onToggle,
-}: { a: Automation; active: boolean; onToggle: (v: boolean) => void }) {
+  a, onToggle,
+}: { a: AutomationWithMetrics; onToggle: (v: boolean) => void }) {
   return (
     <div className="group rounded-2xl border border-border/60 bg-card p-4 hover:border-border transition">
       <div className="flex items-start gap-3">
@@ -234,25 +370,27 @@ function AutomationCard({
               <div className="text-sm font-medium truncate">{a.name}</div>
               <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{a.description}</div>
             </div>
-            <Switch checked={active} onCheckedChange={onToggle} />
+            <Switch checked={a.active} onCheckedChange={onToggle} />
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <span className="inline-flex items-center h-5 px-2 rounded-full bg-secondary/70 text-[10px] font-medium text-muted-foreground">
               {CHANNEL_LABEL[a.channel]}
             </span>
-            <span className="inline-flex items-center h-5 px-2 rounded-full bg-secondary/70 text-[10px] font-medium text-muted-foreground">
-              {a.trigger}
-            </span>
+            {a.trigger_description && (
+              <span className="inline-flex items-center h-5 px-2 rounded-full bg-secondary/70 text-[10px] font-medium text-muted-foreground">
+                {a.trigger_description}
+              </span>
+            )}
           </div>
         </div>
       </div>
-      <div className="mt-4 pt-4 border-t border-border/60 grid grid-cols-3 gap-2">
-        <Meta label="Enviadas hoje" value={String(a.sentToday)} />
-        <Meta label={a.metricLabel} value={a.metricValue} />
-        <Meta label="Última execução" value={a.lastRun} />
+
+      <div className="mt-4 pt-4 border-t border-border/60">
+        <AutomationStateStrip a={a} />
       </div>
+
       <div className="mt-3 flex items-center justify-between">
-        <span className="text-[11px] text-muted-foreground">Próx.: {a.nextRun}</span>
+        <span className="text-[11px] text-muted-foreground" />
         <Link
           to="/marketing/$id"
           params={{ id: a.id }}
@@ -261,6 +399,38 @@ function AutomationCard({
           Editar <ChevronRight className="w-3 h-3" />
         </Link>
       </div>
+    </div>
+  );
+}
+
+function AutomationStateStrip({ a }: { a: AutomationWithMetrics }) {
+  if (a.state === "paused") {
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Pause className="w-3.5 h-3.5" />
+        <span>
+          Automação pausada
+          {a.metrics.lastSendAt ? ` · Último envio: ${new Date(a.metrics.lastSendAt).toLocaleDateString("pt-BR")}` : " · Nunca executou"}
+        </span>
+      </div>
+    );
+  }
+  if (a.state === "no_history") {
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Clock3 className="w-3.5 h-3.5" />
+        <span>Aguardando primeiro envio</span>
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      <Meta label="Enviadas" value={String(a.metrics.sentCount)} />
+      <Meta label="Entrega" value={a.metrics.deliveryRate != null ? `${a.metrics.deliveryRate}%` : "—"} />
+      <Meta
+        label="Última"
+        value={a.metrics.lastSendAt ? new Date(a.metrics.lastSendAt).toLocaleDateString("pt-BR") : "—"}
+      />
     </div>
   );
 }
