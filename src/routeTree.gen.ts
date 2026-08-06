@@ -63,6 +63,7 @@ import { Route as AuthenticatedFinanceiroCfoRouteImport } from './routes/_authen
 import { Route as AuthenticatedFinanceiroFluxoRouteImport } from './routes/_authenticated/financeiro.fluxo'
 import { Route as AuthenticatedMarketingIndexRouteImport } from './routes/_authenticated/marketing.index'
 import { Route as AuthenticatedMarketingIdRouteImport } from './routes/_authenticated/marketing.$id'
+import { Route as AuthenticatedMarketingBibliotecaRouteImport } from './routes/_authenticated/marketing.biblioteca'
 import { Route as AuthenticatedMarketingIaRouteImport } from './routes/_authenticated/marketing.ia'
 import { Route as AuthenticatedMarketingJornadasRouteImport } from './routes/_authenticated/marketing.jornadas'
 import { Route as AuthenticatedServicosIndexRouteImport } from './routes/_authenticated/servicos.index'
@@ -358,6 +359,12 @@ const AuthenticatedMarketingIdRoute =
     path: '/$id',
     getParentRoute: () => AuthenticatedMarketingRoute,
   } as any)
+const AuthenticatedMarketingBibliotecaRoute =
+  AuthenticatedMarketingBibliotecaRouteImport.update({
+    id: '/biblioteca',
+    path: '/biblioteca',
+    getParentRoute: () => AuthenticatedMarketingRoute,
+  } as any)
 const AuthenticatedMarketingIaRoute =
   AuthenticatedMarketingIaRouteImport.update({
     id: '/ia',
@@ -452,6 +459,7 @@ export interface FileRoutesByFullPath {
   '/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
   '/financeiro/fluxo': typeof AuthenticatedFinanceiroFluxoRoute
   '/marketing/$id': typeof AuthenticatedMarketingIdRoute
+  '/marketing/biblioteca': typeof AuthenticatedMarketingBibliotecaRoute
   '/marketing/ia': typeof AuthenticatedMarketingIaRoute
   '/marketing/jornadas': typeof AuthenticatedMarketingJornadasRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
@@ -506,6 +514,7 @@ export interface FileRoutesByTo {
   '/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
   '/financeiro/fluxo': typeof AuthenticatedFinanceiroFluxoRoute
   '/marketing/$id': typeof AuthenticatedMarketingIdRoute
+  '/marketing/biblioteca': typeof AuthenticatedMarketingBibliotecaRoute
   '/marketing/ia': typeof AuthenticatedMarketingIaRoute
   '/marketing/jornadas': typeof AuthenticatedMarketingJornadasRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
@@ -571,6 +580,7 @@ export interface FileRoutesById {
   '/_authenticated/financeiro/cfo': typeof AuthenticatedFinanceiroCfoRoute
   '/_authenticated/financeiro/fluxo': typeof AuthenticatedFinanceiroFluxoRoute
   '/_authenticated/marketing/$id': typeof AuthenticatedMarketingIdRoute
+  '/_authenticated/marketing/biblioteca': typeof AuthenticatedMarketingBibliotecaRoute
   '/_authenticated/marketing/ia': typeof AuthenticatedMarketingIaRoute
   '/_authenticated/marketing/jornadas': typeof AuthenticatedMarketingJornadasRoute
   '/_authenticated/servicos/$id': typeof AuthenticatedServicosIdRoute
@@ -636,6 +646,7 @@ export interface FileRouteTypes {
     | '/financeiro/cfo'
     | '/financeiro/fluxo'
     | '/marketing/$id'
+    | '/marketing/biblioteca'
     | '/marketing/ia'
     | '/marketing/jornadas'
     | '/servicos/$id'
@@ -690,6 +701,7 @@ export interface FileRouteTypes {
     | '/financeiro/cfo'
     | '/financeiro/fluxo'
     | '/marketing/$id'
+    | '/marketing/biblioteca'
     | '/marketing/ia'
     | '/marketing/jornadas'
     | '/servicos/$id'
@@ -754,6 +766,7 @@ export interface FileRouteTypes {
     | '/_authenticated/financeiro/cfo'
     | '/_authenticated/financeiro/fluxo'
     | '/_authenticated/marketing/$id'
+    | '/_authenticated/marketing/biblioteca'
     | '/_authenticated/marketing/ia'
     | '/_authenticated/marketing/jornadas'
     | '/_authenticated/servicos/$id'
@@ -1163,6 +1176,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMarketingIdRouteImport
       parentRoute: typeof AuthenticatedMarketingRoute
     }
+    '/_authenticated/marketing/biblioteca': {
+      id: '/_authenticated/marketing/biblioteca'
+      path: '/biblioteca'
+      fullPath: '/marketing/biblioteca'
+      preLoaderRoute: typeof AuthenticatedMarketingBibliotecaRouteImport
+      parentRoute: typeof AuthenticatedMarketingRoute
+    }
     '/_authenticated/marketing/ia': {
       id: '/_authenticated/marketing/ia'
       path: '/ia'
@@ -1322,6 +1342,7 @@ const AuthenticatedFinanceiroRouteWithChildren =
 
 interface AuthenticatedMarketingRouteChildren {
   AuthenticatedMarketingIdRoute: typeof AuthenticatedMarketingIdRoute
+  AuthenticatedMarketingBibliotecaRoute: typeof AuthenticatedMarketingBibliotecaRoute
   AuthenticatedMarketingIaRoute: typeof AuthenticatedMarketingIaRoute
   AuthenticatedMarketingJornadasRoute: typeof AuthenticatedMarketingJornadasRoute
   AuthenticatedMarketingIndexRoute: typeof AuthenticatedMarketingIndexRoute
@@ -1330,6 +1351,8 @@ interface AuthenticatedMarketingRouteChildren {
 const AuthenticatedMarketingRouteChildren: AuthenticatedMarketingRouteChildren =
   {
     AuthenticatedMarketingIdRoute: AuthenticatedMarketingIdRoute,
+    AuthenticatedMarketingBibliotecaRoute:
+      AuthenticatedMarketingBibliotecaRoute,
     AuthenticatedMarketingIaRoute: AuthenticatedMarketingIaRoute,
     AuthenticatedMarketingJornadasRoute: AuthenticatedMarketingJornadasRoute,
     AuthenticatedMarketingIndexRoute: AuthenticatedMarketingIndexRoute,
