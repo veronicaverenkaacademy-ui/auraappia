@@ -108,6 +108,16 @@ export const updateMemberRole = createServerFn({ method: "POST" })
     const { data: adminCheck } = await supabase.rpc("is_admin", { _user_id: userId });
     if (!adminCheck) throw new Error("Apenas administradores podem alterar papéis.");
 
+    // O alvo precisa ser uma colaboradora da própria conta do admin que está chamando —
+    // sem isso, qualquer admin poderia reatribuir o papel de um user_id de outra conta.
+    const { data: member } = await supabase
+      .from("team_members")
+      .select("id")
+      .eq("owner_id", userId)
+      .eq("user_id", data.user_id)
+      .maybeSingle();
+    if (!member) throw new Error("Colaboradora não encontrada nesta conta.");
+
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await supabaseAdmin.from("user_roles").delete().eq("user_id", data.user_id);
     const { error } = await supabaseAdmin
