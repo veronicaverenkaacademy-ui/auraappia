@@ -58,7 +58,7 @@ export function useClientAuth(ownerId: string) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  const resolveClient = async (fields?: SignupFields): Promise<boolean> => {
+  const resolveClient = async (fields?: SignupFields, silent = false): Promise<boolean> => {
     setLoading(true);
     try {
       const res = await linkFn({
@@ -79,6 +79,17 @@ export function useClientAuth(ownerId: string) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes("Nome é obrigatório") || msg.includes("aceitar os Termos")) {
         setView("signup");
+      } else if (silent) {
+        // Havia uma sessão Supabase no navegador (ex.: a própria profissional logada no
+        // painel, testando o Portal no mesmo navegador — o cliente Supabase é
+        // compartilhado entre /_authenticated e /l/:slug), mas ela não resolveu como
+        // cliente válida desta empresa. Isso não é um erro para mostrar — cai para o
+        // login por telefone normal, como se não houvesse sessão nenhuma.
+        console.warn(
+          "[useClientAuth] Sessão existente não é uma cliente válida desta empresa; caindo para login por telefone",
+          e,
+        );
+        setView("phone");
       } else {
         console.error("[useClientAuth] Falha ao vincular conta da cliente", e);
         toast.error(`Não foi possível continuar: ${msg}`);
@@ -91,7 +102,7 @@ export function useClientAuth(ownerId: string) {
 
   const start = () => {
     if (session) {
-      void resolveClient();
+      void resolveClient(undefined, true);
     } else {
       setView("phone");
     }
