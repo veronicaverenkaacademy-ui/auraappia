@@ -1664,8 +1664,128 @@ export type Database = {
         }
         Relationships: []
       }
+      company_profiles: {
+        Row: {
+          address: string | null
+          category: string | null
+          city: string | null
+          cover_image_url: string | null
+          created_at: string
+          description: string | null
+          display_name: string
+          facebook: string | null
+          instagram: string | null
+          logo_url: string | null
+          open_hours_text: string | null
+          owner_id: string
+          phone: string | null
+          slug: string
+          state: string | null
+          tiktok: string | null
+          updated_at: string
+          whatsapp: string | null
+        }
+        Insert: {
+          address?: string | null
+          category?: string | null
+          city?: string | null
+          cover_image_url?: string | null
+          created_at?: string
+          description?: string | null
+          display_name: string
+          facebook?: string | null
+          instagram?: string | null
+          logo_url?: string | null
+          open_hours_text?: string | null
+          owner_id: string
+          phone?: string | null
+          slug: string
+          state?: string | null
+          tiktok?: string | null
+          updated_at?: string
+          whatsapp?: string | null
+        }
+        Update: {
+          address?: string | null
+          category?: string | null
+          city?: string | null
+          cover_image_url?: string | null
+          created_at?: string
+          description?: string | null
+          display_name?: string
+          facebook?: string | null
+          instagram?: string | null
+          logo_url?: string | null
+          open_hours_text?: string | null
+          owner_id?: string
+          phone?: string | null
+          slug?: string
+          state?: string | null
+          tiktok?: string | null
+          updated_at?: string
+          whatsapp?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
+      public_company_profiles: {
+        Row: {
+          address: string | null
+          category: string | null
+          city: string | null
+          cover_image_url: string | null
+          description: string | null
+          display_name: string | null
+          facebook: string | null
+          instagram: string | null
+          logo_url: string | null
+          open_hours_text: string | null
+          owner_id: string | null
+          phone: string | null
+          slug: string | null
+          state: string | null
+          tiktok: string | null
+          whatsapp: string | null
+        }
+        Insert: {
+          address?: string | null
+          category?: string | null
+          city?: string | null
+          cover_image_url?: string | null
+          description?: string | null
+          display_name?: string | null
+          facebook?: string | null
+          instagram?: string | null
+          logo_url?: string | null
+          open_hours_text?: string | null
+          owner_id?: string | null
+          phone?: string | null
+          slug?: string | null
+          state?: string | null
+          tiktok?: string | null
+          whatsapp?: string | null
+        }
+        Update: {
+          address?: string | null
+          category?: string | null
+          city?: string | null
+          cover_image_url?: string | null
+          description?: string | null
+          display_name?: string | null
+          facebook?: string | null
+          instagram?: string | null
+          logo_url?: string | null
+          open_hours_text?: string | null
+          owner_id?: string | null
+          phone?: string | null
+          slug?: string | null
+          state?: string | null
+          tiktok?: string | null
+          whatsapp?: string | null
+        }
+        Relationships: []
+      }
       public_professionals: {
         Row: {
           agenda_color: string | null

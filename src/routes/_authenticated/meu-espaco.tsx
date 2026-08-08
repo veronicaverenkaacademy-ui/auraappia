@@ -8,12 +8,16 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { useSelfMember } from "@/hooks/use-role";
 import { initials } from "@/lib/clients";
+import { fetchCompanySlugByOwnerId } from "@/lib/companyProfile";
 
 export const Route = createFileRoute("/_authenticated/meu-espaco")({
   head: () => ({
     meta: [
       { title: "Meu Espaço · AURA" },
-      { name: "description", content: "Sua área pessoal no AURA: agenda, metas, comissão e link exclusivo." },
+      {
+        name: "description",
+        content: "Sua área pessoal no AURA: agenda, metas, comissão e link exclusivo.",
+      },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -22,17 +26,32 @@ export const Route = createFileRoute("/_authenticated/meu-espaco")({
 
 function MeuEspaco() {
   const { data: me, isLoading } = useSelfMember();
+  const { data: companySlug } = useQuery({
+    queryKey: ["company-slug", me?.owner_id],
+    queryFn: () => fetchCompanySlugByOwnerId(me!.owner_id),
+    enabled: Boolean(me),
+  });
 
-  if (isLoading) return <AppShell title="Meu Espaço"><div className="p-8 text-muted-foreground">Carregando…</div></AppShell>;
-  if (!me) return (
-    <AppShell title="Meu Espaço">
-      <div className="max-w-md mx-auto p-8 text-center space-y-3">
-        <p className="text-sm text-muted-foreground">Seu perfil ainda não foi vinculado como colaborador. Fale com o administrador.</p>
-      </div>
-    </AppShell>
-  );
+  if (isLoading)
+    return (
+      <AppShell title="Meu Espaço">
+        <div className="p-8 text-muted-foreground">Carregando…</div>
+      </AppShell>
+    );
+  if (!me)
+    return (
+      <AppShell title="Meu Espaço">
+        <div className="max-w-md mx-auto p-8 text-center space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Seu perfil ainda não foi vinculado como colaborador. Fale com o administrador.
+          </p>
+        </div>
+      </AppShell>
+    );
 
-  const link = me.booking_slug ? `${window.location.origin}/l/${me.booking_slug}` : "";
+  // Link da empresa — a página de agendamento por profissional específica chega na
+  // próxima PR (seleção de profissional dentro do fluxo de agendamento da empresa).
+  const link = companySlug ? `${window.location.origin}/l/${companySlug}` : "";
   const dayGoal = Number(me.monthly_goal) / 22;
   const dayProgress = 62; // mock — plug em BI real depois
 
@@ -58,14 +77,20 @@ function MeuEspaco() {
             <div className="text-xs text-muted-foreground mt-2">{dayProgress}% concluído</div>
           </Card>
           <Card icon={<Calendar className="w-4 h-4" />} title="Próximos atendimentos">
-            <Link to="/agenda" className="text-sm text-primary underline underline-offset-4">Ver minha agenda</Link>
+            <Link to="/agenda" className="text-sm text-primary underline underline-offset-4">
+              Ver minha agenda
+            </Link>
           </Card>
           {me.show_commission && (
             <Card icon={<TrendingUp className="w-4 h-4" />} title="Comissão estimada">
               <div className="text-2xl font-display">
-                {me.commission_type === "percent" ? `${me.commission_value}%` : `R$ ${me.commission_value}`}
+                {me.commission_type === "percent"
+                  ? `${me.commission_value}%`
+                  : `R$ ${me.commission_value}`}
               </div>
-              <div className="text-xs text-muted-foreground mt-1">Sobre atendimentos concluídos.</div>
+              <div className="text-xs text-muted-foreground mt-1">
+                Sobre atendimentos concluídos.
+              </div>
             </Card>
           )}
           <Card icon={<Award className="w-4 h-4" />} title="Estatísticas pessoais">
@@ -79,15 +104,28 @@ function MeuEspaco() {
 
         {link && (
           <div className="rounded-3xl border border-border/60 bg-card p-6 space-y-3">
-            <div className="text-xs uppercase tracking-wider text-muted-foreground">Meu link exclusivo</div>
+            <div className="text-xs uppercase tracking-wider text-muted-foreground">
+              Link de agendamento da empresa
+            </div>
             <div className="flex items-center gap-2">
-              <code className="flex-1 px-4 py-3 bg-muted/50 rounded-full text-sm truncate">{link}</code>
-              <Button variant="outline" size="icon" className="rounded-full"
-                onClick={() => { navigator.clipboard.writeText(link); toast.success("Link copiado."); }}>
+              <code className="flex-1 px-4 py-3 bg-muted/50 rounded-full text-sm truncate">
+                {link}
+              </code>
+              <Button
+                variant="outline"
+                size="icon"
+                className="rounded-full"
+                onClick={() => {
+                  navigator.clipboard.writeText(link);
+                  toast.success("Link copiado.");
+                }}
+              >
                 <Copy className="w-4 h-4" />
               </Button>
               <a href={link} target="_blank" rel="noreferrer">
-                <Button variant="outline" size="icon" className="rounded-full"><ExternalLink className="w-4 h-4" /></Button>
+                <Button variant="outline" size="icon" className="rounded-full">
+                  <ExternalLink className="w-4 h-4" />
+                </Button>
               </a>
             </div>
           </div>
@@ -97,14 +135,30 @@ function MeuEspaco() {
   );
 }
 
-function Card({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+function Card({
+  icon,
+  title,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="rounded-3xl border border-border/60 bg-card p-5">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground uppercase tracking-wider">{icon}{title}</div>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground uppercase tracking-wider">
+        {icon}
+        {title}
+      </div>
       <div className="mt-3">{children}</div>
     </div>
   );
 }
 function Stat({ label, value }: { label: string; value: string }) {
-  return <div><div className="text-lg font-display">{value}</div><div className="text-[10px] uppercase text-muted-foreground tracking-wider">{label}</div></div>;
+  return (
+    <div>
+      <div className="text-lg font-display">{value}</div>
+      <div className="text-[10px] uppercase text-muted-foreground tracking-wider">{label}</div>
+    </div>
+  );
 }
