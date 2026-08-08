@@ -23,7 +23,13 @@ import {
   upsertCompanyProfile,
   checkCompanySlugAvailable,
 } from "@/lib/companyProfile.functions";
-import { slugify, type CompanyProfile } from "@/lib/companyProfile";
+import {
+  slugify,
+  DEFAULT_BUSINESS_HOURS,
+  type CompanyProfile,
+  type BusinessHours,
+  type DayHours,
+} from "@/lib/companyProfile";
 
 export const Route = createFileRoute("/_authenticated/empresa")({
   head: () => ({
@@ -54,7 +60,18 @@ const EMPTY_PUBLIC_FORM: PublicForm = {
   open_hours_text: "",
   logo_url: "",
   cover_image_url: "",
+  business_hours: DEFAULT_BUSINESS_HOURS,
 };
+
+const DAY_LABELS: { key: keyof BusinessHours; label: string }[] = [
+  { key: "mon", label: "Segunda" },
+  { key: "tue", label: "Terça" },
+  { key: "wed", label: "Quarta" },
+  { key: "thu", label: "Quinta" },
+  { key: "fri", label: "Sexta" },
+  { key: "sat", label: "Sábado" },
+  { key: "sun", label: "Domingo" },
+];
 
 function EmpresaPage() {
   const { state, setState } = useControlCenter();
@@ -81,7 +98,8 @@ function EmpresaPage() {
 
   useEffect(() => {
     if (!loadingProfile && !hydratedFromProfile) {
-      if (profile) setForm({ ...profile });
+      if (profile)
+        setForm({ ...profile, business_hours: profile.business_hours ?? DEFAULT_BUSINESS_HOURS });
       setHydratedFromProfile(true);
     }
   }, [loadingProfile, profile, hydratedFromProfile]);
@@ -106,6 +124,10 @@ function EmpresaPage() {
   }, [form.slug]);
 
   const patchForm = (p: Partial<PublicForm>) => setForm((f) => ({ ...f, ...p }));
+
+  const businessHours = form.business_hours ?? DEFAULT_BUSINESS_HOURS;
+  const patchDayHours = (day: keyof BusinessHours, hours: DayHours) =>
+    patchForm({ business_hours: { ...businessHours, [day]: hours } });
 
   const save = useMutation({
     mutationFn: () => upsertFn({ data: form }),
@@ -277,7 +299,10 @@ function EmpresaPage() {
                   placeholder="@"
                 />
               </Field>
-              <Field label="Horário de funcionamento">
+              <Field
+                label="Horário de funcionamento (texto)"
+                hint="Aparece na landing pública como texto livre"
+              >
                 <Input
                   value={form.open_hours_text ?? ""}
                   onChange={(e) => patchForm({ open_hours_text: e.target.value })}
@@ -285,6 +310,59 @@ function EmpresaPage() {
                 />
               </Field>
             </div>
+
+            <Field
+              label="Horário de funcionamento (agendamento)"
+              hint="Usado para calcular os horários livres no agendamento online"
+            >
+              <div className="space-y-2">
+                {DAY_LABELS.map(({ key, label }) => {
+                  const day = businessHours[key];
+                  const closed = !day;
+                  return (
+                    <div key={key} className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 w-28 shrink-0 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={!closed}
+                          onChange={(e) =>
+                            patchDayHours(
+                              key,
+                              e.target.checked ? { open: "09:00", close: "19:00" } : null,
+                            )
+                          }
+                          className="rounded border-border/70"
+                        />
+                        {label}
+                      </label>
+                      {closed ? (
+                        <span className="text-xs text-muted-foreground">Fechado</span>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="time"
+                            value={day.open}
+                            onChange={(e) =>
+                              patchDayHours(key, { open: e.target.value, close: day.close })
+                            }
+                            className="h-9 w-28"
+                          />
+                          <span className="text-xs text-muted-foreground">às</span>
+                          <Input
+                            type="time"
+                            value={day.close}
+                            onChange={(e) =>
+                              patchDayHours(key, { open: day.open, close: e.target.value })
+                            }
+                            className="h-9 w-28"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Field>
 
             <div className="grid md:grid-cols-2 gap-4 items-start">
               <CompanyImageUpload

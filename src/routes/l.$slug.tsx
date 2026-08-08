@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Instagram,
@@ -10,11 +11,13 @@ import {
   Calendar,
   Users,
 } from "lucide-react";
-import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { fetchCompanyProfileBySlug, type CompanyProfile } from "@/lib/companyProfile";
+import { fetchPublicServices, fetchPublicProfessionals } from "@/lib/booking";
 import { initials } from "@/lib/clients";
+import { BookingFlow } from "@/components/portal/booking-flow";
+import { ClientAccountPanel } from "@/components/portal/client-account-panel";
 
 export const Route = createFileRoute("/l/$slug")({
   ssr: false,
@@ -41,6 +44,7 @@ function CompanyLanding() {
     queryKey: ["public-company", slug],
     queryFn: () => fetchCompanyProfileBySlug(slug),
   });
+  const [bookingOpen, setBookingOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -74,23 +78,24 @@ function CompanyLanding() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <Hero company={company} />
+      <div className="mx-auto w-full max-w-2xl px-6 pt-4 flex justify-end">
+        <ClientAccountPanel ownerId={company.owner_id} />
+      </div>
+      <Hero company={company} onBook={() => setBookingOpen(true)} />
       <div className="mx-auto w-full max-w-2xl px-6">
         <AboutSection company={company} />
-        <ServicesSection />
-        <ProfessionalsSection />
+        <ServicesSection ownerId={company.owner_id} />
+        <ProfessionalsSection ownerId={company.owner_id} />
         <LocationSection company={company} />
         <SocialSection company={company} />
       </div>
       <Footer company={company} />
+      {bookingOpen && <BookingFlow company={company} onClose={() => setBookingOpen(false)} />}
     </div>
   );
 }
 
-function Hero({ company }: { company: CompanyProfile }) {
-  const onBook = () =>
-    toast("O agendamento pelo link ainda está em desenvolvimento — em breve por aqui.");
-
+function Hero({ company, onBook }: { company: CompanyProfile; onBook: () => void }) {
   return (
     <header className="relative">
       {company.cover_image_url ? (
@@ -182,22 +187,53 @@ function AboutSection({ company }: { company: CompanyProfile }) {
   );
 }
 
-function ServicesSection() {
+function ServicesSection({ ownerId }: { ownerId: string }) {
+  const { data: services, isLoading } = useQuery({
+    queryKey: ["public-services", ownerId],
+    queryFn: () => fetchPublicServices(ownerId),
+  });
+
   return (
     <section aria-labelledby="services-heading" className="py-10 border-t border-border/60">
       <h2 id="services-heading" className="text-xl font-display tracking-tight">
         Serviços
       </h2>
-      <div className="mt-4 rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center">
-        <p className="text-sm text-muted-foreground">
-          Os serviços estarão disponíveis em instantes.
-        </p>
-      </div>
+      {isLoading ? (
+        <div className="mt-4 rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center">
+          <p className="text-sm text-muted-foreground">Carregando…</p>
+        </div>
+      ) : !services || services.length === 0 ? (
+        <div className="mt-4 rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center">
+          <p className="text-sm text-muted-foreground">
+            Ainda não há serviços cadastrados para agendamento online.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-4 space-y-2">
+          {services.map((svc) => (
+            <div
+              key={svc.id}
+              className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/40 px-4 py-3"
+            >
+              <div>
+                <p className="text-sm font-medium">{svc.name}</p>
+                <p className="text-xs text-muted-foreground">{svc.duration_min} min</p>
+              </div>
+              <p className="text-sm">R$ {svc.price.toFixed(2).replace(".", ",")}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
 
-function ProfessionalsSection() {
+function ProfessionalsSection({ ownerId }: { ownerId: string }) {
+  const { data: professionals, isLoading } = useQuery({
+    queryKey: ["public-professionals", ownerId],
+    queryFn: () => fetchPublicProfessionals(ownerId),
+  });
+
   return (
     <section aria-labelledby="professionals-heading" className="py-10 border-t border-border/60">
       <h2
@@ -206,9 +242,31 @@ function ProfessionalsSection() {
       >
         <Users className="w-4 h-4 text-muted-foreground" aria-hidden="true" /> Profissionais
       </h2>
-      <div className="mt-4 rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center">
-        <p className="text-sm text-muted-foreground">A equipe estará disponível em instantes.</p>
-      </div>
+      {isLoading ? (
+        <div className="mt-4 rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center">
+          <p className="text-sm text-muted-foreground">Carregando…</p>
+        </div>
+      ) : !professionals || professionals.length === 0 ? (
+        <div className="mt-4 rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center">
+          <p className="text-sm text-muted-foreground">A equipe estará disponível em instantes.</p>
+        </div>
+      ) : (
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          {professionals.map((pro) => (
+            <div
+              key={pro.id}
+              className="rounded-2xl border border-border/70 bg-card/40 p-4 text-center"
+            >
+              <Avatar className="w-14 h-14 mx-auto">
+                <AvatarImage src={pro.avatar_url ?? undefined} alt="" />
+                <AvatarFallback>{initials(pro.full_name)}</AvatarFallback>
+              </Avatar>
+              <p className="mt-2 text-sm font-medium">{pro.full_name}</p>
+              {pro.role_title && <p className="text-xs text-muted-foreground">{pro.role_title}</p>}
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

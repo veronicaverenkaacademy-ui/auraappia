@@ -1,158 +1,47 @@
 import { useEffect, useState } from "react";
-import { Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import type { Session } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+import { Calendar, Gift, Package, Ticket, Loader2, LogOut, Pencil } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
-import { Calendar, Gift, Package, Ticket, Loader2, LogOut } from "lucide-react";
-import { toast } from "sonner";
 import { initials } from "@/lib/clients";
-import { normalizePhoneBR, isValidPhoneBR } from "@/lib/phone";
-import { linkClientAccount } from "@/lib/clientPortal.functions";
+import { useClientAuth, type MyClient } from "@/hooks/use-client-auth";
+import { PhoneStep, OtpStep, SignupStep } from "./client-auth-steps";
+import { SlotPicker, type PickedSlot } from "./slot-picker";
 import { fetchMyAppointments, type MyAppointment } from "@/lib/clientPortal";
+import { updateMyClientProfile, deleteMyClientAccount } from "@/lib/clientPortal.functions";
+import { rescheduleClientAppointment, cancelClientAppointment } from "@/lib/booking.functions";
 
 /**
- * Login por telefone (OTP) + painel "Meus agendamentos" da cliente, desacoplado de
- * qualquer profissional específica — precisa só do owner_id da empresa (que é o mesmo
- * owner_id usado em toda tabela do AURA). Extraído de l.$slug.tsx quando essa rota deixou
- * de representar uma profissional e passou a representar a empresa (Landing Pública).
- *
- * Ainda não é montado na Landing Pública — aguarda a próxima PR (agendamento), que decide
- * onde e quando abrir este painel dentro do novo fluxo (serviço → profissional → horário).
+ * Login por telefone (OTP) + painel "Minha conta" da cliente, desacoplado de qualquer
+ * profissional específica — precisa só do owner_id da empresa. Usa useClientAuth (a
+ * mesma lógica compartilhada com o funil de agendamento) para nunca ter dois fluxos de
+ * autenticação de cliente divergindo com o tempo.
  */
-
-type MyClient = { id: string; owner_id: string; full_name: string; phone: string | null };
-
-type AccountView = "closed" | "phone" | "otp" | "name" | "dashboard";
-
-export function ClientAccountPanel({
-  ownerId,
-  professionalName,
-}: {
-  ownerId: string;
-  professionalName?: string;
-}) {
-  const [accountView, setAccountView] = useState<AccountView>("closed");
-  const [session, setSession] = useState<Session | null>(null);
-  const [myClient, setMyClient] = useState<MyClient | null>(null);
-  const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [loading, setLoading] = useState(false);
-
-  const linkFn = useServerFn(linkClientAccount);
+export function ClientAccountPanel({ ownerId }: { ownerId: string }) {
+  const auth = useClientAuth(ownerId);
+  const [showDashboard, setShowDashboard] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
-    return () => sub.subscription.unsubscribe();
-  }, []);
+    if (auth.view === "ready" && auth.myClient) setShowDashboard(true);
+  }, [auth.view, auth.myClient]);
 
-  const { data: appointments = [], isLoading: loadingAppointments } = useQuery({
-    queryKey: ["my-appointments", myClient?.id],
-    queryFn: () => fetchMyAppointments(myClient!.id),
-    enabled: Boolean(myClient),
-  });
-
-  const resolveClient = async (nameForFirstSignup?: string) => {
-    setLoading(true);
-    try {
-      const res = await linkFn({ data: { owner_id: ownerId, full_name: nameForFirstSignup } });
-      setMyClient(res.client);
-      setAccountView("dashboard");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("Nome é obrigatório")) {
-        setAccountView("name");
-      } else {
-        console.error("[ClientAccountPanel] Falha ao vincular conta da cliente", e);
-        toast.error(`Não foi possível continuar: ${msg}`);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const openAccount = () => {
-    if (session) {
-      void resolveClient();
-    } else {
-      setAccountView("phone");
-    }
-  };
-
-  const sendCode = async () => {
-    if (!isValidPhoneBR(phone)) {
-      toast.error("Digite um telefone válido (com DDD)");
-      return;
-    }
-    setLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({ phone: normalizePhoneBR(phone) });
-    setLoading(false);
-    if (error) {
-      toast.error(
-        error.message.includes("provider")
-          ? "Envio de SMS ainda não configurado por essa empresa. Avise a profissional."
-          : error.message,
-      );
-      return;
-    }
-    toast.success("Código enviado por SMS");
-    setAccountView("otp");
-  };
-
-  const verify = async () => {
-    if (code.length !== 6) return;
-    setLoading(true);
-    const { error } = await supabase.auth.verifyOtp({
-      phone: normalizePhoneBR(phone),
-      token: code,
-      type: "sms",
-    });
-    setLoading(false);
-    if (error) {
-      toast.error("Código inválido");
-      return;
-    }
-    await resolveClient();
-  };
-
-  const confirmName = async () => {
-    if (fullName.trim().length < 3) {
-      toast.error("Digite seu nome completo");
-      return;
-    }
-    if (!acceptedTerms) {
-      toast.error(
-        "Você precisa aceitar os Termos de Uso e a Política de Privacidade para continuar.",
-      );
-      return;
-    }
-    await resolveClient(fullName.trim());
-  };
-
-  const logout = async () => {
-    await supabase.auth.signOut();
-    setSession(null);
-    setMyClient(null);
-    setAccountView("closed");
-  };
-
-  if (accountView === "dashboard" && myClient) {
+  if (showDashboard && auth.myClient) {
     return (
-      <ClientDashboard
-        client={myClient}
-        professionalName={professionalName}
-        appointments={appointments}
-        loadingAppointments={loadingAppointments}
-        onLogout={logout}
-      />
+      <div className="fixed inset-0 z-40 bg-background overflow-y-auto">
+        <ClientDashboard
+          ownerId={ownerId}
+          client={auth.myClient}
+          setClient={auth.setMyClient}
+          onLogout={() => {
+            auth.logout();
+            setShowDashboard(false);
+          }}
+          onClose={() => setShowDashboard(false)}
+        />
+      </div>
     );
   }
 
@@ -162,138 +51,38 @@ export function ClientAccountPanel({
         variant="outline"
         size="sm"
         className="rounded-full h-8 text-xs"
-        onClick={openAccount}
-        disabled={loading}
+        onClick={auth.start}
+        disabled={auth.loading}
       >
         Minha conta
       </Button>
 
-      {accountView === "phone" && (
-        <AccountCard title="Entre com seu telefone">
-          <div className="space-y-2">
-            <Label
-              htmlFor="client-phone"
-              className="text-xs font-normal text-muted-foreground uppercase tracking-wider"
-            >
-              Telefone
-            </Label>
-            <Input
-              id="client-phone"
-              type="tel"
-              inputMode="tel"
-              placeholder="(11) 99999-9999"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="h-12 rounded-xl bg-background border-0 text-base"
-              autoFocus
-            />
-          </div>
-          <Button onClick={sendCode} disabled={loading} className="w-full h-12 rounded-xl">
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Enviar código"}
-          </Button>
-          <button
-            onClick={() => setAccountView("closed")}
-            className="w-full text-xs text-muted-foreground hover:text-foreground transition"
-          >
-            Cancelar
-          </button>
-        </AccountCard>
+      {auth.view === "phone" && (
+        <PhoneStep
+          phone={auth.phone}
+          setPhone={auth.setPhone}
+          loading={auth.loading}
+          onSubmit={auth.sendCode}
+          onCancel={() => auth.setView("closed")}
+        />
       )}
-
-      {accountView === "otp" && (
-        <AccountCard title="Digite o código enviado">
-          <div className="flex justify-center">
-            <InputOTP maxLength={6} value={code} onChange={setCode}>
-              <InputOTPGroup>
-                {[0, 1, 2, 3, 4, 5].map((i) => (
-                  <InputOTPSlot
-                    key={i}
-                    index={i}
-                    className="w-11 h-12 text-base bg-background border-0"
-                  />
-                ))}
-              </InputOTPGroup>
-            </InputOTP>
-          </div>
-          <Button
-            onClick={verify}
-            disabled={loading || code.length !== 6}
-            className="w-full h-12 rounded-xl"
-          >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirmar"}
-          </Button>
-          <button
-            onClick={() => {
-              setAccountView("phone");
-              setCode("");
-            }}
-            className="w-full text-xs text-muted-foreground hover:text-foreground transition"
-          >
-            Usar outro número
-          </button>
-        </AccountCard>
+      {auth.view === "otp" && (
+        <OtpStep
+          code={auth.code}
+          setCode={auth.setCode}
+          loading={auth.loading}
+          onSubmit={auth.verify}
+          onBack={() => auth.setView("phone")}
+        />
       )}
-
-      {accountView === "name" && (
-        <AccountCard title="Só falta seu nome">
-          <div className="space-y-2">
-            <Label
-              htmlFor="client-name"
-              className="text-xs font-normal text-muted-foreground uppercase tracking-wider"
-            >
-              Nome completo
-            </Label>
-            <Input
-              id="client-name"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              placeholder="Como você se chama?"
-              className="h-12 rounded-xl bg-background border-0 text-base"
-              autoFocus
-            />
-          </div>
-          <label className="flex items-start gap-2.5 text-xs text-muted-foreground leading-relaxed">
-            <Checkbox
-              checked={acceptedTerms}
-              onCheckedChange={(v) => setAcceptedTerms(v === true)}
-              className="mt-0.5"
-            />
-            <span>
-              Li e aceito os{" "}
-              <Link
-                to="/termos-de-uso"
-                target="_blank"
-                className="text-foreground underline underline-offset-2"
-              >
-                Termos de Uso
-              </Link>{" "}
-              e a{" "}
-              <Link
-                to="/politica-de-privacidade"
-                target="_blank"
-                className="text-foreground underline underline-offset-2"
-              >
-                Política de Privacidade
-              </Link>
-              .
-            </span>
-          </label>
-          <Button onClick={confirmName} disabled={loading} className="w-full h-12 rounded-xl">
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Continuar"}
-          </Button>
-        </AccountCard>
+      {auth.view === "signup" && (
+        <SignupStep
+          signup={auth.signup}
+          setSignup={auth.setSignup}
+          loading={auth.loading}
+          onSubmit={auth.confirmSignup}
+        />
       )}
-    </div>
-  );
-}
-
-function AccountCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="mt-10 rounded-3xl border border-border/70 bg-secondary/60 p-6 space-y-5">
-      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground text-center">
-        {title}
-      </p>
-      {children}
     </div>
   );
 }
@@ -313,19 +102,40 @@ function formatDateTime(iso: string) {
     .replace(".", "");
 }
 
+type ProfileForm = { full_name: string; email: string; birthday: string; cpf: string };
+
+function toForm(client: MyClient): ProfileForm {
+  return {
+    full_name: client.full_name,
+    email: client.email ?? "",
+    birthday: client.birthday ?? "",
+    cpf: client.cpf ?? "",
+  };
+}
+
 function ClientDashboard({
+  ownerId,
   client,
-  professionalName,
-  appointments,
-  loadingAppointments,
+  setClient,
   onLogout,
+  onClose,
 }: {
+  ownerId: string;
   client: MyClient;
-  professionalName?: string;
-  appointments: MyAppointment[];
-  loadingAppointments: boolean;
+  setClient: (c: MyClient) => void;
   onLogout: () => void;
+  onClose: () => void;
 }) {
+  const qc = useQueryClient();
+  const {
+    data: appointments = [],
+    isLoading: loadingAppointments,
+    refetch: refetchAppointments,
+  } = useQuery({
+    queryKey: ["my-appointments", client.id],
+    queryFn: () => fetchMyAppointments(client.id),
+  });
+
   const now = Date.now();
   const upcoming = appointments.filter(
     (a) => new Date(a.starts_at).getTime() >= now && a.status !== "cancelled",
@@ -333,6 +143,63 @@ function ClientDashboard({
   const past = appointments.filter(
     (a) => new Date(a.starts_at).getTime() < now || a.status === "cancelled",
   );
+
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<ProfileForm>(toForm(client));
+  const [savingProfile, setSavingProfile] = useState(false);
+  const updateProfileFn = useServerFn(updateMyClientProfile);
+
+  const startEditing = () => {
+    setForm(toForm(client));
+    setEditing(true);
+  };
+
+  const saveProfile = async () => {
+    if (form.full_name.trim().length < 2) {
+      toast.error("Digite seu nome completo");
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      const res = await updateProfileFn({
+        data: {
+          owner_id: ownerId,
+          full_name: form.full_name.trim(),
+          email: form.email,
+          birthday: form.birthday,
+          cpf: form.cpf,
+        },
+      });
+      setClient({
+        ...client,
+        full_name: res.client.full_name,
+        email: res.client.email,
+        birthday: res.client.birthday,
+        cpf: res.client.cpf,
+      });
+      setEditing(false);
+      toast.success("Dados atualizados.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível salvar.");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const [deleteState, setDeleteState] = useState<"idle" | "confirm" | "deleting">("idle");
+  const deleteAccountFn = useServerFn(deleteMyClientAccount);
+
+  const doDelete = async () => {
+    setDeleteState("deleting");
+    try {
+      await deleteAccountFn();
+      toast.success("Sua conta foi excluída.");
+      onLogout();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível excluir a conta.");
+      setDeleteState("confirm");
+    }
+  };
 
   return (
     <main className="min-h-screen bg-background pb-16 text-foreground">
@@ -349,24 +216,85 @@ function ClientDashboard({
               <h1 className="text-lg font-light leading-tight">{client.full_name.split(" ")[0]}</h1>
             </div>
           </div>
-          <button
-            onClick={onLogout}
-            className="inline-flex items-center gap-1.5 rounded-full border border-border/70 px-3 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
-          >
-            <LogOut className="w-3 h-3" /> Sair
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="rounded-full border border-border/70 px-3 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+            >
+              Fechar
+            </button>
+            <button
+              onClick={onLogout}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border/70 px-3 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+            >
+              <LogOut className="w-3 h-3" /> Sair
+            </button>
+          </div>
         </header>
 
         <section className="mt-8">
-          <h2 className="text-[22px] font-light leading-tight">Meus dados</h2>
-          <div className="mt-4 rounded-2xl border border-border/70 bg-card p-4 space-y-2 text-sm">
-            <Row label="Nome" value={client.full_name} />
-            <Row label="Telefone" value={client.phone ?? "—"} />
-            {professionalName && <Row label="Profissional" value={professionalName} />}
+          <div className="flex items-center justify-between">
+            <h2 className="text-[22px] font-light leading-tight">Meus dados</h2>
+            {!editing && (
+              <button
+                onClick={startEditing}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition"
+              >
+                <Pencil className="w-3 h-3" /> Editar
+              </button>
+            )}
           </div>
-          <p className="mt-2 text-[11px] text-muted-foreground">
-            Para corrigir esses dados, fale com a profissional — essa tela é só de consulta.
-          </p>
+
+          {editing ? (
+            <div className="mt-4 rounded-2xl border border-border/70 bg-card p-4 space-y-3">
+              <LabeledInput
+                label="Nome completo"
+                value={form.full_name}
+                onChange={(v) => setForm((f) => ({ ...f, full_name: v }))}
+              />
+              <LabeledInput
+                label="E-mail"
+                type="email"
+                value={form.email}
+                onChange={(v) => setForm((f) => ({ ...f, email: v }))}
+              />
+              <LabeledInput
+                label="Nascimento"
+                type="date"
+                value={form.birthday}
+                onChange={(v) => setForm((f) => ({ ...f, birthday: v }))}
+              />
+              <LabeledInput
+                label="CPF"
+                value={form.cpf}
+                onChange={(v) => setForm((f) => ({ ...f, cpf: v }))}
+              />
+              <div className="flex gap-2 pt-1">
+                <Button
+                  variant="outline"
+                  className="flex-1 rounded-full"
+                  onClick={() => setEditing(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  className="flex-1 rounded-full"
+                  onClick={saveProfile}
+                  disabled={savingProfile}
+                >
+                  {savingProfile ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4 rounded-2xl border border-border/70 bg-card p-4 space-y-2 text-sm">
+              <Row label="Nome" value={client.full_name} />
+              <Row label="Telefone" value={client.phone ?? "—"} />
+              <Row label="E-mail" value={client.email ?? "—"} />
+              <Row label="Nascimento" value={client.birthday ?? "—"} />
+              <Row label="CPF" value={client.cpf ?? "—"} />
+            </div>
+          )}
         </section>
 
         <section className="mt-8">
@@ -378,7 +306,15 @@ function ClientDashboard({
           ) : (
             <div className="mt-4 space-y-3">
               {upcoming.map((a) => (
-                <AppointmentCard key={a.id} appointment={a} />
+                <UpcomingAppointmentCard
+                  key={a.id}
+                  ownerId={ownerId}
+                  appointment={a}
+                  onChanged={() => {
+                    refetchAppointments();
+                    qc.invalidateQueries({ queryKey: ["my-appointments", client.id] });
+                  }}
+                />
               ))}
             </div>
           )}
@@ -405,30 +341,210 @@ function ClientDashboard({
             <ComingSoonCard icon={Ticket} label="Cupons" />
           </div>
         </section>
+
+        <section className="mt-10 pt-6 border-t border-border/60">
+          {deleteState === "idle" && (
+            <button
+              onClick={() => setDeleteState("confirm")}
+              className="text-xs text-destructive hover:underline"
+            >
+              Excluir minha conta
+            </button>
+          )}
+          {deleteState === "confirm" && (
+            <div className="rounded-2xl border border-destructive/40 bg-destructive/5 p-4 space-y-3">
+              <p className="text-xs text-foreground/80 leading-relaxed">
+                Isso desativa seu login e remove seus dados pessoais (nome, telefone, e-mail, CPF)
+                de todas as empresas em que você tem cadastro no AURA. Seu histórico de atendimentos
+                continua registrado para a profissional, sem seus dados pessoais vinculados. Essa
+                ação não pode ser desfeita.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 rounded-full"
+                  onClick={() => setDeleteState("idle")}
+                >
+                  Voltar
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="flex-1 rounded-full"
+                  onClick={doDelete}
+                >
+                  Excluir definitivamente
+                </Button>
+              </div>
+            </div>
+          )}
+          {deleteState === "deleting" && (
+            <p className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+              <Loader2 className="w-3 h-3 animate-spin" /> Excluindo…
+            </p>
+          )}
+        </section>
       </div>
     </main>
   );
 }
 
+function LabeledInput({
+  label,
+  value,
+  onChange,
+  type = "text",
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs font-normal text-muted-foreground uppercase tracking-wider">
+        {label}
+      </Label>
+      <Input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-11 rounded-xl bg-background"
+      />
+    </div>
+  );
+}
+
+function UpcomingAppointmentCard({
+  ownerId,
+  appointment,
+  onChanged,
+}: {
+  ownerId: string;
+  appointment: MyAppointment;
+  onChanged: () => void;
+}) {
+  const [mode, setMode] = useState<"idle" | "reschedule" | "cancel">("idle");
+  const qc = useQueryClient();
+  const rescheduleFn = useServerFn(rescheduleClientAppointment);
+  const cancelFn = useServerFn(cancelClientAppointment);
+
+  const handlePick = async (slot: PickedSlot) => {
+    try {
+      await rescheduleFn({
+        data: { owner_id: ownerId, appointment_id: appointment.id, starts_at: slot.starts_at },
+      });
+      toast.success("Agendamento remarcado.");
+      setMode("idle");
+      onChanged();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(msg);
+      if (msg.includes("acabou de ser preenchido") && appointment.service_id) {
+        qc.invalidateQueries({
+          queryKey: [
+            "available-slots",
+            ownerId,
+            appointment.service_id,
+            appointment.professional_id,
+          ],
+        });
+      }
+    }
+  };
+
+  const handleCancel = async () => {
+    try {
+      await cancelFn({ data: { owner_id: ownerId, appointment_id: appointment.id } });
+      toast.success("Agendamento cancelado.");
+      setMode("idle");
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível cancelar.");
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-border/70 bg-card p-4 space-y-3">
+      <AppointmentCard appointment={appointment} />
+
+      {mode === "reschedule" && appointment.service_id ? (
+        <div className="pt-2 border-t border-border/60">
+          <SlotPicker
+            ownerId={ownerId}
+            serviceId={appointment.service_id}
+            professionalId={appointment.professional_id}
+            onPick={handlePick}
+          />
+          <button
+            onClick={() => setMode("idle")}
+            className="mt-2 w-full text-xs text-muted-foreground hover:text-foreground transition"
+          >
+            Cancelar remarcação
+          </button>
+        </div>
+      ) : mode === "cancel" ? (
+        <div className="flex gap-2 pt-2 border-t border-border/60">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 rounded-full"
+            onClick={() => setMode("idle")}
+          >
+            Voltar
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            className="flex-1 rounded-full"
+            onClick={handleCancel}
+          >
+            Confirmar cancelamento
+          </Button>
+        </div>
+      ) : (
+        <div className="flex gap-2 pt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 rounded-full text-xs h-8"
+            onClick={() => setMode("reschedule")}
+            disabled={!appointment.service_id}
+          >
+            Remarcar
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 rounded-full text-xs h-8 text-destructive"
+            onClick={() => setMode("cancel")}
+          >
+            Cancelar
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AppointmentCard({ appointment }: { appointment: MyAppointment }) {
   return (
-    <div className="rounded-2xl border border-border/70 bg-card p-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
-            {formatDateTime(appointment.starts_at)}
-          </p>
-          <p className="mt-1 text-sm font-medium">{appointment.service_name ?? "Atendimento"}</p>
-          {appointment.professional_name && (
-            <p className="text-xs text-muted-foreground">{appointment.professional_name}</p>
-          )}
-        </div>
-        <div className="text-right">
-          <p className="text-sm">R$ {appointment.price.toFixed(2).replace(".", ",")}</p>
-          <p className="mt-1 text-[10px] uppercase tracking-widest text-muted-foreground">
-            {statusLabel[appointment.status]}
-          </p>
-        </div>
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+          {formatDateTime(appointment.starts_at)}
+        </p>
+        <p className="mt-1 text-sm font-medium">{appointment.service_name ?? "Atendimento"}</p>
+        {appointment.professional_name && (
+          <p className="text-xs text-muted-foreground">{appointment.professional_name}</p>
+        )}
+      </div>
+      <div className="text-right">
+        <p className="text-sm">R$ {appointment.price.toFixed(2).replace(".", ",")}</p>
+        <p className="mt-1 text-[10px] uppercase tracking-widest text-muted-foreground">
+          {statusLabel[appointment.status]}
+        </p>
       </div>
     </div>
   );
