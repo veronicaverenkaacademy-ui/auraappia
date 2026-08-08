@@ -459,42 +459,51 @@ export type Database = {
         Row: {
           avatar_url: string | null
           birthday: string | null
+          cpf: string | null
           created_at: string
           email: string | null
           full_name: string
+          how_found: string | null
           id: string
           notes: string | null
           owner_id: string
           phone: string | null
           tags: string[]
+          terms_accepted_at: string | null
           updated_at: string
           user_id: string | null
         }
         Insert: {
           avatar_url?: string | null
           birthday?: string | null
+          cpf?: string | null
           created_at?: string
           email?: string | null
           full_name: string
+          how_found?: string | null
           id?: string
           notes?: string | null
           owner_id: string
           phone?: string | null
           tags?: string[]
+          terms_accepted_at?: string | null
           updated_at?: string
           user_id?: string | null
         }
         Update: {
           avatar_url?: string | null
           birthday?: string | null
+          cpf?: string | null
           created_at?: string
           email?: string | null
           full_name?: string
+          how_found?: string | null
           id?: string
           notes?: string | null
           owner_id?: string
           phone?: string | null
           tags?: string[]
+          terms_accepted_at?: string | null
           updated_at?: string
           user_id?: string | null
         }
@@ -1667,6 +1676,7 @@ export type Database = {
       company_profiles: {
         Row: {
           address: string | null
+          business_hours: Json
           category: string | null
           city: string | null
           cover_image_url: string | null
@@ -1687,6 +1697,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          business_hours?: Json
           category?: string | null
           city?: string | null
           cover_image_url?: string | null
@@ -1707,6 +1718,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          business_hours?: Json
           category?: string | null
           city?: string | null
           cover_image_url?: string | null
@@ -1819,6 +1831,36 @@ export type Database = {
           instagram?: string | null
           owner_id?: string | null
           role_title?: string | null
+        }
+        Relationships: []
+      }
+      public_services: {
+        Row: {
+          color: string | null
+          description: string | null
+          duration_min: number | null
+          id: string | null
+          name: string | null
+          owner_id: string | null
+          price: number | null
+        }
+        Insert: {
+          color?: string | null
+          description?: string | null
+          duration_min?: number | null
+          id?: string | null
+          name?: string | null
+          owner_id?: string | null
+          price?: number | null
+        }
+        Update: {
+          color?: string | null
+          description?: string | null
+          duration_min?: number | null
+          id?: string | null
+          name?: string | null
+          owner_id?: string | null
+          price?: number | null
         }
         Relationships: []
       }

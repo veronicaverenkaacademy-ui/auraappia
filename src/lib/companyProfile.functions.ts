@@ -3,6 +3,20 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import type { CompanyProfile } from "@/lib/companyProfile";
 
+const DayHoursSchema = z
+  .object({ open: z.string().regex(/^\d{2}:\d{2}$/), close: z.string().regex(/^\d{2}:\d{2}$/) })
+  .nullable();
+
+const BusinessHoursSchema = z.object({
+  mon: DayHoursSchema,
+  tue: DayHoursSchema,
+  wed: DayHoursSchema,
+  thu: DayHoursSchema,
+  fri: DayHoursSchema,
+  sat: DayHoursSchema,
+  sun: DayHoursSchema,
+});
+
 // Slugs que colidiriam com rotas do próprio AURA — bloqueados na aplicação,
 // não no banco (o CHECK do banco só valida formato).
 const RESERVED_SLUGS = new Set([
@@ -85,6 +99,7 @@ const UpsertInput = z.object({
   open_hours_text: z.string().trim().max(200).optional().or(z.literal("")),
   logo_url: z.string().trim().max(500).optional().or(z.literal("")),
   cover_image_url: z.string().trim().max(500).optional().or(z.literal("")),
+  business_hours: BusinessHoursSchema.optional(),
 });
 
 export const upsertCompanyProfile = createServerFn({ method: "POST" })

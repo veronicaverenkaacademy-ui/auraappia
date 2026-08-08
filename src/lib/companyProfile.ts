@@ -1,5 +1,27 @@
 import { supabase } from "@/integrations/supabase/client";
 
+export type DayHours = { open: string; close: string } | null;
+
+export type BusinessHours = {
+  mon: DayHours;
+  tue: DayHours;
+  wed: DayHours;
+  thu: DayHours;
+  fri: DayHours;
+  sat: DayHours;
+  sun: DayHours;
+};
+
+export const DEFAULT_BUSINESS_HOURS: BusinessHours = {
+  mon: { open: "09:00", close: "19:00" },
+  tue: { open: "09:00", close: "19:00" },
+  wed: { open: "09:00", close: "19:00" },
+  thu: { open: "09:00", close: "19:00" },
+  fri: { open: "09:00", close: "19:00" },
+  sat: { open: "09:00", close: "13:00" },
+  sun: null,
+};
+
 export type CompanyProfile = {
   owner_id: string;
   slug: string;
@@ -17,6 +39,9 @@ export type CompanyProfile = {
   open_hours_text: string | null;
   logo_url: string | null;
   cover_image_url: string | null;
+  /** Ausente na leitura pública (não faz parte de PUBLIC_COLUMNS); presente na leitura
+   * autenticada via getMyCompanyProfile (select *), usada pelo cálculo de disponibilidade. */
+  business_hours?: BusinessHours;
 };
 
 const PUBLIC_COLUMNS =

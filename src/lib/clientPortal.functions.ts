@@ -5,6 +5,11 @@ import { z } from "zod";
 const LinkInput = z.object({
   owner_id: z.string().uuid(),
   full_name: z.string().trim().min(2).max(100).optional(),
+  email: z.string().trim().email().max(200).optional().or(z.literal("")),
+  birthday: z.string().trim().optional().or(z.literal("")),
+  cpf: z.string().trim().max(20).optional().or(z.literal("")),
+  how_found: z.string().trim().max(100).optional().or(z.literal("")),
+  accepted_terms: z.boolean().optional(),
 });
 
 /**
@@ -29,9 +34,11 @@ export const linkClientAccount = createServerFn({ method: "POST" })
     }
     const phone = `+${authUser.user.phone.replace(/^\+/, "")}`;
 
+    const CLIENT_COLUMNS = "id, owner_id, full_name, phone, email, birthday, cpf";
+
     const { data: existingByUser, error: byUserErr } = await supabaseAdmin
       .from("clients")
-      .select("id, owner_id, full_name, phone")
+      .select(CLIENT_COLUMNS)
       .eq("owner_id", data.owner_id)
       .eq("user_id", userId)
       .maybeSingle();
@@ -40,7 +47,7 @@ export const linkClientAccount = createServerFn({ method: "POST" })
 
     const { data: existingByPhone, error: byPhoneErr } = await supabaseAdmin
       .from("clients")
-      .select("id, owner_id, full_name, phone")
+      .select(CLIENT_COLUMNS)
       .eq("owner_id", data.owner_id)
       .eq("phone", phone)
       .is("user_id", null)
@@ -52,7 +59,7 @@ export const linkClientAccount = createServerFn({ method: "POST" })
         .from("clients")
         .update({ user_id: userId })
         .eq("id", existingByPhone.id)
-        .select("id, owner_id, full_name, phone")
+        .select(CLIENT_COLUMNS)
         .single();
       if (error) throw new Error(error.message);
       return { client: updated, created: false };
@@ -60,6 +67,11 @@ export const linkClientAccount = createServerFn({ method: "POST" })
 
     if (!data.full_name) {
       throw new Error("Nome é obrigatório para o primeiro cadastro.");
+    }
+    if (!data.accepted_terms) {
+      throw new Error(
+        "É preciso aceitar os Termos de Uso e a Política de Privacidade para continuar.",
+      );
     }
 
     const { data: created, error: createErr } = await supabaseAdmin
@@ -69,9 +81,96 @@ export const linkClientAccount = createServerFn({ method: "POST" })
         user_id: userId,
         full_name: data.full_name,
         phone,
+        email: data.email || null,
+        birthday: data.birthday || null,
+        cpf: data.cpf || null,
+        how_found: data.how_found || null,
+        terms_accepted_at: new Date().toISOString(),
       })
-      .select("id, owner_id, full_name, phone")
+      .select("id, owner_id, full_name, phone, email, birthday, cpf")
       .single();
     if (createErr) throw new Error(createErr.message);
     return { client: created, created: true };
+  });
+
+const UpdateProfileInput = z.object({
+  owner_id: z.string().uuid(),
+  full_name: z.string().trim().min(2).max(100),
+  email: z.string().trim().email().max(200).optional().or(z.literal("")),
+  birthday: z.string().trim().optional().or(z.literal("")),
+  cpf: z.string().trim().max(20).optional().or(z.literal("")),
+});
+
+/** Edição dos próprios dados pela cliente, na tela Minha Conta. */
+export const updateMyClientProfile = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((raw) => UpdateProfileInput.parse(raw))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: updated, error } = await supabaseAdmin
+      .from("clients")
+      .update({
+        full_name: data.full_name,
+        email: data.email || null,
+        birthday: data.birthday || null,
+        cpf: data.cpf || null,
+      })
+      .eq("owner_id", data.owner_id)
+      .eq("user_id", context.userId)
+      .select("id, full_name, email, birthday, cpf")
+      .single();
+    if (error) throw new Error(error.message);
+    return { client: updated };
+  });
+
+/**
+ * "Excluir conta" — desativa o login em todo lugar (a mesma cliente pode estar
+ * vinculada a mais de uma conta/salão) e anonimiza os dados pessoais dela, mas nunca
+ * apaga o histórico de agendamentos: appointments é registro do negócio da
+ * profissional (base do financeiro já lançado via trigger), não só da cliente — apagar
+ * quebraria a rastreabilidade contábil dela. Decisão registrada e aprovada
+ * explicitamente antes de implementar (não decidida sozinha).
+ */
+export const deleteMyClientAccount = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const userId = context.userId;
+
+    const { data: myRows, error: rowsErr } = await supabaseAdmin
+      .from("clients")
+      .select("id, owner_id")
+      .eq("user_id", userId);
+    if (rowsErr) throw new Error(rowsErr.message);
+
+    for (const row of myRows ?? []) {
+      await supabaseAdmin
+        .from("clients")
+        .update({
+          full_name: "Cliente removida",
+          phone: null,
+          email: null,
+          birthday: null,
+          cpf: null,
+          how_found: null,
+          notes: null,
+          avatar_url: null,
+          user_id: null,
+        })
+        .eq("id", row.id);
+
+      await supabaseAdmin.from("audit_log").insert({
+        owner_id: row.owner_id,
+        actor_id: userId,
+        action: "client_account_deleted",
+        resource: "client",
+        resource_id: row.id,
+        details: { via: "portal_publico" } as never,
+      });
+    }
+
+    await supabaseAdmin.auth.admin.deleteUser(userId);
+
+    return { ok: true };
   });
