@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PanelHeader, Field, Section } from "@/components/settings-ui";
+import { CompanyImageUpload } from "@/components/company-image-upload";
 import { useControlCenter, type ControlCenterState } from "@/lib/control-center";
 import {
   getMyCompanyProfile,
@@ -285,21 +286,22 @@ function EmpresaPage() {
               </Field>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-4">
-              <Field label="URL do logo" hint="Cole o link de uma imagem já hospedada">
-                <Input
-                  value={form.logo_url ?? ""}
-                  onChange={(e) => patchForm({ logo_url: e.target.value })}
-                  placeholder="https://…"
-                />
-              </Field>
-              <Field label="URL da imagem de capa" hint="Cole o link de uma imagem já hospedada">
-                <Input
-                  value={form.cover_image_url ?? ""}
-                  onChange={(e) => patchForm({ cover_image_url: e.target.value })}
-                  placeholder="https://…"
-                />
-              </Field>
+            <div className="grid md:grid-cols-2 gap-4 items-start">
+              <CompanyImageUpload
+                label="Logo"
+                hint="JPG, PNG ou WEBP, até 5MB"
+                kind="logo"
+                value={form.logo_url}
+                onChange={(url) => patchForm({ logo_url: url })}
+              />
+              <CompanyImageUpload
+                label="Imagem de capa"
+                hint="JPG, PNG ou WEBP, até 5MB"
+                kind="cover"
+                value={form.cover_image_url}
+                onChange={(url) => patchForm({ cover_image_url: url })}
+                aspect="wide"
+              />
             </div>
 
             <div className="flex items-center justify-between gap-3 pt-2">
