@@ -1,490 +1,338 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useState } from "react";
-import type { Session } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  Instagram,
+  Facebook,
+  Music2,
+  MessageCircle,
+  MapPin,
+  Clock,
+  Calendar,
+  Users,
+} from "lucide-react";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
-import { Calendar, Instagram, Loader2, Gift, Package, Ticket, Clock, LogOut } from "lucide-react";
-import { toast } from "sonner";
+import { fetchCompanyProfileBySlug, type CompanyProfile } from "@/lib/companyProfile";
 import { initials } from "@/lib/clients";
-import { normalizePhoneBR, isValidPhoneBR } from "@/lib/phone";
-import { linkClientAccount } from "@/lib/clientPortal.functions";
-import { fetchMyAppointments, type MyAppointment } from "@/lib/clientPortal";
 
 export const Route = createFileRoute("/l/$slug")({
   ssr: false,
   head: ({ params }) => ({
     meta: [
-      { title: `Agende com ${params.slug} · AURA` },
-      { name: "description", content: "Reserve seu horário em segundos." },
-      { property: "og:title", content: `Agende com ${params.slug} · AURA` },
-      { property: "og:description", content: "Reserve seu horário em segundos." },
+      { title: `${params.slug} · Agende pelo AURA` },
+      { name: "description", content: `Conheça e agende um horário com ${params.slug} pelo AURA.` },
+      { name: "robots", content: "index, follow" },
+      { property: "og:type", content: "website" },
+      { property: "og:title", content: `${params.slug} · Agende pelo AURA` },
+      {
+        property: "og:description",
+        content: `Conheça e agende um horário com ${params.slug} pelo AURA.`,
+      },
     ],
+    links: [{ rel: "canonical", href: `https://aura.app/l/${params.slug}` }],
   }),
-  component: BookingLink,
+  component: CompanyLanding,
 });
 
-type Member = {
-  id: string;
-  owner_id: string;
-  full_name: string;
-  role_title: string | null;
-  bio: string | null;
-  instagram: string | null;
-  avatar_url: string | null;
-  agenda_color: string | null;
-  booking_slug: string | null;
-};
-
-type MyClient = { id: string; owner_id: string; full_name: string; phone: string | null };
-
-type AccountView = "closed" | "phone" | "otp" | "name" | "dashboard";
-
-async function fetchBySlug(slug: string): Promise<Member | null> {
-  const { data, error } = await supabase
-    .from("public_professionals")
-    .select("id, owner_id, full_name, role_title, bio, instagram, avatar_url, agenda_color, booking_slug")
-    .eq("booking_slug", slug)
-    .maybeSingle();
-  if (error) {
-    console.error("[l.$slug] Falha ao buscar profissional pública", error);
-    return null;
-  }
-  if (!data || !data.id || !data.owner_id || !data.full_name) return null;
-  return data as Member;
-}
-
-function BookingLink() {
+function CompanyLanding() {
   const { slug } = Route.useParams();
-  const { data: member, isLoading } = useQuery({ queryKey: ["public-member", slug], queryFn: () => fetchBySlug(slug) });
-
-  const [accountView, setAccountView] = useState<AccountView>("closed");
-  const [session, setSession] = useState<Session | null>(null);
-  const [myClient, setMyClient] = useState<MyClient | null>(null);
-  const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [loading, setLoading] = useState(false);
-
-  const linkFn = useServerFn(linkClientAccount);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  const { data: appointments = [], isLoading: loadingAppointments } = useQuery({
-    queryKey: ["my-appointments", myClient?.id],
-    queryFn: () => fetchMyAppointments(myClient!.id),
-    enabled: Boolean(myClient),
+  const { data: company, isLoading } = useQuery({
+    queryKey: ["public-company", slug],
+    queryFn: () => fetchCompanyProfileBySlug(slug),
   });
 
-  const resolveClient = async (nameForFirstSignup?: string) => {
-    if (!member) return;
-    setLoading(true);
-    try {
-      const res = await linkFn({ data: { owner_id: member.owner_id, full_name: nameForFirstSignup } });
-      setMyClient(res.client);
-      setAccountView("dashboard");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("Nome é obrigatório")) {
-        setAccountView("name");
-      } else {
-        console.error("[l.$slug] Falha ao vincular conta da cliente", e);
-        toast.error(`Não foi possível continuar: ${msg}`);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const openAccount = () => {
-    if (session) {
-      void resolveClient();
-    } else {
-      setAccountView("phone");
-    }
-  };
-
-  const sendCode = async () => {
-    if (!isValidPhoneBR(phone)) {
-      toast.error("Digite um telefone válido (com DDD)");
-      return;
-    }
-    setLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({ phone: normalizePhoneBR(phone) });
-    setLoading(false);
-    if (error) {
-      toast.error(
-        error.message.includes("provider")
-          ? "Envio de SMS ainda não configurado por essa profissional. Avise-a."
-          : error.message,
-      );
-      return;
-    }
-    toast.success("Código enviado por SMS");
-    setAccountView("otp");
-  };
-
-  const verify = async () => {
-    if (code.length !== 6) return;
-    setLoading(true);
-    const { error } = await supabase.auth.verifyOtp({ phone: normalizePhoneBR(phone), token: code, type: "sms" });
-    setLoading(false);
-    if (error) {
-      toast.error("Código inválido");
-      return;
-    }
-    await resolveClient();
-  };
-
-  const confirmName = async () => {
-    if (fullName.trim().length < 3) {
-      toast.error("Digite seu nome completo");
-      return;
-    }
-    if (!acceptedTerms) {
-      toast.error("Você precisa aceitar os Termos de Uso e a Política de Privacidade para continuar.");
-      return;
-    }
-    await resolveClient(fullName.trim());
-  };
-
-  const logout = async () => {
-    await supabase.auth.signOut();
-    setSession(null);
-    setMyClient(null);
-    setAccountView("closed");
-  };
-
   if (isLoading) {
-    return <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">Carregando…</div>;
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center text-muted-foreground text-sm"
+        role="status"
+        aria-live="polite"
+      >
+        Carregando…
+      </div>
+    );
   }
-  if (!member) {
+
+  if (!company) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 text-center">
-        <div>
-          <h1 className="text-2xl font-display">Link indisponível</h1>
-          <p className="text-sm text-muted-foreground mt-2">Este link não está mais ativo.</p>
+        <div className="space-y-4">
+          <h1 className="text-2xl font-display">Empresa não encontrada</h1>
+          <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+            Este endereço não corresponde a nenhuma empresa cadastrada no AURA.
+          </p>
+          <a href="https://aura.app" className="inline-block">
+            <Button variant="outline" className="rounded-full">
+              Voltar
+            </Button>
+          </a>
         </div>
       </div>
-    );
-  }
-
-  if (accountView === "dashboard" && myClient) {
-    return (
-      <ClientDashboard
-        member={member}
-        client={myClient}
-        appointments={appointments}
-        loadingAppointments={loadingAppointments}
-        onLogout={logout}
-      />
     );
   }
 
   return (
-    <div className="min-h-screen bg-background pb-20">
-      <div className="max-w-lg mx-auto px-6 py-10">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium tracking-[0.22em] text-muted-foreground">AURA</span>
-          <Button variant="outline" size="sm" className="rounded-full h-8 text-xs" onClick={openAccount} disabled={loading}>
-            Minha conta
-          </Button>
-        </div>
-
-        <div className="mt-8 text-center space-y-4">
-          <div className="w-32 h-2 mx-auto rounded-full" style={{ background: member.agenda_color ?? "#5C3A2E" }} />
-          <Avatar className="w-28 h-28 mx-auto">
-            <AvatarImage src={member.avatar_url ?? undefined} />
-            <AvatarFallback className="text-2xl">{initials(member.full_name)}</AvatarFallback>
-          </Avatar>
-          <div>
-            <h1 className="text-3xl font-display">{member.full_name}</h1>
-            <p className="text-sm text-muted-foreground mt-1">{member.role_title ?? "Profissional da beleza"}</p>
-          </div>
-          {member.bio && <p className="text-sm text-foreground/70 max-w-sm mx-auto leading-relaxed">{member.bio}</p>}
-          {member.instagram && (
-            <a
-              href={`https://instagram.com/${member.instagram.replace("@", "")}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <Instagram className="w-3 h-3" /> {member.instagram}
-            </a>
-          )}
-        </div>
-
-        <div className="mt-12 space-y-3">
-          <Button
-            className="w-full h-14 rounded-full text-base gap-2"
-            onClick={() => toast("Agendamento pelo link ainda está em desenvolvimento — em breve por aqui.")}
-          >
-            <Calendar className="w-4 h-4" /> Reservar horário
-          </Button>
-          <p className="text-xs text-muted-foreground text-center">
-            Você verá apenas os horários disponíveis de {member.full_name.split(" ")[0]}.
-          </p>
-        </div>
-
-        {accountView === "phone" && (
-          <AccountCard title="Entre com seu telefone">
-            <div className="space-y-2">
-              <Label htmlFor="client-phone" className="text-xs font-normal text-muted-foreground uppercase tracking-wider">
-                Telefone
-              </Label>
-              <Input
-                id="client-phone"
-                type="tel"
-                inputMode="tel"
-                placeholder="(11) 99999-9999"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="h-12 rounded-xl bg-background border-0 text-base"
-                autoFocus
-              />
-            </div>
-            <Button onClick={sendCode} disabled={loading} className="w-full h-12 rounded-xl">
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Enviar código"}
-            </Button>
-            <button onClick={() => setAccountView("closed")} className="w-full text-xs text-muted-foreground hover:text-foreground transition">
-              Cancelar
-            </button>
-          </AccountCard>
-        )}
-
-        {accountView === "otp" && (
-          <AccountCard title="Digite o código enviado">
-            <div className="flex justify-center">
-              <InputOTP maxLength={6} value={code} onChange={setCode}>
-                <InputOTPGroup>
-                  {[0, 1, 2, 3, 4, 5].map((i) => (
-                    <InputOTPSlot key={i} index={i} className="w-11 h-12 text-base bg-background border-0" />
-                  ))}
-                </InputOTPGroup>
-              </InputOTP>
-            </div>
-            <Button onClick={verify} disabled={loading || code.length !== 6} className="w-full h-12 rounded-xl">
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirmar"}
-            </Button>
-            <button
-              onClick={() => {
-                setAccountView("phone");
-                setCode("");
-              }}
-              className="w-full text-xs text-muted-foreground hover:text-foreground transition"
-            >
-              Usar outro número
-            </button>
-          </AccountCard>
-        )}
-
-        {accountView === "name" && (
-          <AccountCard title="Só falta seu nome">
-            <div className="space-y-2">
-              <Label htmlFor="client-name" className="text-xs font-normal text-muted-foreground uppercase tracking-wider">
-                Nome completo
-              </Label>
-              <Input
-                id="client-name"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Como você se chama?"
-                className="h-12 rounded-xl bg-background border-0 text-base"
-                autoFocus
-              />
-            </div>
-            <label className="flex items-start gap-2.5 text-xs text-muted-foreground leading-relaxed">
-              <Checkbox checked={acceptedTerms} onCheckedChange={(v) => setAcceptedTerms(v === true)} className="mt-0.5" />
-              <span>
-                Li e aceito os{" "}
-                <Link to="/termos-de-uso" target="_blank" className="text-foreground underline underline-offset-2">
-                  Termos de Uso
-                </Link>{" "}
-                e a{" "}
-                <Link to="/politica-de-privacidade" target="_blank" className="text-foreground underline underline-offset-2">
-                  Política de Privacidade
-                </Link>
-                .
-              </span>
-            </label>
-            <Button onClick={confirmName} disabled={loading} className="w-full h-12 rounded-xl">
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Continuar"}
-            </Button>
-          </AccountCard>
-        )}
+    <div className="min-h-screen bg-background text-foreground">
+      <Hero company={company} />
+      <div className="mx-auto w-full max-w-2xl px-6">
+        <AboutSection company={company} />
+        <ServicesSection />
+        <ProfessionalsSection />
+        <LocationSection company={company} />
+        <SocialSection company={company} />
       </div>
+      <Footer company={company} />
+    </div>
+  );
+}
 
-      {accountView === "closed" && (
-        <div className="fixed bottom-4 right-4 z-10">
-          <button
-            onClick={openAccount}
-            className="rounded-full border border-border/70 bg-background/80 px-4 py-2 text-[11px] font-medium text-muted-foreground backdrop-blur hover:text-foreground"
-          >
-            Já sou cliente
-          </button>
+function Hero({ company }: { company: CompanyProfile }) {
+  const onBook = () =>
+    toast("O agendamento pelo link ainda está em desenvolvimento — em breve por aqui.");
+
+  return (
+    <header className="relative">
+      {company.cover_image_url ? (
+        <div className="h-48 md:h-64 w-full overflow-hidden">
+          <img src={company.cover_image_url} alt="" className="h-full w-full object-cover" />
         </div>
+      ) : (
+        <div
+          className="h-24 md:h-32 w-full bg-gradient-to-b from-secondary/60 to-background"
+          aria-hidden="true"
+        />
       )}
-    </div>
-  );
-}
 
-function AccountCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="mt-10 rounded-3xl border border-border/70 bg-secondary/60 p-6 space-y-5">
-      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground text-center">{title}</p>
-      {children}
-    </div>
-  );
-}
+      <div className="mx-auto w-full max-w-2xl px-6">
+        <div className={company.cover_image_url ? "-mt-14 md:-mt-16" : "-mt-10"}>
+          <Avatar className="w-28 h-28 md:w-32 md:h-32 border-4 border-background shadow-sm">
+            <AvatarImage src={company.logo_url ?? undefined} alt="" />
+            <AvatarFallback className="text-2xl">{initials(company.display_name)}</AvatarFallback>
+          </Avatar>
+        </div>
 
-const statusLabel: Record<MyAppointment["status"], string> = {
-  pending: "Pendente",
-  confirmed: "Confirmado",
-  completed: "Concluído",
-  cancelled: "Cancelado",
-  no_show: "Não compareceu",
-};
-
-function formatDateTime(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).replace(".", "");
-}
-
-function ClientDashboard({
-  member,
-  client,
-  appointments,
-  loadingAppointments,
-  onLogout,
-}: {
-  member: Member;
-  client: MyClient;
-  appointments: MyAppointment[];
-  loadingAppointments: boolean;
-  onLogout: () => void;
-}) {
-  const now = Date.now();
-  const upcoming = appointments.filter((a) => new Date(a.starts_at).getTime() >= now && a.status !== "cancelled");
-  const past = appointments.filter((a) => new Date(a.starts_at).getTime() < now || a.status === "cancelled");
-
-  return (
-    <main className="min-h-screen bg-background pb-16 text-foreground">
-      <div className="mx-auto w-full max-w-lg px-6 pt-10">
-        <header className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-accent/40 font-display text-base">
-              {initials(client.full_name)}
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">Bem-vinda</p>
-              <h1 className="text-lg font-light leading-tight">{client.full_name.split(" ")[0]}</h1>
-            </div>
+        <div className="mt-5 space-y-3 text-center md:text-left">
+          <div>
+            <h1 className="text-3xl md:text-4xl font-display tracking-tight text-balance">
+              {company.display_name}
+            </h1>
+            {company.category && (
+              <p className="text-sm text-muted-foreground mt-1">{company.category}</p>
+            )}
           </div>
-          <button
-            onClick={onLogout}
-            className="inline-flex items-center gap-1.5 rounded-full border border-border/70 px-3 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+
+          {company.description && (
+            <p className="text-sm text-foreground/70 leading-relaxed max-w-lg mx-auto md:mx-0">
+              {company.description}
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-1.5 text-xs text-muted-foreground pt-1">
+            {company.city && (
+              <span className="inline-flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5" aria-hidden="true" />
+                {company.city}
+                {company.state ? ` - ${company.state}` : ""}
+              </span>
+            )}
+            {company.open_hours_text && (
+              <span className="inline-flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5" aria-hidden="true" />
+                {company.open_hours_text}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-8 pb-8 md:pb-10">
+          <Button
+            onClick={onBook}
+            className="w-full md:w-auto h-14 px-10 rounded-full text-base gap-2"
           >
-            <LogOut className="w-3 h-3" /> Sair
-          </button>
-        </header>
+            <Calendar className="w-4 h-4" aria-hidden="true" /> Agendar Agora
+          </Button>
+        </div>
+      </div>
+    </header>
+  );
+}
 
-        <section className="mt-8">
-          <h2 className="text-[22px] font-light leading-tight">Meus dados</h2>
-          <div className="mt-4 rounded-2xl border border-border/70 bg-card p-4 space-y-2 text-sm">
-            <Row label="Nome" value={client.full_name} />
-            <Row label="Telefone" value={client.phone ?? "—"} />
-            <Row label="Profissional" value={member.full_name} />
-          </div>
-          <p className="mt-2 text-[11px] text-muted-foreground">
-            Para corrigir esses dados, fale com {member.full_name.split(" ")[0]} — essa tela é só de consulta.
+function AboutSection({ company }: { company: CompanyProfile }) {
+  if (!company.description && !company.category) return null;
+  return (
+    <section aria-labelledby="about-heading" className="py-10 border-t border-border/60">
+      <h2 id="about-heading" className="text-xl font-display tracking-tight">
+        Quem somos
+      </h2>
+      <div className="mt-4 space-y-3 text-sm text-foreground/80 leading-relaxed">
+        {company.description ? (
+          <p>{company.description}</p>
+        ) : (
+          <p className="text-muted-foreground">A empresa ainda não cadastrou uma descrição.</p>
+        )}
+        {company.category && (
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">
+            Especialidade:{" "}
+            <span className="text-foreground/80 normal-case">{company.category}</span>
           </p>
-        </section>
-
-        <section className="mt-8">
-          <h2 className="text-[22px] font-light leading-tight">Próximos agendamentos</h2>
-          {loadingAppointments ? (
-            <p className="mt-4 text-sm text-muted-foreground">Carregando…</p>
-          ) : upcoming.length === 0 ? (
-            <p className="mt-4 text-sm text-muted-foreground">Você não tem agendamentos futuros.</p>
-          ) : (
-            <div className="mt-4 space-y-3">
-              {upcoming.map((a) => (
-                <AppointmentCard key={a.id} appointment={a} />
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="mt-8">
-          <h2 className="text-[22px] font-light leading-tight">Histórico</h2>
-          {past.length === 0 ? (
-            <p className="mt-4 text-sm text-muted-foreground">Nenhum atendimento anterior.</p>
-          ) : (
-            <div className="mt-4 space-y-3">
-              {past.map((a) => (
-                <AppointmentCard key={a.id} appointment={a} />
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="mt-8">
-          <h2 className="text-[22px] font-light leading-tight">Em breve</h2>
-          <div className="mt-4 grid grid-cols-3 gap-3">
-            <ComingSoonCard icon={Gift} label="Fidelidade" />
-            <ComingSoonCard icon={Package} label="Pacotes" />
-            <ComingSoonCard icon={Ticket} label="Cupons" />
-          </div>
-        </section>
+        )}
       </div>
-    </main>
+    </section>
   );
 }
 
-function AppointmentCard({ appointment }: { appointment: MyAppointment }) {
+function ServicesSection() {
   return (
-    <div className="rounded-2xl border border-border/70 bg-card p-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-[10px] uppercase tracking-widest text-muted-foreground">{formatDateTime(appointment.starts_at)}</p>
-          <p className="mt-1 text-sm font-medium">{appointment.service_name ?? "Atendimento"}</p>
-          {appointment.professional_name && <p className="text-xs text-muted-foreground">{appointment.professional_name}</p>}
-        </div>
-        <div className="text-right">
-          <p className="text-sm">R$ {appointment.price.toFixed(2).replace(".", ",")}</p>
-          <p className="mt-1 text-[10px] uppercase tracking-widest text-muted-foreground">{statusLabel[appointment.status]}</p>
+    <section aria-labelledby="services-heading" className="py-10 border-t border-border/60">
+      <h2 id="services-heading" className="text-xl font-display tracking-tight">
+        Serviços
+      </h2>
+      <div className="mt-4 rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center">
+        <p className="text-sm text-muted-foreground">
+          Os serviços estarão disponíveis em instantes.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function ProfessionalsSection() {
+  return (
+    <section aria-labelledby="professionals-heading" className="py-10 border-t border-border/60">
+      <h2
+        id="professionals-heading"
+        className="text-xl font-display tracking-tight flex items-center gap-2"
+      >
+        <Users className="w-4 h-4 text-muted-foreground" aria-hidden="true" /> Profissionais
+      </h2>
+      <div className="mt-4 rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center">
+        <p className="text-sm text-muted-foreground">A equipe estará disponível em instantes.</p>
+      </div>
+    </section>
+  );
+}
+
+function LocationSection({ company }: { company: CompanyProfile }) {
+  if (!company.address && !company.city) return null;
+  const mapsQuery = encodeURIComponent(
+    [company.address, company.city, company.state].filter(Boolean).join(", "),
+  );
+
+  return (
+    <section aria-labelledby="location-heading" className="py-10 border-t border-border/60">
+      <h2 id="location-heading" className="text-xl font-display tracking-tight">
+        Localização
+      </h2>
+      <div className="mt-4 space-y-3 text-sm">
+        {company.address && <p className="text-foreground/80">{company.address}</p>}
+        {company.city && (
+          <p className="text-muted-foreground">
+            {company.city}
+            {company.state ? ` - ${company.state}` : ""}
+          </p>
+        )}
+        <a
+          href={`https://www.google.com/maps/search/?api=1&query=${mapsQuery}`}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-block pt-1"
+        >
+          <Button variant="outline" size="sm" className="rounded-full gap-1.5">
+            <MapPin className="w-3.5 h-3.5" aria-hidden="true" /> Abrir no Google Maps
+          </Button>
+        </a>
+      </div>
+    </section>
+  );
+}
+
+function SocialSection({ company }: { company: CompanyProfile }) {
+  const links = [
+    company.instagram && {
+      key: "instagram",
+      display: company.instagram,
+      ariaLabel: `Instagram: ${company.instagram}`,
+      icon: Instagram,
+      href: `https://instagram.com/${company.instagram.replace("@", "")}`,
+    },
+    company.whatsapp && {
+      key: "whatsapp",
+      display: "WhatsApp",
+      ariaLabel: "Conversar no WhatsApp",
+      icon: MessageCircle,
+      href: `https://wa.me/${company.whatsapp.replace(/\D/g, "")}`,
+    },
+    company.facebook && {
+      key: "facebook",
+      display: "Facebook",
+      ariaLabel: "Facebook",
+      icon: Facebook,
+      href: company.facebook,
+    },
+    company.tiktok && {
+      key: "tiktok",
+      display: company.tiktok,
+      ariaLabel: `TikTok: ${company.tiktok}`,
+      icon: Music2,
+      href: `https://tiktok.com/@${company.tiktok.replace("@", "")}`,
+    },
+  ].filter(
+    (
+      l,
+    ): l is {
+      key: string;
+      display: string;
+      ariaLabel: string;
+      icon: typeof Instagram;
+      href: string;
+    } => Boolean(l),
+  );
+
+  if (links.length === 0) return null;
+
+  return (
+    <section aria-labelledby="social-heading" className="py-10 border-t border-border/60">
+      <h2 id="social-heading" className="text-xl font-display tracking-tight">
+        Redes sociais
+      </h2>
+      <div className="mt-4 flex flex-wrap gap-3">
+        {links.map(({ key, display, ariaLabel, icon: Icon, href }) => (
+          <a
+            key={key}
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={ariaLabel}
+            className="inline-flex items-center gap-2 rounded-full border border-border/70 px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/30 transition"
+          >
+            <Icon className="w-3.5 h-3.5" aria-hidden="true" /> {display}
+          </a>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Footer({ company }: { company: CompanyProfile }) {
+  return (
+    <footer className="border-t border-border/60 py-10 mt-6">
+      <div className="mx-auto w-full max-w-2xl px-6 flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
+        <p>
+          © {new Date().getFullYear()} {company.display_name}. Todos os direitos reservados.
+        </p>
+        <div className="flex items-center gap-4">
+          <span>
+            Powered by <span className="font-medium text-foreground/70">AURA</span>
+          </span>
+          <Link to="/termos-de-uso" className="hover:text-foreground transition">
+            Termos
+          </Link>
+          <Link to="/politica-de-privacidade" className="hover:text-foreground transition">
+            Privacidade
+          </Link>
         </div>
       </div>
-    </div>
-  );
-}
-
-function ComingSoonCard({ icon: Icon, label }: { icon: typeof Clock; label: string }) {
-  return (
-    <div className="rounded-2xl border border-dashed border-border/70 bg-card/50 p-4 text-center opacity-70">
-      <Icon className="h-4 w-4 mx-auto text-muted-foreground" strokeWidth={1.6} />
-      <p className="mt-2 text-[11px] font-medium">{label}</p>
-      <p className="mt-0.5 text-[10px] text-muted-foreground">Em breve</p>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <span className="text-xs uppercase tracking-widest text-muted-foreground">{label}</span>
-      <span className="text-foreground">{value}</span>
-    </div>
+    </footer>
   );
 }
