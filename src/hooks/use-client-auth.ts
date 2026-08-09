@@ -3,8 +3,9 @@ import { useServerFn } from "@tanstack/react-start";
 import type { Session } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { normalizePhoneBR, isValidPhoneBR } from "@/lib/phone";
+import { isValidPhoneBR } from "@/lib/phone";
 import { linkClientAccount } from "@/lib/clientPortal.functions";
+import { requestClientOtp, verifyClientOtp } from "@/lib/otp/otp.functions";
 
 export type MyClient = {
   id: string;
@@ -51,6 +52,8 @@ export function useClientAuth(ownerId: string) {
   const [signup, setSignup] = useState<SignupFields>(EMPTY_SIGNUP);
 
   const linkFn = useServerFn(linkClientAccount);
+  const requestOtpFn = useServerFn(requestClientOtp);
+  const verifyOtpFn = useServerFn(verifyClientOtp);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -103,33 +106,32 @@ export function useClientAuth(ownerId: string) {
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({ phone: normalizePhoneBR(phone) });
-    setLoading(false);
-    if (error) {
-      toast.error(
-        error.message.includes("provider")
-          ? "Envio de SMS ainda não configurado por essa empresa. Avise a profissional."
-          : error.message,
-      );
-      return;
+    try {
+      await requestOtpFn({ data: { owner_id: ownerId, phone } });
+      toast.success("Código enviado por WhatsApp");
+      setView("otp");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível enviar o código.");
+    } finally {
+      setLoading(false);
     }
-    toast.success("Código enviado por SMS");
-    setView("otp");
   };
 
   const verify = async (): Promise<boolean> => {
     if (code.length !== 6) return false;
     setLoading(true);
-    const { error } = await supabase.auth.verifyOtp({
-      phone: normalizePhoneBR(phone),
-      token: code,
-      type: "sms",
-    });
-    setLoading(false);
-    if (error) {
-      toast.error("Código inválido");
+    try {
+      const { access_token, refresh_token } = await verifyOtpFn({
+        data: { owner_id: ownerId, phone, code },
+      });
+      const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+      if (error) throw error;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Código inválido");
+      setLoading(false);
       return false;
     }
+    setLoading(false);
     return resolveClient();
   };
 
