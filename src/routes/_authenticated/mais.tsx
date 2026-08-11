@@ -60,6 +60,7 @@ const settingsItems: Item[] = [
   { to: "/seguranca", label: "Segurança", icon: Lock, desc: "Proteção, sessões e autenticação" },
   { to: "/integracoes", label: "Integrações", icon: Plug, desc: "Conexões e sistemas integrados" },
   { to: "/notificacoes", label: "Notificações", icon: Bell, desc: "Alertas, lembretes e comunicações" },
+  { to: "/whatsapp-lembretes", label: "WhatsApp (Lembretes)", icon: MessageCircle, desc: "Conexão por QR Code, confirmações e lembretes" },
   { to: "/assinatura", label: "Assinatura", icon: CreditCard, desc: "Plano atual, limites e cobranças" },
   { to: "/dados", label: "Dados", icon: Database, desc: "Importação, exportação e migração" },
   { to: "/sistema", label: "Sistema", icon: Settings2, desc: "Configurações gerais e atualizações" },
