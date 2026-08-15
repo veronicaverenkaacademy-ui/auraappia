@@ -103,6 +103,7 @@ async function createConnection(
       webhook: {
         url: webhookUrl || getWebhookUrl() || undefined,
         events: ["CONNECTION_UPDATE", "MESSAGES_UPSERT", "SEND_MESSAGE"],
+        webhook_by_events: false,
       },
     }),
   });
