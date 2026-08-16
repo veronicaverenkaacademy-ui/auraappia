@@ -281,6 +281,21 @@ export function WhatsAppConnectionCard() {
             Voltar
           </Button>
         </div>
+      ) : currentStatus === "connecting" ? (
+        // Backend é a fonte de verdade: se o status persistido é "connecting"
+        // (ex: depois de um reload, quando o modo local volta pra "idle"),
+        // mostra que há uma conexão em andamento em vez da tela inicial de
+        // "Conectar por código" — evita sugerir que nada foi feito ainda.
+        <div className="mt-4 py-6 text-center space-y-4">
+          <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center mx-auto">
+            <MessageCircle className="w-4 h-4 text-muted-foreground animate-pulse" />
+          </div>
+          <div className="text-sm font-medium">Aguardando confirmação da conexão…</div>
+          <p className="text-xs text-muted-foreground max-w-xs mx-auto">
+            Finalize a conexão no seu WhatsApp (Aparelhos conectados). Isso pode levar alguns
+            segundos.
+          </p>
+        </div>
       ) : (
         <div className="mt-4 py-6 text-center space-y-4">
           <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center mx-auto">

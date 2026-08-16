@@ -36,16 +36,82 @@ export const getWhatsAppStatus = createServerFn({ method: "GET" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data } = await supabaseAdmin
       .from("whatsapp_instances")
-      .select("status, phone_number, last_error")
+      .select("status, phone_number, last_error, instance_name, instance_token, instance_id")
       .eq("owner_id", context.userId)
       .maybeSingle();
 
     if (!data) {
       return { connected: false, status: "pending", phoneNumber: null, lastError: null };
     }
+
+    if (data.status !== "connecting") {
+      return {
+        connected: data.status === "connected",
+        status: data.status as WhatsAppConnectionStatus,
+        phoneNumber: data.phone_number,
+        lastError: data.last_error,
+      };
+    }
+
+    // "connecting" normalmente vira "connected" via webhook — mas se o
+    // webhook não chegar (falha de rede, secret errado, payload inesperado
+    // etc.), a instância ficaria presa em "connecting" pra sempre mesmo com o
+    // WhatsApp já conectado do outro lado. Por isso, só nesse estado
+    // transitório, reconciliamos consultando o estado real na Evolution
+    // (fallback do webhook, não substitui ele).
+    console.log(`[WhatsApp] Reconciling connection (owner ${context.userId})`);
+    const ref: ProviderInstanceRef = {
+      instanceName: data.instance_name,
+      instanceToken: data.instance_token,
+      instanceId: data.instance_id,
+    };
+
+    try {
+      const evolutionState = await evolutionWhatsAppProvider.getConnectionStatus(ref);
+      console.log(
+        `[WhatsApp] Evolution connection state: ${evolutionState.connectionState ?? evolutionState.status}`,
+      );
+
+      if (evolutionState.status === "connected") {
+        console.log(`[WhatsApp] Persisting connected status (owner ${context.userId})`);
+        const { error: updateErr } = await supabaseAdmin
+          .from("whatsapp_instances")
+          .update({
+            status: "connected",
+            last_error: null,
+            last_connected_at: new Date().toISOString(),
+            ...(evolutionState.phoneNumber ? { phone_number: evolutionState.phoneNumber } : {}),
+          })
+          .eq("owner_id", context.userId);
+
+        if (!updateErr) {
+          return {
+            connected: true,
+            status: "connected",
+            phoneNumber: evolutionState.phoneNumber ?? data.phone_number,
+            lastError: null,
+          };
+        }
+        console.error(
+          "[WhatsApp] Failed to persist reconciled connected status",
+          updateErr.message,
+        );
+      }
+    } catch (e) {
+      // Falha ao consultar a Evolution não deve derrubar a tela nem mudar o
+      // status persistido — só loga; o próximo polling tenta reconciliar de novo.
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[WhatsApp] Failed to reconcile connection status: ${msg}`);
+    }
+
+    // Evolution ainda "connecting", fechada/desconectada, ou consulta falhou:
+    // nunca rebaixa o status persistido pra "disconnected"/"error" só por
+    // causa da reconciliação — isso evitaria instabilidade por um estado
+    // transitório/falha temporária da Evolution. Só promove pra "connected"
+    // quando a Evolution confirma isso explicitamente (acima).
     return {
-      connected: data.status === "connected",
-      status: data.status as WhatsAppConnectionStatus,
+      connected: false,
+      status: "connecting",
       phoneNumber: data.phone_number,
       lastError: data.last_error,
     };
