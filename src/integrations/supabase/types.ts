@@ -106,6 +106,8 @@ export type Database = {
       }
       appointments: {
         Row: {
+          client_confirmation_status: string
+          client_confirmed_at: string | null
           client_id: string
           created_at: string
           ends_at: string
@@ -124,6 +126,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          client_confirmation_status?: string
+          client_confirmed_at?: string | null
           client_id: string
           created_at?: string
           ends_at: string
@@ -142,6 +146,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          client_confirmation_status?: string
+          client_confirmed_at?: string | null
           client_id?: string
           created_at?: string
           ends_at?: string
@@ -1969,6 +1975,77 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_confirmation_threads: {
+        Row: {
+          appointment_id: string
+          appointment_starts_at_snapshot: string
+          client_id: string
+          created_at: string
+          id: string
+          outbound_message_id: string
+          owner_id: string
+          resolved_at: string | null
+          resolved_by_message_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          appointment_id: string
+          appointment_starts_at_snapshot: string
+          client_id: string
+          created_at?: string
+          id?: string
+          outbound_message_id: string
+          owner_id: string
+          resolved_at?: string | null
+          resolved_by_message_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          appointment_id?: string
+          appointment_starts_at_snapshot?: string
+          client_id?: string
+          created_at?: string
+          id?: string
+          outbound_message_id?: string
+          owner_id?: string
+          resolved_at?: string | null
+          resolved_by_message_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_confirmation_threads_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_confirmation_threads_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_confirmation_threads_outbound_message_id_fkey"
+            columns: ["outbound_message_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_confirmation_threads_resolved_by_message_id_fkey"
+            columns: ["resolved_by_message_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_messages"
             referencedColumns: ["id"]
           },
         ]
