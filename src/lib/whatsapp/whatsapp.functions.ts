@@ -138,6 +138,12 @@ export const createWhatsAppConnection = createServerFn({ method: "POST" })
         instanceId: existing.instance_id,
       };
       const deleted = await evolutionWhatsAppProvider.deleteInstance(oldRef);
+      // Diagnóstico temporário: confirma se a instância anterior foi
+      // removida antes da nova ser criada, e com qual instance_id.
+      console.log(
+        `[WhatsApp] DELETE old instance owner=${ownerId} attempt=${attemptId} ` +
+          `previousInstanceId=${existing.instance_id ?? "null"} result=${deleted.ok ? "success" : "failure"}`,
+      );
       if (!deleted.ok) {
         console.error(
           `[WhatsApp] Failed to delete previous instance before reconnecting (owner ${ownerId}): ${deleted.error}`,
@@ -156,6 +162,11 @@ export const createWhatsAppConnection = createServerFn({ method: "POST" })
     try {
       const created = await evolutionWhatsAppProvider.createConnection(instanceName, webhookUrl);
       instanceId = created.instanceId;
+      // Diagnóstico temporário: confirma o instance_id da instância nova
+      // desta tentativa, pra comparar com o instance_id anterior (log acima).
+      console.log(
+        `[WhatsApp] CREATE new instance owner=${ownerId} attempt=${attemptId} instanceId=${instanceId ?? "null"}`,
+      );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       // Primeira escrita desta tentativa — estabelece attempt_id como o

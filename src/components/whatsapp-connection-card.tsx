@@ -176,6 +176,30 @@ export function WhatsAppConnectionCard() {
             </Button>
           </div>
         </div>
+      ) : mode === "phoneEntry" ? (
+        <div className="mt-4 py-4 space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Informe o número do WhatsApp que será conectado ao AURA.
+          </p>
+          <Input
+            value={phone}
+            onChange={(e) => setPhone(formatPhoneBR(e.target.value))}
+            placeholder="(47) 99999-9999"
+            inputMode="numeric"
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={handleRequestConnection}
+              disabled={connecting}
+              className="rounded-full"
+            >
+              {connecting ? "Gerando código…" : "Confirmar"}
+            </Button>
+            <Button variant="ghost" size="sm" className="rounded-full" onClick={resetToIdle}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
       ) : currentStatus === "error" ? (
         <div className="mt-4 py-6 text-center space-y-3">
           <div className="flex items-center justify-center gap-2 text-rose-600 dark:text-rose-400">
@@ -184,7 +208,7 @@ export function WhatsAppConnectionCard() {
               {status?.lastError || "Não foi possível gerar o código de conexão."}
             </span>
           </div>
-          <Button onClick={resetToIdle} className="rounded-full">
+          <Button onClick={startNewAttempt} className="rounded-full">
             Tentar novamente
           </Button>
         </div>
@@ -240,30 +264,6 @@ export function WhatsAppConnectionCard() {
           )}
 
           <div>
-            <Button variant="ghost" size="sm" className="rounded-full" onClick={resetToIdle}>
-              Cancelar
-            </Button>
-          </div>
-        </div>
-      ) : mode === "phoneEntry" ? (
-        <div className="mt-4 py-4 space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Informe o número do WhatsApp que será conectado ao AURA.
-          </p>
-          <Input
-            value={phone}
-            onChange={(e) => setPhone(formatPhoneBR(e.target.value))}
-            placeholder="(47) 99999-9999"
-            inputMode="numeric"
-          />
-          <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={handleRequestConnection}
-              disabled={connecting}
-              className="rounded-full"
-            >
-              {connecting ? "Gerando código…" : "Confirmar"}
-            </Button>
             <Button variant="ghost" size="sm" className="rounded-full" onClick={resetToIdle}>
               Cancelar
             </Button>

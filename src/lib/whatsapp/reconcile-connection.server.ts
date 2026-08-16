@@ -19,6 +19,14 @@
 import { evolutionWhatsAppProvider } from "./providers/evolution.server";
 import type { ProviderInstanceRef } from "./provider";
 
+// Diagnóstico temporário (número mascarado — só quantidade de dígitos e os
+// últimos 4). Nunca loga o número completo, nem instance_token/API keys.
+function maskPhone(phone: string | null | undefined): string {
+  if (!phone) return "null";
+  const digits = phone.replace(/\D/g, "");
+  return `***${digits.slice(-4)} length=${digits.length}`;
+}
+
 export type ReconcileOutcome =
   | { outcome: "connected"; phoneNumber: string }
   | { outcome: "pending" }
@@ -62,6 +70,17 @@ export async function reconcileWhatsAppConnection(ownerId: string): Promise<Reco
     );
     return { outcome: "pending" };
   }
+
+  // Diagnóstico temporário: cobre owner_id, attempt_id, instance_name,
+  // instance_id, expected_phone_number e identity.phoneNumber (mascarados) e
+  // o resultado da comparação, numa linha só — números nunca aparecem
+  // completos, só os últimos 4 dígitos e a contagem.
+  const matches = identity.phoneNumber === row.expected_phone_number;
+  console.log(
+    `[WhatsApp] RECONCILE owner=${ownerId} attempt=${attemptId} instance=${instanceName} ` +
+      `instanceId=${row.instance_id ?? "null"} expected=${maskPhone(row.expected_phone_number)} ` +
+      `real=${maskPhone(identity.phoneNumber)} result=${matches ? "MATCH" : "MISMATCH"}`,
+  );
 
   if (!row.expected_phone_number) {
     const reason = "Número esperado não encontrado para esta tentativa.";
