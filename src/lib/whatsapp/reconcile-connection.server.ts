@@ -17,6 +17,7 @@
 // o UPDATE abaixo afeta 0 linhas e o resultado é descartado como "stale",
 // sem tocar em nada da tentativa atual.
 import { evolutionWhatsAppProvider } from "./providers/evolution.server";
+import { matchWhatsAppPhoneNumbers } from "./phone-identity";
 import type { ProviderInstanceRef } from "./provider";
 
 // Diagnóstico temporário (número mascarado — só quantidade de dígitos e os
@@ -71,17 +72,6 @@ export async function reconcileWhatsAppConnection(ownerId: string): Promise<Reco
     return { outcome: "pending" };
   }
 
-  // Diagnóstico temporário: cobre owner_id, attempt_id, instance_name,
-  // instance_id, expected_phone_number e identity.phoneNumber (mascarados) e
-  // o resultado da comparação, numa linha só — números nunca aparecem
-  // completos, só os últimos 4 dígitos e a contagem.
-  const matches = identity.phoneNumber === row.expected_phone_number;
-  console.log(
-    `[WhatsApp] RECONCILE owner=${ownerId} attempt=${attemptId} instance=${instanceName} ` +
-      `instanceId=${row.instance_id ?? "null"} expected=${maskPhone(row.expected_phone_number)} ` +
-      `real=${maskPhone(identity.phoneNumber)} result=${matches ? "MATCH" : "MISMATCH"}`,
-  );
-
   if (!row.expected_phone_number) {
     const reason = "Número esperado não encontrado para esta tentativa.";
     console.error(`[WhatsApp] Reconcile: ${reason} (owner ${ownerId})`);
@@ -89,19 +79,35 @@ export async function reconcileWhatsAppConnection(ownerId: string): Promise<Reco
     return applied ? { outcome: "rejected", reason } : { outcome: "stale" };
   }
 
-  if (identity.phoneNumber !== row.expected_phone_number) {
+  // Comparação de identidade: trata como equivalente o caso confirmado em
+  // produção de a Evolution devolver o mesmo celular brasileiro sem o 9º
+  // dígito (ver phone-identity.ts) — número genuinamente diferente continua
+  // MISMATCH. Diagnóstico mascarado numa linha só; matchType só aparece em
+  // MATCH, pra diferenciar igualdade exata de equivalência de 9º dígito.
+  const matchResult = matchWhatsAppPhoneNumbers(row.expected_phone_number, identity.phoneNumber);
+  console.log(
+    `[WhatsApp] RECONCILE owner=${ownerId} attempt=${attemptId} instance=${instanceName} ` +
+      `instanceId=${row.instance_id ?? "null"} expected=${maskPhone(row.expected_phone_number)} ` +
+      `real=${maskPhone(identity.phoneNumber)} result=${matchResult.match ? "MATCH" : "MISMATCH"}` +
+      (matchResult.match ? ` matchType=${matchResult.matchType}` : ""),
+  );
+
+  if (!matchResult.match) {
     const reason = "O número conectado não corresponde ao número informado.";
     console.error(`[WhatsApp] Reconcile: connected number mismatch (owner ${ownerId})`);
     const applied = await rejectConnection(ownerId, attemptId, instanceName, ref, reason);
     return applied ? { outcome: "rejected", reason } : { outcome: "stale" };
   }
 
+  // Grava o número que a profissional informou (canônico/amigável), não a
+  // representação técnica que a Evolution devolveu — o frontend deve mostrar
+  // o que ela digitou, mesmo quando o MATCH veio da equivalência de 9º dígito.
   const { count } = await supabaseAdmin
     .from("whatsapp_instances")
     .update(
       {
         status: "connected",
-        phone_number: identity.phoneNumber,
+        phone_number: row.expected_phone_number,
         expected_phone_number: null,
         last_error: null,
         last_connected_at: new Date().toISOString(),
@@ -120,7 +126,7 @@ export async function reconcileWhatsAppConnection(ownerId: string): Promise<Reco
   }
 
   console.log(`[WhatsApp] Reconcile: number confirmed, persisted connected (owner ${ownerId})`);
-  return { outcome: "connected", phoneNumber: identity.phoneNumber };
+  return { outcome: "connected", phoneNumber: row.expected_phone_number };
 }
 
 /**
