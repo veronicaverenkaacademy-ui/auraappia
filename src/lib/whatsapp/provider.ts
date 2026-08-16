@@ -64,8 +64,12 @@ export interface WhatsAppProvider {
   /** Estado atual da conexão (conectado, aguardando QR, erro etc.) direto no provider. */
   getConnectionStatus(ref: ProviderInstanceRef): Promise<WhatsAppConnectionState>;
 
-  /** QR Code (ou pairing code) pra parear o WhatsApp da profissional. */
-  getQRCode(ref: ProviderInstanceRef): Promise<QrCodeResult>;
+  /**
+   * QR Code (ou pairing code, se phoneNumber for informado) pra parear o
+   * WhatsApp da profissional. A Evolution só gera pairingCode quando recebe
+   * o telefone de destino — sem ele, devolve só o QR.
+   */
+  getQRCode(ref: ProviderInstanceRef, phoneNumber?: string): Promise<QrCodeResult>;
 
   /** Desconecta o WhatsApp (logout), sem apagar a instância — pode reconectar depois. */
   disconnect(ref: ProviderInstanceRef): Promise<{ ok: boolean; error?: string }>;

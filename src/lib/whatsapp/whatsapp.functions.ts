@@ -6,7 +6,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { isValidPhoneBR } from "@/lib/phone";
+import { isValidPhoneBR, normalizePhoneBR } from "@/lib/phone";
 import { evolutionWhatsAppProvider } from "./providers/evolution.server";
 import { renderTestMessage } from "./templates";
 import { WhatsAppMessageService } from "./message-service.server";
@@ -57,15 +57,30 @@ export type CreateConnectionResponse = {
   pairingCode: string | null;
 };
 
+const CreateConnectionInput = z.object({
+  // Telefone opcional: se informado, pede código de pareamento (fluxo
+  // principal); se ausente, mantém o comportamento anterior (QR Code).
+  phone: z.string().trim().optional(),
+});
+
 /**
  * Cria (ou reaproveita, se já existir e não estiver conectada) a instância
- * Evolution da conta e devolve o QR Code pra escanear. Idempotente: chamar de
- * novo enquanto "connecting" só busca um QR fresco, não duplica a instância.
+ * Evolution da conta e devolve QR Code e/ou código de pareamento (a Evolution
+ * só gera o código de pareamento quando um telefone é informado). Idempotente:
+ * chamar de novo enquanto "connecting" só busca um código fresco, não duplica
+ * a instância.
  */
 export const createWhatsAppConnection = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<CreateConnectionResponse> => {
+  .inputValidator((raw: unknown) => CreateConnectionInput.parse(raw ?? {}))
+  .handler(async ({ data, context }): Promise<CreateConnectionResponse> => {
     const ownerId = context.userId;
+
+    let phoneNumber: string | undefined;
+    if (data.phone) {
+      if (!isValidPhoneBR(data.phone)) throw new Error("Telefone inválido.");
+      phoneNumber = normalizePhoneBR(data.phone);
+    }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const { data: existing, error: existingErr } = await supabaseAdmin
@@ -120,14 +135,14 @@ export const createWhatsAppConnection = createServerFn({ method: "POST" })
     }
 
     const ref: ProviderInstanceRef = { instanceName, instanceToken, instanceId };
-    const qr = await evolutionWhatsAppProvider.getQRCode(ref);
+    const qr = await evolutionWhatsAppProvider.getQRCode(ref, phoneNumber);
 
     if (!qr.ok) {
       await supabaseAdmin
         .from("whatsapp_instances")
         .update({ status: "error", last_error: qr.error })
         .eq("owner_id", ownerId);
-      throw new Error(`Não foi possível gerar o QR Code: ${qr.error}`);
+      throw new Error("Não foi possível gerar o código de conexão.");
     }
 
     await supabaseAdmin

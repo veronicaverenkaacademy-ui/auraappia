@@ -172,15 +172,25 @@ async function getConnectionStatus(ref: ProviderInstanceRef): Promise<WhatsAppCo
   }
 }
 
-async function getQRCode(ref: ProviderInstanceRef): Promise<QrCodeResult> {
+async function getQRCode(ref: ProviderInstanceRef, phoneNumber?: string): Promise<QrCodeResult> {
   const apiKey = getGlobalApiKey();
   if (!apiKey) return { ok: false, error: "EVOLUTION_GLOBAL_API_KEY não configurado." };
 
+  // Código de pareamento só é gerado pela Evolution quando ?number= é enviado
+  // (dígitos com código do país, mesmo formato usado em sendText) — sem isso,
+  // ela só devolve o QR.
+  const numberParam = phoneNumber
+    ? `?number=${encodeURIComponent(phoneNumber.replace(/\D/g, ""))}`
+    : "";
+
   try {
-    const { status, body } = await evolutionFetch(`/instance/connect/${ref.instanceName}`, {
-      method: "GET",
-      apiKey,
-    });
+    const { status, body } = await evolutionFetch(
+      `/instance/connect/${ref.instanceName}${numberParam}`,
+      {
+        method: "GET",
+        apiKey,
+      },
+    );
     if (status < 200 || status >= 300) {
       return { ok: false, error: `Evolution respondeu ${status} ao gerar QR Code.` };
     }
