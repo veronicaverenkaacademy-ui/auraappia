@@ -3,6 +3,8 @@ import "./lib/error-capture";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 import { handle360dialogWebhook } from "./lib/communication/webhook-360dialog.server";
+import { handleEvolutionWebhook } from "./lib/whatsapp/webhook-evolution.server";
+import { handleWhatsappCronRequest } from "./lib/whatsapp/cron-endpoint.server";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -55,6 +57,13 @@ export default {
       const url = new URL(request.url);
       if (url.pathname === "/webhooks/360dialog") {
         return await handle360dialogWebhook(request);
+      }
+      if (url.pathname.startsWith("/webhooks/evolution/")) {
+        const secretFromPath = url.pathname.slice("/webhooks/evolution/".length);
+        return await handleEvolutionWebhook(request, secretFromPath);
+      }
+      if (url.pathname === "/api/cron/whatsapp-reminders") {
+        return await handleWhatsappCronRequest(request);
       }
     } catch (error) {
       console.error(error);

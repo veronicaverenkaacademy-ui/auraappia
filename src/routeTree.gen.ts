@@ -41,6 +41,7 @@ import { Route as AuthenticatedSegurancaRouteImport } from './routes/_authentica
 import { Route as AuthenticatedServicosRouteImport } from './routes/_authenticated/servicos'
 import { Route as AuthenticatedSistemaRouteImport } from './routes/_authenticated/sistema'
 import { Route as AuthenticatedWhatsappRouteImport } from './routes/_authenticated/whatsapp'
+import { Route as AuthenticatedWhatsappLembretesRouteImport } from './routes/_authenticated/whatsapp-lembretes'
 import { Route as LSlugRouteImport } from './routes/l.$slug'
 import { Route as AuthenticatedAuraIaIndexRouteImport } from './routes/_authenticated/aura-ia.index'
 import { Route as AuthenticatedAuraIaChatRouteImport } from './routes/_authenticated/aura-ia.chat'
@@ -235,6 +236,12 @@ const AuthenticatedWhatsappRoute = AuthenticatedWhatsappRouteImport.update({
   path: '/whatsapp',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedWhatsappLembretesRoute =
+  AuthenticatedWhatsappLembretesRouteImport.update({
+    id: '/whatsapp-lembretes',
+    path: '/whatsapp-lembretes',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const LSlugRoute = LSlugRouteImport.update({
   id: '/l/$slug',
   path: '/l/$slug',
@@ -444,6 +451,7 @@ export interface FileRoutesByFullPath {
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/sistema': typeof AuthenticatedSistemaRoute
   '/whatsapp': typeof AuthenticatedWhatsappRouteWithChildren
+  '/whatsapp-lembretes': typeof AuthenticatedWhatsappLembretesRoute
   '/l/$slug': typeof LSlugRoute
   '/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
   '/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
@@ -499,6 +507,7 @@ export interface FileRoutesByTo {
   '/personalizacao': typeof AuthenticatedPersonalizacaoRoute
   '/seguranca': typeof AuthenticatedSegurancaRoute
   '/sistema': typeof AuthenticatedSistemaRoute
+  '/whatsapp-lembretes': typeof AuthenticatedWhatsappLembretesRoute
   '/l/$slug': typeof LSlugRoute
   '/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
   '/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
@@ -565,6 +574,7 @@ export interface FileRoutesById {
   '/_authenticated/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/_authenticated/sistema': typeof AuthenticatedSistemaRoute
   '/_authenticated/whatsapp': typeof AuthenticatedWhatsappRouteWithChildren
+  '/_authenticated/whatsapp-lembretes': typeof AuthenticatedWhatsappLembretesRoute
   '/l/$slug': typeof LSlugRoute
   '/_authenticated/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
   '/_authenticated/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
@@ -631,6 +641,7 @@ export interface FileRouteTypes {
     | '/servicos'
     | '/sistema'
     | '/whatsapp'
+    | '/whatsapp-lembretes'
     | '/l/$slug'
     | '/aura-ia/chat'
     | '/aura-ia/conselho'
@@ -686,6 +697,7 @@ export interface FileRouteTypes {
     | '/personalizacao'
     | '/seguranca'
     | '/sistema'
+    | '/whatsapp-lembretes'
     | '/l/$slug'
     | '/aura-ia/chat'
     | '/aura-ia/conselho'
@@ -751,6 +763,7 @@ export interface FileRouteTypes {
     | '/_authenticated/servicos'
     | '/_authenticated/sistema'
     | '/_authenticated/whatsapp'
+    | '/_authenticated/whatsapp-lembretes'
     | '/l/$slug'
     | '/_authenticated/aura-ia/chat'
     | '/_authenticated/aura-ia/conselho'
@@ -1020,6 +1033,13 @@ declare module '@tanstack/react-router' {
       path: '/whatsapp'
       fullPath: '/whatsapp'
       preLoaderRoute: typeof AuthenticatedWhatsappRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/whatsapp-lembretes': {
+      id: '/_authenticated/whatsapp-lembretes'
+      path: '/whatsapp-lembretes'
+      fullPath: '/whatsapp-lembretes'
+      preLoaderRoute: typeof AuthenticatedWhatsappLembretesRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/l/$slug': {
@@ -1422,6 +1442,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedServicosRoute: typeof AuthenticatedServicosRouteWithChildren
   AuthenticatedSistemaRoute: typeof AuthenticatedSistemaRoute
   AuthenticatedWhatsappRoute: typeof AuthenticatedWhatsappRouteWithChildren
+  AuthenticatedWhatsappLembretesRoute: typeof AuthenticatedWhatsappLembretesRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -1449,6 +1470,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedServicosRoute: AuthenticatedServicosRouteWithChildren,
   AuthenticatedSistemaRoute: AuthenticatedSistemaRoute,
   AuthenticatedWhatsappRoute: AuthenticatedWhatsappRouteWithChildren,
+  AuthenticatedWhatsappLembretesRoute: AuthenticatedWhatsappLembretesRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

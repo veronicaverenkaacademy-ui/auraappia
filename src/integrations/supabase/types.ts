@@ -115,6 +115,8 @@ export type Database = {
           owner_id: string
           price: number
           professional_id: string | null
+          reminder_24h_sent_at: string | null
+          reminder_2h_sent_at: string | null
           service_id: string | null
           service_name: string | null
           starts_at: string
@@ -131,6 +133,8 @@ export type Database = {
           owner_id: string
           price?: number
           professional_id?: string | null
+          reminder_24h_sent_at?: string | null
+          reminder_2h_sent_at?: string | null
           service_id?: string | null
           service_name?: string | null
           starts_at: string
@@ -147,6 +151,8 @@ export type Database = {
           owner_id?: string
           price?: number
           professional_id?: string | null
+          reminder_24h_sent_at?: string | null
+          reminder_2h_sent_at?: string | null
           service_id?: string | null
           service_name?: string | null
           starts_at?: string
@@ -1725,6 +1731,7 @@ export type Database = {
           slug: string
           state: string | null
           tiktok: string | null
+          timezone: string
           updated_at: string
           whatsapp: string | null
         }
@@ -1746,6 +1753,7 @@ export type Database = {
           slug: string
           state?: string | null
           tiktok?: string | null
+          timezone?: string
           updated_at?: string
           whatsapp?: string | null
         }
@@ -1767,10 +1775,197 @@ export type Database = {
           slug?: string
           state?: string | null
           tiktok?: string | null
+          timezone?: string
           updated_at?: string
           whatsapp?: string | null
         }
         Relationships: []
+      }
+      notification_jobs: {
+        Row: {
+          appointment_id: string | null
+          attempts: number
+          client_id: string | null
+          created_at: string
+          id: string
+          last_error: string | null
+          max_attempts: number
+          message: string
+          next_attempt_at: string
+          owner_id: string
+          recipient_phone: string
+          scheduled_for: string
+          sent_at: string | null
+          status: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          appointment_id?: string | null
+          attempts?: number
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          max_attempts?: number
+          message?: string
+          next_attempt_at?: string
+          owner_id: string
+          recipient_phone: string
+          scheduled_for?: string
+          sent_at?: string | null
+          status?: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          appointment_id?: string | null
+          attempts?: number
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          max_attempts?: number
+          message?: string
+          next_attempt_at?: string
+          owner_id?: string
+          recipient_phone?: string
+          scheduled_for?: string
+          sent_at?: string | null
+          status?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_jobs_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_jobs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_instances: {
+        Row: {
+          connection_state: string | null
+          created_at: string
+          instance_id: string | null
+          instance_name: string
+          instance_token: string | null
+          last_connected_at: string | null
+          last_disconnected_at: string | null
+          last_error: string | null
+          owner_id: string
+          phone_number: string | null
+          provider: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          connection_state?: string | null
+          created_at?: string
+          instance_id?: string | null
+          instance_name: string
+          instance_token?: string | null
+          last_connected_at?: string | null
+          last_disconnected_at?: string | null
+          last_error?: string | null
+          owner_id: string
+          phone_number?: string | null
+          provider?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          connection_state?: string | null
+          created_at?: string
+          instance_id?: string | null
+          instance_name?: string
+          instance_token?: string | null
+          last_connected_at?: string | null
+          last_disconnected_at?: string | null
+          last_error?: string | null
+          owner_id?: string
+          phone_number?: string | null
+          provider?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      whatsapp_messages: {
+        Row: {
+          appointment_id: string | null
+          client_id: string | null
+          content: string | null
+          created_at: string
+          direction: string
+          error_message: string | null
+          id: string
+          message_type: string
+          owner_id: string
+          provider: string
+          provider_message_id: string | null
+          recipient_phone: string
+          sent_at: string | null
+          status: string
+        }
+        Insert: {
+          appointment_id?: string | null
+          client_id?: string | null
+          content?: string | null
+          created_at?: string
+          direction: string
+          error_message?: string | null
+          id?: string
+          message_type: string
+          owner_id: string
+          provider?: string
+          provider_message_id?: string | null
+          recipient_phone: string
+          sent_at?: string | null
+          status?: string
+        }
+        Update: {
+          appointment_id?: string | null
+          client_id?: string | null
+          content?: string | null
+          created_at?: string
+          direction?: string
+          error_message?: string | null
+          id?: string
+          message_type?: string
+          owner_id?: string
+          provider?: string
+          provider_message_id?: string | null
+          recipient_phone?: string
+          sent_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_messages_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_messages_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
@@ -1899,6 +2094,10 @@ export type Database = {
       }
     }
     Functions: {
+      claim_notification_jobs: {
+        Args: { p_limit?: number }
+        Returns: Database["public"]["Tables"]["notification_jobs"]["Row"][]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
