@@ -1,17 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import {
   whatsappStats,
   aiCapabilities,
   currency,
 } from "@/lib/whatsapp";
-import { getWhatsAppConfig } from "@/lib/communication.functions";
-import type { ProviderConnectionStatus } from "@/lib/communication/types";
+import { WhatsAppConnectionCard } from "@/components/whatsapp-connection-card";
 import {
-  CheckCircle2, Signal, ShieldCheck, RefreshCw, Sparkles, Bot, AlertTriangle, Clock3,
+  Sparkles, Bot,
   MessageSquare, TrendingUp, Clock, Wallet, ArrowUpRight,
+  type LucideIcon,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -20,36 +18,7 @@ export const Route = createFileRoute("/_authenticated/whatsapp/config")({
   component: WhatsAppConfig,
 });
 
-const STATUS_LABEL: Record<ProviderConnectionStatus, string> = {
-  not_configured: "Não configurado",
-  pending_approval: "Aguardando aprovação",
-  connected: "Conectado",
-  error: "Erro na conexão",
-};
-
-const STATUS_TONE: Record<ProviderConnectionStatus, string> = {
-  not_configured: "bg-secondary text-muted-foreground",
-  pending_approval: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-  connected: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-  error: "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300",
-};
-
-const STATUS_ICON: Record<ProviderConnectionStatus, typeof CheckCircle2> = {
-  not_configured: AlertTriangle,
-  pending_approval: Clock3,
-  connected: CheckCircle2,
-  error: AlertTriangle,
-};
-
 function WhatsAppConfig() {
-  const fetchConfig = useServerFn(getWhatsAppConfig);
-  const { data: config, isLoading } = useQuery({
-    queryKey: ["whatsapp-config"],
-    queryFn: () => fetchConfig(),
-  });
-  const status = config?.status ?? "not_configured";
-  const StatusIcon = STATUS_ICON[status];
-
   const [caps, setCaps] = useState(() =>
     Object.fromEntries(aiCapabilities.map((c) => [c.id, c.active]))
   );
@@ -63,92 +32,11 @@ function WhatsAppConfig() {
           Conexão &amp; recepcionista IA
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Configure a integração oficial e defina como a Aura conversa em seu nome.
+          Conecte o WhatsApp e defina como a Aura conversa em seu nome.
         </p>
       </header>
 
-      {/* Connection status */}
-      <section className="rounded-3xl border border-border/60 bg-card p-6 md:p-7">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              Conta WhatsApp Business (360dialog)
-            </div>
-            <div className="mt-2 flex items-center gap-2">
-              <div className="text-xl font-medium">
-                {isLoading ? "Carregando…" : config?.display_name ?? "Nenhuma conta conectada"}
-              </div>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full",
-                  STATUS_TONE[status]
-                )}
-              >
-                <StatusIcon className="w-3 h-3" /> {STATUS_LABEL[status]}
-              </span>
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              {config?.phone_number ?? "Nenhum número configurado ainda"}
-            </div>
-          </div>
-          <button className="inline-flex items-center gap-2 h-9 px-4 rounded-xl bg-secondary text-xs font-medium">
-            <RefreshCw className="w-3.5 h-3.5" /> Sincronizar agora
-          </button>
-        </div>
-
-        <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-3">
-          <FactBox icon={Signal} label="Qualidade" value={config?.quality_rating ?? "—"} />
-          <FactBox icon={ShieldCheck} label="Limite atual" value={config?.messaging_limit ?? "—"} />
-          <FactBox icon={MessageSquare} label="WABA ID" value={config?.waba_id ?? "—"} />
-          <FactBox icon={RefreshCw} label="Última sincronização" value={config?.last_synced_at ?? "Nunca"} />
-        </div>
-
-        {status === "error" && config?.last_error && (
-          <div className="mt-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 text-xs px-3 py-2">
-            {config.last_error}
-          </div>
-        )}
-        {status === "not_configured" && (
-          <div className="mt-4 rounded-xl bg-secondary text-muted-foreground text-xs px-3 py-2">
-            Nenhuma integração 360dialog configurada ainda para esta conta.
-          </div>
-        )}
-        {status === "pending_approval" && (
-          <div className="mt-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 text-xs px-3 py-2">
-            Conta cadastrada, aguardando aprovação do WhatsApp/Meta para começar a enviar e receber mensagens.
-          </div>
-        )}
-      </section>
-
-      {/* Providers */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold tracking-tight">Provedor oficial</h2>
-          <span className="text-[11px] text-muted-foreground">
-            Apenas WhatsApp Business Platform. Sem WhatsApp Web ou bots não oficiais.
-          </span>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-2xl border border-foreground bg-card p-4 flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-sm font-medium">360dialog</div>
-              <div className="text-xs text-muted-foreground mt-0.5">
-                Business Solution Provider oficial do WhatsApp Business Platform.
-              </div>
-            </div>
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-foreground text-background">
-              Em uso
-            </span>
-          </div>
-          <div className="rounded-2xl border border-dashed border-border/60 bg-card p-4">
-            <div className="text-sm font-medium text-muted-foreground">Outros provedores</div>
-            <div className="text-xs text-muted-foreground mt-0.5">
-              A arquitetura do AURA suporta adicionar outro BSP, e-mail ou SMS futuramente — nenhum está
-              implementado além do 360dialog hoje.
-            </div>
-          </div>
-        </div>
-      </section>
+      <WhatsAppConnectionCard />
 
       {/* Dashboard */}
       <section className="space-y-3">
@@ -272,36 +160,10 @@ function WhatsAppConfig() {
   );
 }
 
-function FactBox({
-  icon: Icon, label, value, tone,
-}: {
-  icon: typeof Signal;
-  label: string;
-  value: string;
-  tone?: "positive";
-}) {
-  return (
-    <div className="rounded-2xl bg-secondary/40 border border-border/40 p-3">
-      <div className="flex items-center gap-1.5 text-muted-foreground">
-        <Icon className="w-3 h-3" />
-        <span className="text-[10px] uppercase tracking-wider">{label}</span>
-      </div>
-      <div
-        className={cn(
-          "mt-1.5 text-sm font-medium",
-          tone === "positive" && "text-emerald-600 dark:text-emerald-400"
-        )}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
 function DashCard({
   icon: Icon, label, value, sub, tone,
 }: {
-  icon: typeof Signal;
+  icon: LucideIcon;
   label: string;
   value: string;
   sub: string;
