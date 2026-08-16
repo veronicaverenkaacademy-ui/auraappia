@@ -2,22 +2,29 @@
 // os endpoints/payloads específicos da Evolution. Nada fora deste arquivo deve
 // fazer fetch direto pra EVOLUTION_API_URL.
 //
-// IMPORTANTE — endpoints assumidos, não verificados contra uma instância real:
-// não há Evolution API provisionada neste ambiente (nem rede pra alcançá-la),
-// então os caminhos/payloads abaixo seguem a documentação pública da v2
-// (doc.evolution-api.com) — a versão mainstream estável no momento em que isto
-// foi escrito — mas Evolution tem múltiplas versões com pequenas diferenças de
-// payload entre si. Antes do primeiro teste real, confirmar cada endpoint
-// contra a versão efetivamente rodando na instância provisionada:
-//   - POST   /instance/create
-//   - GET    /instance/connect/{instanceName}
-//   - GET    /instance/connectionState/{instanceName}
-//   - DELETE /instance/logout/{instanceName}
-//   - POST   /message/sendText/{instanceName}
-// Autenticação assumida: header `apikey` com a GLOBAL_API_KEY em toda chamada
-// (algumas instâncias aceitam/exigem o token da própria instância em vez da
-// global pra operações de instância — também precisa confirmar).
+// Formatos abaixo conferidos contra o código-fonte real da versão em uso
+// (github.com/EvolutionAPI/evolution-api, tag 2.3.7 — instance.controller.ts,
+// monitor.service.ts, whatsapp.baileys.service.ts, prisma/postgresql-schema.prisma):
+//   - POST   /instance/create               → { instance: {instanceId,instanceName}, hash, qrcode? }
+//   - GET    /instance/connect/{instance}    → formato varia com o estado da instância:
+//       state=open       → { instance: {instanceName, state:'open'} } (sem QR/código)
+//       state=connecting → devolve o qrCode já em memória, IGNORA ?number= da query
+//       state=close      → chama connectToWhatsapp(number) de verdade, devolve
+//                           { pairingCode, code, base64, count } (plano)
+//       fallback         → { instance: {...}, qrcode: {...} } (aninhado)
+//     Por isso: nunca reaproveitar instância existente pra pedir um código novo —
+//     só uma instância recém-criada garante cair no branch state=close.
+//   - GET    /instance/connectionState/{instance} → { instance: {instanceName, state} },
+//     NUNCA inclui telefone/número.
+//   - GET    /instance/fetchInstances?instanceName=X → array de registros com
+//     ownerJid (JID tipo "5547999999999@s.whatsapp.net", só preenchido quando a
+//     sessão abre de verdade) — única fonte confiável do número real conectado.
+//   - DELETE /instance/logout/{instance}  → { status:'SUCCESS', error:false, response:{message} }
+//   - DELETE /instance/delete/{instance}  → desloga se necessário e apaga a instância
+//   - POST   /message/sendText/{instance} → { key: {id} } em caso de sucesso
+// Autenticação: header `apikey` com a GLOBAL_API_KEY em toda chamada.
 import type {
+  ConnectedIdentityResult,
   CreateConnectionResult,
   ProviderInstanceRef,
   QrCodeResult,
@@ -27,6 +34,7 @@ import type {
   WhatsAppConnectionStatus,
   WhatsAppProvider,
 } from "../provider";
+import { normalizePhoneBR } from "@/lib/phone";
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -99,7 +107,15 @@ async function createConnection(
     body: JSON.stringify({
       instanceName,
       integration: "WHATSAPP-BAILEYS",
-      qrcode: true,
+      // false de propósito: com qrcode:true a Evolution dispara
+      // connectToWhatsapp() no mesmo instante da criação SEM telefone (não
+      // temos como mandar um número aqui) — isso deixaria a instância em
+      // "connecting" sem contexto de número, e uma chamada posterior a
+      // /instance/connect?number= nesse estado ignora o número pedido (ver
+      // nota no topo do arquivo). Criar sem QR garante que o primeiro
+      // /instance/connect?number= feito por getQRCode cai no branch
+      // state=close, que é o único que honra o número.
+      qrcode: false,
       webhook: {
         url: webhookUrl || getWebhookUrl() || undefined,
         events: ["CONNECTION_UPDATE", "MESSAGES_UPSERT", "SEND_MESSAGE"],
@@ -149,12 +165,14 @@ async function getConnectionStatus(ref: ProviderInstanceRef): Promise<WhatsAppCo
         lastError: `Evolution respondeu ${status} ao consultar status.`,
       };
     }
-    const parsed = body as { instance?: { state?: string }; number?: string };
+    const parsed = body as { instance?: { state?: string } };
     const rawState = parsed.instance?.state ?? null;
     return {
       status: normalizeConnectionStatus(rawState),
       connectionState: rawState,
-      phoneNumber: parsed.number ?? null,
+      // /instance/connectionState nunca traz o telefone (confirmado no
+      // código-fonte real) — pra identidade real, usar getConnectedIdentity.
+      phoneNumber: null,
       lastConnectedAt: null,
       lastDisconnectedAt: null,
       lastError: null,
@@ -194,12 +212,22 @@ async function getQRCode(ref: ProviderInstanceRef, phoneNumber?: string): Promis
     if (status < 200 || status >= 300) {
       return { ok: false, error: `Evolution respondeu ${status} ao gerar QR Code.` };
     }
-    const parsed = body as { base64?: string; code?: string; pairingCode?: string };
+    // O formato varia com o estado da instância no momento da chamada: o
+    // branch state=close devolve {base64,code,pairingCode,count} no nível
+    // raiz; o branch de fallback devolve {instance,qrcode:{...}} aninhado.
+    // Aceita os dois formatos.
+    const parsed = body as {
+      base64?: string;
+      code?: string;
+      pairingCode?: string;
+      qrcode?: { base64?: string; code?: string; pairingCode?: string };
+    };
+    const qr = parsed.qrcode ?? parsed;
     return {
       ok: true,
-      qrCodeBase64: parsed.base64 ?? null,
-      pairingCode: parsed.pairingCode ?? null,
-      status: parsed.base64 || parsed.pairingCode ? "connecting" : "pending",
+      qrCodeBase64: qr.base64 ?? null,
+      pairingCode: qr.pairingCode ?? null,
+      status: qr.base64 || qr.pairingCode ? "connecting" : "pending",
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -223,6 +251,61 @@ async function disconnect(ref: ProviderInstanceRef): Promise<{ ok: boolean; erro
       };
     }
     return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: `Falha ao chamar a Evolution: ${msg}` };
+  }
+}
+
+async function deleteInstance(ref: ProviderInstanceRef): Promise<{ ok: boolean; error?: string }> {
+  const apiKey = getGlobalApiKey();
+  if (!apiKey) return { ok: false, error: "EVOLUTION_GLOBAL_API_KEY não configurado." };
+
+  try {
+    const { status, body } = await evolutionFetch(`/instance/delete/${ref.instanceName}`, {
+      method: "DELETE",
+      apiKey,
+    });
+    if (status < 200 || status >= 300) {
+      return {
+        ok: false,
+        error: `Evolution respondeu ${status} ao apagar instância: ${JSON.stringify(body).slice(0, 300)}`,
+      };
+    }
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: `Falha ao chamar a Evolution: ${msg}` };
+  }
+}
+
+/**
+ * Consulta /instance/fetchInstances — único endpoint que devolve o `ownerJid`
+ * real (o WhatsApp de fato vinculado à instância), preenchido pela Evolution
+ * só quando a sessão abre de verdade. Base pra validar identidade antes de
+ * marcar qualquer conexão como definitiva.
+ */
+async function getConnectedIdentity(ref: ProviderInstanceRef): Promise<ConnectedIdentityResult> {
+  const apiKey = getGlobalApiKey();
+  if (!apiKey) return { ok: false, error: "EVOLUTION_GLOBAL_API_KEY não configurado." };
+
+  try {
+    const { status, body } = await evolutionFetch(
+      `/instance/fetchInstances?instanceName=${encodeURIComponent(ref.instanceName)}`,
+      { method: "GET", apiKey },
+    );
+    if (status < 200 || status >= 300) {
+      return { ok: false, error: `Evolution respondeu ${status} ao consultar a instância.` };
+    }
+    const parsed = body as Array<{ name?: string; ownerJid?: string | null }>;
+    const match = Array.isArray(parsed)
+      ? parsed.find((i) => i.name === ref.instanceName)
+      : undefined;
+    const ownerJid = match?.ownerJid ?? null;
+    if (!ownerJid) return { ok: true, phoneNumber: null };
+
+    const digits = ownerJid.split("@")[0]?.replace(/\D/g, "") ?? "";
+    return { ok: true, phoneNumber: digits ? normalizePhoneBR(digits) : null };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, error: `Falha ao chamar a Evolution: ${msg}` };
@@ -263,9 +346,12 @@ async function sendText(
 }
 
 /**
- * Formato de webhook assumido (evento "CONNECTION_UPDATE" e "MESSAGES_UPSERT" da
- * v2) — a Evolution costuma incluir `instance` (nome) e `event`/`data` no corpo
- * top-level. Confirmar contra a versão real antes de habilitar em produção.
+ * Formato de webhook (evento "CONNECTION_UPDATE" e "MESSAGES_UPSERT" da v2) —
+ * a Evolution inclui `instance` (nome) e `event`/`data` no corpo top-level.
+ * `data` de CONNECTION_UPDATE não traz o telefone (confirmado no código-fonte
+ * real: só `state`) — por isso phoneNumber aqui é sempre null. A identidade
+ * real só é confirmada via getConnectedIdentity (fetchInstances), nunca
+ * através do webhook — ver reconcile-connection.server.ts.
  */
 async function handleWebhook(payload: unknown): Promise<WebhookParseResult> {
   const body = payload as {
@@ -273,7 +359,6 @@ async function handleWebhook(payload: unknown): Promise<WebhookParseResult> {
     event?: string;
     data?: {
       state?: string;
-      number?: string;
       key?: { fromMe?: boolean; remoteJid?: string; id?: string };
       message?: { conversation?: string };
       messageTimestamp?: number;
@@ -293,7 +378,7 @@ async function handleWebhook(payload: unknown): Promise<WebhookParseResult> {
   if (event === "CONNECTION_UPDATE" || event === "connection.update") {
     result.connectionUpdate = {
       state: normalizeConnectionStatus(data.state),
-      phoneNumber: data.number ?? null,
+      phoneNumber: null,
     };
   }
 
@@ -320,6 +405,8 @@ export const evolutionWhatsAppProvider: WhatsAppProvider = {
   getConnectionStatus,
   getQRCode,
   disconnect,
+  deleteInstance,
+  getConnectedIdentity,
   sendText,
   handleWebhook,
 };

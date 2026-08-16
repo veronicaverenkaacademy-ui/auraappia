@@ -1855,8 +1855,10 @@ export type Database = {
       }
       whatsapp_instances: {
         Row: {
+          attempt_id: string
           connection_state: string | null
           created_at: string
+          expected_phone_number: string | null
           instance_id: string | null
           instance_name: string
           instance_token: string | null
@@ -1870,8 +1872,10 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          attempt_id?: string
           connection_state?: string | null
           created_at?: string
+          expected_phone_number?: string | null
           instance_id?: string | null
           instance_name: string
           instance_token?: string | null
@@ -1885,8 +1889,10 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          attempt_id?: string
           connection_state?: string | null
           created_at?: string
+          expected_phone_number?: string | null
           instance_id?: string | null
           instance_name?: string
           instance_token?: string | null

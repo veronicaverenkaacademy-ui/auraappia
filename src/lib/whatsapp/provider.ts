@@ -10,6 +10,12 @@ export type WhatsAppConnectionStatus =
 export type WhatsAppConnectionState = {
   status: WhatsAppConnectionStatus;
   connectionState: string | null;
+  /**
+   * Sempre null nesta consulta — o endpoint de status da Evolution não
+   * devolve o telefone conectado (confirmado no código-fonte real da
+   * versão em produção). Pra saber o número de verdade, usar
+   * getConnectedIdentity.
+   */
   phoneNumber: string | null;
   lastConnectedAt: string | null;
   lastDisconnectedAt: string | null;
@@ -32,6 +38,10 @@ export type QrCodeResult =
 
 export type SendTextResult =
   { ok: true; providerMessageId: string | null } | { ok: false; error: string };
+
+/** Identidade real (número) atualmente vinculada à instância, direto do provider. */
+export type ConnectedIdentityResult =
+  { ok: true; phoneNumber: string | null } | { ok: false; error: string };
 
 export type WebhookParseResult = {
   instanceName: string | null;
@@ -73,6 +83,16 @@ export interface WhatsAppProvider {
 
   /** Desconecta o WhatsApp (logout), sem apagar a instância — pode reconectar depois. */
   disconnect(ref: ProviderInstanceRef): Promise<{ ok: boolean; error?: string }>;
+
+  /** Apaga a instância no provider por completo — usado antes de criar uma nova pro mesmo owner. */
+  deleteInstance(ref: ProviderInstanceRef): Promise<{ ok: boolean; error?: string }>;
+
+  /**
+   * Número/JID real vinculado à instância neste momento, direto do provider —
+   * única fonte confiável pra confirmar QUEM está conectado (o status de
+   * conexão sozinho não garante identidade).
+   */
+  getConnectedIdentity(ref: ProviderInstanceRef): Promise<ConnectedIdentityResult>;
 
   /** Envio de texto simples — confirmações/lembretes deste MVP não usam templates aprovados. */
   sendText(ref: ProviderInstanceRef, toPhoneE164: string, text: string): Promise<SendTextResult>;

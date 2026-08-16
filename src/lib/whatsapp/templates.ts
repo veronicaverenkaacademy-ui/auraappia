@@ -21,10 +21,6 @@ export function renderAppointmentReminder2h(d: AppointmentTemplateData): string 
   return `Oi, ${d.clientName}! ⏰\n\nSeu horário é daqui a pouquinho:\n\n⏰ ${d.time}\n💆 ${d.serviceName}\n\nProfissional: ${d.professionalName}\n\nTe esperamos! 💕`;
 }
 
-export function renderTestMessage(): string {
-  return `✨ Teste AURA\n\nSeu WhatsApp está conectado corretamente ao AURA.`;
-}
-
 export function formatDateBR(iso: string, timeZone: string): string {
   return new Date(iso).toLocaleDateString("pt-BR", { timeZone });
 }
