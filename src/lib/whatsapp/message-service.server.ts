@@ -1,8 +1,11 @@
 // Serviço central de envio — todo envio de WhatsApp do AURA (confirmação,
-// lembretes, teste) passa por aqui, nunca direto por um provider. Resolve a
-// conexão da conta, valida telefone, escolhe o provider certo, envia, registra
-// resultado em whatsapp_messages e devolve sucesso/erro pra quem chamou (o
-// scheduler, no caso dos lembretes; a server function, no caso do "Testar envio").
+// lembretes) passa por aqui, nunca direto por um provider. Resolve a conexão
+// da conta, valida telefone, escolhe o provider certo, envia, registra
+// resultado em whatsapp_messages e devolve sucesso/erro pra quem chamou
+// (o scheduler, no caso dos lembretes). O remetente nunca é escolhido por
+// quem chama — é sempre implicitamente a sessão vinculada à instância do
+// owner_id, e só é usada depois de identidade confirmada (status=connected
+// E phone_number preenchido — ver reconcile-connection.server.ts).
 import { isValidPhoneBR, normalizePhoneBR } from "@/lib/phone";
 import { evolutionWhatsAppProvider } from "./providers/evolution.server";
 import type { ProviderInstanceRef, WhatsAppProvider } from "./provider";
@@ -36,11 +39,13 @@ async function sendMessage(input: SendMessageInput): Promise<SendMessageResult> 
 
   const { data: instance, error: instanceErr } = await supabaseAdmin
     .from("whatsapp_instances")
-    .select("provider, instance_name, instance_token, instance_id, status")
+    .select("provider, instance_name, instance_token, instance_id, status, phone_number")
     .eq("owner_id", input.ownerId)
     .maybeSingle();
   if (instanceErr) return { ok: false, error: instanceErr.message };
-  if (!instance || instance.status !== "connected") {
+  // As duas condições são exigidas — "connected" sem phone_number confirmado
+  // nunca é um estado válido pra envio (identidade da sessão não confirmada).
+  if (!instance || instance.status !== "connected" || !instance.phone_number) {
     return { ok: false, error: "WhatsApp não está conectado para esta conta." };
   }
 

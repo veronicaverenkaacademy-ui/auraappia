@@ -8,6 +8,7 @@
 // EVOLUTION_WEBHOOK_SECRET. Sem essa env var configurada, o endpoint aceita
 // qualquer chamada (aviso no log) — configurar antes de ir pra produção.
 import { evolutionWhatsAppProvider } from "./providers/evolution.server";
+import { reconcileWhatsAppConnection } from "./reconcile-connection.server";
 
 export async function handleEvolutionWebhook(
   request: Request,
@@ -43,9 +44,19 @@ export async function handleEvolutionWebhook(
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
+    // instance_name é estável por owner (aura-<ownerId>) em toda tentativa —
+    // um evento pode legitimamente ser da tentativa antiga (ex: Evolution
+    // ainda processando o delete). Por isso capturamos o attempt_id JUNTO
+    // com o owner_id, e toda escrita de bookkeeping abaixo é condicionada a
+    // ele — a Evolution não devolve nosso attempt_id, então não dá pra saber
+    // com certeza de qual tentativa o evento é, mas a escrita condicionada
+    // garante que, se uma tentativa mais nova já tiver começado, o evento da
+    // antiga nunca sobrescreve o estado da atual (afeta 0 linhas e é
+    // descartado). reconcileWhatsAppConnection já faz o mesmo pro caminho de
+    // "connected" — nunca baseamos essa proteção só em owner_id.
     const { data: instance } = await supabaseAdmin
       .from("whatsapp_instances")
-      .select("owner_id")
+      .select("owner_id, attempt_id")
       .eq("instance_name", parsed.instanceName)
       .maybeSingle();
 
@@ -56,19 +67,45 @@ export async function handleEvolutionWebhook(
       return new Response("OK", { status: 200 });
     }
     const ownerId = instance.owner_id as string;
+    const attemptId = instance.attempt_id as string;
 
     if (parsed.connectionUpdate) {
-      const { state, phoneNumber } = parsed.connectionUpdate;
-      await supabaseAdmin
-        .from("whatsapp_instances")
-        .update({
-          status: state,
-          connection_state: state,
-          ...(phoneNumber ? { phone_number: phoneNumber } : {}),
-          ...(state === "connected" ? { last_connected_at: new Date().toISOString() } : {}),
-          ...(state === "disconnected" ? { last_disconnected_at: new Date().toISOString() } : {}),
-        })
-        .eq("owner_id", ownerId);
+      const { state } = parsed.connectionUpdate;
+
+      if (state === "connected") {
+        // O webhook NUNCA grava "connected" diretamente — ele só avisa que
+        // pode ser hora de checar. reconcileWhatsAppConnection é quem de
+        // fato confirma (consultando fetchInstances) que o número real bate
+        // com o esperado antes de marcar a conexão como válida, e já tem sua
+        // própria proteção contra tentativa obsoleta (attempt_id capturado
+        // de novo, internamente, no início da função). Essa é a mesma função
+        // usada pelo polling do frontend (getWhatsAppStatus).
+        await reconcileWhatsAppConnection(ownerId);
+      } else {
+        // Estados não críticos (connecting/close/erro) — só bookkeeping, mas
+        // ainda condicionado ao attempt_id capturado acima pra nunca
+        // sobrescrever uma tentativa mais nova com um evento potencialmente
+        // atrasado da instância anterior.
+        const { count } = await supabaseAdmin
+          .from("whatsapp_instances")
+          .update(
+            {
+              status: state,
+              connection_state: state,
+              ...(state === "disconnected"
+                ? { last_disconnected_at: new Date().toISOString() }
+                : {}),
+            },
+            { count: "exact" },
+          )
+          .eq("owner_id", ownerId)
+          .eq("attempt_id", attemptId);
+        if (!count) {
+          console.log(
+            `[webhook:evolution] Evento de tentativa obsoleta descartado (owner ${ownerId})`,
+          );
+        }
+      }
     }
 
     for (const msg of parsed.incomingMessages) {

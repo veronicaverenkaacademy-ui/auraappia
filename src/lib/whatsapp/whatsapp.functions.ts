@@ -8,8 +8,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { isValidPhoneBR, normalizePhoneBR } from "@/lib/phone";
 import { evolutionWhatsAppProvider } from "./providers/evolution.server";
-import { renderTestMessage } from "./templates";
-import { WhatsAppMessageService } from "./message-service.server";
+import { reconcileWhatsAppConnection } from "./reconcile-connection.server";
 import type { ProviderInstanceRef, WhatsAppConnectionStatus } from "./provider";
 
 function generateInstanceToken(): string {
@@ -36,7 +35,7 @@ export const getWhatsAppStatus = createServerFn({ method: "GET" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data } = await supabaseAdmin
       .from("whatsapp_instances")
-      .select("status, phone_number, last_error, instance_name, instance_token, instance_id")
+      .select("status, phone_number, last_error")
       .eq("owner_id", context.userId)
       .maybeSingle();
 
@@ -53,62 +52,26 @@ export const getWhatsAppStatus = createServerFn({ method: "GET" })
       };
     }
 
-    // "connecting" normalmente vira "connected" via webhook — mas se o
-    // webhook não chegar (falha de rede, secret errado, payload inesperado
-    // etc.), a instância ficaria presa em "connecting" pra sempre mesmo com o
-    // WhatsApp já conectado do outro lado. Por isso, só nesse estado
-    // transitório, reconciliamos consultando o estado real na Evolution
-    // (fallback do webhook, não substitui ele).
-    console.log(`[WhatsApp] Reconciling connection (owner ${context.userId})`);
-    const ref: ProviderInstanceRef = {
-      instanceName: data.instance_name,
-      instanceToken: data.instance_token,
-      instanceId: data.instance_id,
-    };
+    // "connecting" só vira "connected" depois que reconcileWhatsAppConnection
+    // confirma, consultando a Evolution de verdade, que o número realmente
+    // conectado bate com o que foi informado — é a MESMA função que o webhook
+    // aciona; aqui ela serve de fallback pro caso do webhook não ter chegado.
+    // "stale" (a tentativa consultada já foi substituída por outra mais nova
+    // entre a leitura e a escrita) é tratado igual a "pending": a leitura
+    // seguinte já vai pegar o estado atual de verdade.
+    const result = await reconcileWhatsAppConnection(context.userId);
 
-    try {
-      const evolutionState = await evolutionWhatsAppProvider.getConnectionStatus(ref);
-      console.log(
-        `[WhatsApp] Evolution connection state: ${evolutionState.connectionState ?? evolutionState.status}`,
-      );
-
-      if (evolutionState.status === "connected") {
-        console.log(`[WhatsApp] Persisting connected status (owner ${context.userId})`);
-        const { error: updateErr } = await supabaseAdmin
-          .from("whatsapp_instances")
-          .update({
-            status: "connected",
-            last_error: null,
-            last_connected_at: new Date().toISOString(),
-            ...(evolutionState.phoneNumber ? { phone_number: evolutionState.phoneNumber } : {}),
-          })
-          .eq("owner_id", context.userId);
-
-        if (!updateErr) {
-          return {
-            connected: true,
-            status: "connected",
-            phoneNumber: evolutionState.phoneNumber ?? data.phone_number,
-            lastError: null,
-          };
-        }
-        console.error(
-          "[WhatsApp] Failed to persist reconciled connected status",
-          updateErr.message,
-        );
-      }
-    } catch (e) {
-      // Falha ao consultar a Evolution não deve derrubar a tela nem mudar o
-      // status persistido — só loga; o próximo polling tenta reconciliar de novo.
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error(`[WhatsApp] Failed to reconcile connection status: ${msg}`);
+    if (result.outcome === "connected") {
+      return {
+        connected: true,
+        status: "connected",
+        phoneNumber: result.phoneNumber,
+        lastError: null,
+      };
     }
-
-    // Evolution ainda "connecting", fechada/desconectada, ou consulta falhou:
-    // nunca rebaixa o status persistido pra "disconnected"/"error" só por
-    // causa da reconciliação — isso evitaria instabilidade por um estado
-    // transitório/falha temporária da Evolution. Só promove pra "connected"
-    // quando a Evolution confirma isso explicitamente (acima).
+    if (result.outcome === "rejected") {
+      return { connected: false, status: "error", phoneNumber: null, lastError: result.reason };
+    }
     return {
       connected: false,
       status: "connecting",
@@ -124,97 +87,145 @@ export type CreateConnectionResponse = {
 };
 
 const CreateConnectionInput = z.object({
-  // Telefone opcional: se informado, pede código de pareamento (fluxo
-  // principal); se ausente, mantém o comportamento anterior (QR Code).
-  phone: z.string().trim().optional(),
+  phone: z.string().trim().min(1),
 });
 
 /**
- * Cria (ou reaproveita, se já existir e não estiver conectada) a instância
- * Evolution da conta e devolve QR Code e/ou código de pareamento (a Evolution
- * só gera o código de pareamento quando um telefone é informado). Idempotente:
- * chamar de novo enquanto "connecting" só busca um código fresco, não duplica
- * a instância.
+ * Sempre cria uma instância Evolution nova e exclusiva pra essa tentativa —
+ * nunca reaproveita uma instância existente, mesmo que ela ainda não esteja
+ * conectada. Motivo (confirmado no código-fonte real da Evolution): pedir um
+ * código pra um número específico numa instância que já está "connecting"
+ * IGNORA o número da chamada e devolve o que já estava em memória — só uma
+ * instância recém-criada garante que o número informado é o que vai ser
+ * usado de fato. Se já existir uma instância anterior pro owner, ela é
+ * apagada primeiro. O telefone informado fica salvo em expected_phone_number
+ * até a conexão ser confirmada (reconcileWhatsAppConnection.ts).
+ *
+ * Cada chamada gera um attempt_id novo, gravado junto com a nova instância.
+ * Toda escrita subsequente relacionada a essa tentativa (o update final desta
+ * função e tudo dentro de reconcileWhatsAppConnection) é condicionada a esse
+ * attempt_id — se uma tentativa mais nova já tiver começado nesse meio-tempo,
+ * a escrita da tentativa antiga simplesmente não afeta nenhuma linha.
  */
 export const createWhatsAppConnection = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((raw: unknown) => CreateConnectionInput.parse(raw ?? {}))
+  .inputValidator((raw: unknown) => CreateConnectionInput.parse(raw))
   .handler(async ({ data, context }): Promise<CreateConnectionResponse> => {
     const ownerId = context.userId;
 
-    let phoneNumber: string | undefined;
-    if (data.phone) {
-      if (!isValidPhoneBR(data.phone)) throw new Error("Telefone inválido.");
-      phoneNumber = normalizePhoneBR(data.phone);
-    }
+    if (!isValidPhoneBR(data.phone)) throw new Error("Telefone inválido.");
+    const phoneNumber = normalizePhoneBR(data.phone);
+    const attemptId = crypto.randomUUID();
+
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const { data: existing, error: existingErr } = await supabaseAdmin
       .from("whatsapp_instances")
-      .select("instance_name, instance_token, instance_id, status")
+      .select("instance_name, instance_token, instance_id")
       .eq("owner_id", ownerId)
       .maybeSingle();
     if (existingErr) throw new Error(existingErr.message);
 
-    if (existing?.status === "connected") {
-      return { status: "connected", qrCodeBase64: null, pairingCode: null };
+    if (existing) {
+      // deleteInstance já desloga internamente quando necessário (confirmado
+      // no código-fonte da Evolution) — não precisa de um logout separado
+      // antes. Best-effort: uma falha aqui não impede seguir com uma
+      // instância nova; o registro antigo fica órfão na Evolution, mas nada
+      // no nosso banco volta a apontar pra ele depois deste ponto.
+      const oldRef: ProviderInstanceRef = {
+        instanceName: existing.instance_name,
+        instanceToken: existing.instance_token,
+        instanceId: existing.instance_id,
+      };
+      const deleted = await evolutionWhatsAppProvider.deleteInstance(oldRef);
+      if (!deleted.ok) {
+        console.error(
+          `[WhatsApp] Failed to delete previous instance before reconnecting (owner ${ownerId}): ${deleted.error}`,
+        );
+      }
     }
 
     const webhookUrl = process.env.EVOLUTION_WEBHOOK_URL;
     if (!webhookUrl)
       throw new Error("EVOLUTION_WEBHOOK_URL não configurado — não é possível conectar.");
 
-    let instanceName = existing?.instance_name ?? instanceNameFor(ownerId);
-    const instanceToken = existing?.instance_token ?? generateInstanceToken();
-    let instanceId = existing?.instance_id ?? null;
+    const instanceName = instanceNameFor(ownerId);
+    const instanceToken = generateInstanceToken();
+    let instanceId: string | null = null;
 
-    if (!existing) {
-      try {
-        const created = await evolutionWhatsAppProvider.createConnection(instanceName, webhookUrl);
-        instanceName = created.instanceName;
-        instanceId = created.instanceId;
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        await supabaseAdmin.from("whatsapp_instances").upsert(
-          {
-            owner_id: ownerId,
-            instance_name: instanceName,
-            instance_token: instanceToken,
-            status: "error",
-            last_error: msg,
-          },
-          { onConflict: "owner_id" },
-        );
-        throw new Error(`Não foi possível criar a conexão: ${msg}`);
-      }
-
+    try {
+      const created = await evolutionWhatsAppProvider.createConnection(instanceName, webhookUrl);
+      instanceId = created.instanceId;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // Primeira escrita desta tentativa — estabelece attempt_id como o
+      // atual, não precisa de guarda (não existe nada anterior pra proteger
+      // ainda; se uma tentativa mais nova já escreveu antes disso, o upsert
+      // a seguir sobrescreve, o que é aceitável: ela também é uma tentativa
+      // legítima e nova).
       await supabaseAdmin.from("whatsapp_instances").upsert(
         {
           owner_id: ownerId,
           instance_name: instanceName,
           instance_token: instanceToken,
-          instance_id: instanceId,
-          status: "connecting",
+          attempt_id: attemptId,
+          status: "error",
+          last_error: msg,
+          phone_number: null,
+          expected_phone_number: null,
         },
         { onConflict: "owner_id" },
       );
+      throw new Error(`Não foi possível criar a conexão: ${msg}`);
     }
+
+    await supabaseAdmin.from("whatsapp_instances").upsert(
+      {
+        owner_id: ownerId,
+        instance_name: instanceName,
+        instance_token: instanceToken,
+        instance_id: instanceId,
+        attempt_id: attemptId,
+        status: "connecting",
+        phone_number: null,
+        expected_phone_number: phoneNumber,
+        last_error: null,
+        last_connected_at: null,
+        last_disconnected_at: null,
+      },
+      { onConflict: "owner_id" },
+    );
 
     const ref: ProviderInstanceRef = { instanceName, instanceToken, instanceId };
     const qr = await evolutionWhatsAppProvider.getQRCode(ref, phoneNumber);
 
+    // Escritas daqui pra baixo são "posteriores" — condicionadas ao
+    // attempt_id pra não sobrescrever uma tentativa mais nova que possa ter
+    // começado nesse intervalo. O resultado ainda é devolvido pra quem
+    // chamou de qualquer forma: é a resposta legítima desta requisição,
+    // independente de a escrita no banco ter sido descartada por obsoleta.
     if (!qr.ok) {
-      await supabaseAdmin
+      const { count } = await supabaseAdmin
         .from("whatsapp_instances")
-        .update({ status: "error", last_error: qr.error })
-        .eq("owner_id", ownerId);
+        .update({ status: "error", last_error: qr.error }, { count: "exact" })
+        .eq("owner_id", ownerId)
+        .eq("attempt_id", attemptId);
+      if (!count) {
+        console.log(
+          `[WhatsApp] Attempt superseded before persisting QR failure, discarding (owner ${ownerId})`,
+        );
+      }
       throw new Error("Não foi possível gerar o código de conexão.");
     }
 
-    await supabaseAdmin
+    const { count } = await supabaseAdmin
       .from("whatsapp_instances")
-      .update({ status: qr.status, last_error: null })
-      .eq("owner_id", ownerId);
+      .update({ status: qr.status, last_error: null }, { count: "exact" })
+      .eq("owner_id", ownerId)
+      .eq("attempt_id", attemptId);
+    if (!count) {
+      console.log(`[WhatsApp] Attempt superseded before persisting QR result (owner ${ownerId})`);
+    }
 
     return { status: qr.status, qrCodeBase64: qr.qrCodeBase64, pairingCode: qr.pairingCode };
   });
@@ -250,22 +261,4 @@ export const disconnectWhatsApp = createServerFn({ method: "POST" })
       .eq("owner_id", ownerId);
 
     return { ok: true };
-  });
-
-const TestSendInput = z.object({ phone: z.string().trim().min(8) });
-
-export const testSendWhatsapp = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((raw: unknown) => TestSendInput.parse(raw))
-  .handler(async ({ data, context }): Promise<{ ok: true } | { ok: false; error: string }> => {
-    if (!isValidPhoneBR(data.phone)) return { ok: false, error: "Telefone inválido." };
-
-    const result = await WhatsAppMessageService.sendMessage({
-      ownerId: context.userId,
-      recipientPhone: data.phone,
-      message: renderTestMessage(),
-      type: "test",
-    });
-
-    return result.ok ? { ok: true } : { ok: false, error: result.error };
   });
