@@ -17,6 +17,16 @@
 //   - POST /{phone-number-id}/messages     → envio de texto
 // Webhook (configurado manualmente no Meta Developer Console, fora do AURA):
 // ver webhook-meta.server.ts.
+//
+// Versão da Graph API: cada versão da Meta fica ativa por ~2 anos a partir do
+// lançamento da PRÓXIMA versão, não da sua própria data — hardcode direto
+// vira dívida técnica silenciosa (o endpoint simplesmente para de responder
+// um dia, sem aviso no código). DEFAULT_GRAPH_API_VERSION é só o "sem
+// configuração" — o valor real de produção deve vir de
+// META_GRAPH_API_VERSION, ajustável sem deploy de código quando a Meta
+// avançar de versão. v26.0 confirmado como a versão atual em
+// developers.facebook.com/docs/graph-api/changelog/versions (lançada em
+// 29/07/2026) no momento em que este arquivo foi escrito.
 import type {
   ConnectedIdentityResult,
   CreateConnectionResult,
@@ -30,7 +40,12 @@ import type {
 import { normalizePhoneBR } from "@/lib/phone";
 
 const REQUEST_TIMEOUT_MS = 15_000;
-const GRAPH_API_BASE = "https://graph.facebook.com/v21.0";
+const DEFAULT_GRAPH_API_VERSION = "v26.0";
+
+function getGraphApiBase(): string {
+  const version = process.env.META_GRAPH_API_VERSION || DEFAULT_GRAPH_API_VERSION;
+  return `https://graph.facebook.com/${version}`;
+}
 
 function getAccessToken(): string | null {
   return process.env.META_WHATSAPP_ACCESS_TOKEN || null;
@@ -45,7 +60,7 @@ async function metaFetch(
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const res = await fetch(`${GRAPH_API_BASE}${path}`, {
+    const res = await fetch(`${getGraphApiBase()}${path}`, {
       ...rest,
       headers: {
         "content-type": "application/json",
@@ -66,10 +81,24 @@ async function metaFetch(
   }
 }
 
+// Código 131047 ("Re-engagement message") é a rejeição documentada da Meta
+// quando se tenta mandar texto livre fora da janela de 24h de atendimento
+// (nenhuma mensagem da cliente nas últimas 24h) — nesse caso é OBRIGATÓRIO
+// usar um template aprovado, texto livre nunca funciona. Não é um erro
+// aleatório de rede: é esperado e vai acontecer com frequência em produção
+// pra confirmações/lembretes proativos, então a mensagem de erro anota isso
+// explicitamente em vez de deixar quem lê o log adivinhar. Ver comentário
+// sobre sendTemplate() acima de sendText().
+const REENGAGEMENT_WINDOW_ERROR_CODE = 131047;
+
 function extractErrorMessage(status: number, body: unknown): string {
   const parsed = body as { error?: { message?: string; type?: string; code?: number } };
   if (parsed?.error?.message) {
-    return `Meta respondeu ${status}: ${parsed.error.message} (type=${parsed.error.type ?? "?"}, code=${parsed.error.code ?? "?"})`;
+    const base = `Meta respondeu ${status}: ${parsed.error.message} (type=${parsed.error.type ?? "?"}, code=${parsed.error.code ?? "?"})`;
+    if (parsed.error.code === REENGAGEMENT_WINDOW_ERROR_CODE) {
+      return `${base} — fora da janela de 24h de atendimento, precisa de template aprovado (sendText nunca funciona aqui).`;
+    }
+    return base;
   }
   return `Meta respondeu ${status}: ${JSON.stringify(body).slice(0, 300)}`;
 }
@@ -198,6 +227,38 @@ async function getConnectedIdentity(ref: ProviderInstanceRef): Promise<Connected
   return { ok: true, phoneNumber: status.phoneNumber };
 }
 
+/**
+ * Preparação pra templates (não implementado nesta revisão — só a análise
+ * de como caberia, sem tocar na interface WhatsAppProvider agora):
+ *
+ * A Cloud API só aceita texto livre dentro da janela de 24h de atendimento
+ * (ver REENGAGEMENT_WINDOW_ERROR_CODE acima); fora dela, business-initiated
+ * (confirmação de criação, lembrete 24h/2h, reagendamento/cancelamento)
+ * PRECISA de um template pré-aprovado pela Meta (endpoint
+ * POST /{phone-number-id}/messages com type:"template" em vez de type:"text").
+ * A Evolution nunca teve essa exigência (não é a API oficial), então isso é
+ * uma diferença real de comportamento entre os dois providers, não um
+ * detalhe de implementação.
+ *
+ * Mudança de interface que isso exigiria, SE/QUANDO for implementado (só
+ * proposta, não aplicada):
+ *   - Adicionar um método OPCIONAL `sendTemplate?(ref, toPhoneE164,
+ *     templateName, languageCode, params): Promise<SendTextResult>` em
+ *     WhatsAppProvider (provider.ts) — opcional porque nem todo provider tem
+ *     o conceito (Evolution não tem; ficaria undefined lá).
+ *   - WhatsAppMessageService.sendMessage (message-service.server.ts) passaria
+ *     a decidir entre `provider.sendText` e `provider.sendTemplate` — essa
+ *     decisão fica TODA contida ali dentro, olhando o campo `type` que já
+ *     existe em SendMessageInput; scheduler.server.ts e notification_jobs
+ *     nunca precisam saber disso, continuam só chamando
+ *     WhatsAppMessageService.sendMessage exatamente como hoje.
+ *   - templates.ts ganharia, além dos renderXxx() de texto livre atuais, o
+ *     nome/idioma/parâmetros do template aprovado correspondente — a decisão
+ *     de QUAL usar (texto livre vs template) dependeria do provider ativo do
+ *     owner (whatsapp_instances.provider), não do tipo de notification_job.
+ * Nada disso está implementado agora — é só o mapa de onde a mudança entraria,
+ * pra não exigir reescrever scheduler/notification_jobs quando chegar a hora.
+ */
 async function sendText(
   ref: ProviderInstanceRef,
   toPhoneE164: string,
@@ -259,6 +320,12 @@ type MetaWebhookValue = {
     type?: string;
     text?: { body?: string };
   }>;
+  // Recibos de entrega/leitura (sent/delivered/read/failed) de mensagens que
+  // O AURA enviou — nunca mensagens recebidas. Deliberadamente nunca lido
+  // como incomingMessages (a Meta separa isso em `statuses`, nunca em
+  // `messages`, então não há ambiguidade de parsing possível aqui) — só
+  // contado pra diagnóstico, nunca vira mensagem nem toca whatsapp_messages.
+  statuses?: Array<{ status?: string }>;
 };
 
 async function handleWebhook(payload: unknown): Promise<WebhookParseResult> {
@@ -280,6 +347,17 @@ async function handleWebhook(payload: unknown): Promise<WebhookParseResult> {
 
       const phoneNumberId = value.metadata?.phone_number_id ?? null;
       if (phoneNumberId) result.instanceName = phoneNumberId;
+
+      // Só diagnóstico (quantidade e status, nunca id/telefone/conteúdo) —
+      // confirma que recibos de entrega chegam e prova que não estão sendo
+      // processados como mensagem recebida.
+      if (value.statuses?.length) {
+        console.log(
+          `[webhook:meta] ${value.statuses.length} evento(s) de status recebido(s) (${value.statuses
+            .map((s) => s.status ?? "?")
+            .join(",")}) — ignorados, nunca viram mensagem`,
+        );
+      }
 
       for (const msg of value.messages ?? []) {
         if (msg.type !== "text" || !msg.from) {
