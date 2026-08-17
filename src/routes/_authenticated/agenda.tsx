@@ -83,7 +83,7 @@ export const Route = createFileRoute("/_authenticated/agenda")({
 
 // ---------- Constants ----------
 const HOUR_H = 64;
-const HOURS = Array.from({ length: 12 }, (_, i) => 8 + i); // 8..19
+const HOURS = Array.from({ length: 24 }, (_, i) => i); // 0..23 — grade mostra o dia inteiro, independente do horário de atendimento configurado (que não limita a visualização, só a disponibilidade no Portal da Cliente, em booking.functions.ts)
 
 const STATUS: Record<AppointmentStatus, { label: string; dot: string; ring: string; bg: string; badge: string }> = {
   pending: { label: "Agendado", dot: "bg-muted-foreground/60", ring: "border-border", bg: "bg-card", badge: "bg-secondary text-muted-foreground" },
