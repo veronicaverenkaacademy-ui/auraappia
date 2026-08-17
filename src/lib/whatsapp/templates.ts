@@ -13,8 +13,19 @@ export function renderAppointmentConfirmation(d: AppointmentTemplateData): strin
   return `Oi, ${d.clientName}! ✨\n\nSeu horário foi confirmado!\n\n📅 ${d.date}\n⏰ ${d.time}\n💆 ${d.serviceName}\n\nProfissional: ${d.professionalName}\n\nTe esperamos! 💕`;
 }
 
+// Enviada imediatamente na criação do agendamento (trigger de banco, ver
+// migration 20260817160000) — só avisa, nunca pede confirmação. Não faz parte
+// de THREAD_OPENING_TYPES (message-service.server.ts): uma resposta da
+// cliente a esta mensagem nunca é interpretada como confirmar/cancelar.
+export function renderAppointmentCreated(d: AppointmentTemplateData): string {
+  return `Oi, ${d.clientName}! ✨\n\nSeu horário foi agendado com sucesso!\n\n📅 ${d.date}\n⏰ ${d.time}\n💆 ${d.serviceName}\n\nProfissional: ${d.professionalName}\n\nTe esperamos! 💕`;
+}
+
+// A verdadeira solicitação de confirmação do fluxo (ver THREAD_OPENING_TYPES
+// em message-service.server.ts) — pede SIM/NÃO explicitamente; as respostas
+// aceitas são as mesmas já cobertas por reply-interpreter.ts.
 export function renderAppointmentReminder24h(d: AppointmentTemplateData): string {
-  return `Oi, ${d.clientName}! 💕\n\nPassando pra lembrar do seu horário amanhã:\n\n📅 ${d.date}\n⏰ ${d.time}\n💆 ${d.serviceName}\n\nProfissional: ${d.professionalName}\n\nAté lá! ✨`;
+  return `Oi, ${d.clientName}! 💕\n\nSeu horário é amanhã:\n\n📅 ${d.date}\n⏰ ${d.time}\n💆 ${d.serviceName}\n\nProfissional: ${d.professionalName}\n\nVocê confirma sua presença? Responda *SIM* para confirmar ou *NÃO* para cancelar. ✨`;
 }
 
 export function renderAppointmentReminder2h(d: AppointmentTemplateData): string {

@@ -10,6 +10,7 @@ import {
   formatDateBR,
   formatTimeBR,
   renderAppointmentConfirmation,
+  renderAppointmentCreated,
   renderAppointmentReminder24h,
   renderAppointmentReminder2h,
 } from "./templates";
@@ -100,7 +101,11 @@ type ClaimedJob = {
   appointment_id: string | null;
   client_id: string | null;
   type:
-    "appointment_confirmation" | "appointment_reminder_24h" | "appointment_reminder_2h" | "test";
+    | "appointment_confirmation"
+    | "appointment_created"
+    | "appointment_reminder_24h"
+    | "appointment_reminder_2h"
+    | "test";
   recipient_phone: string;
   attempts: number;
   max_attempts: number;
@@ -151,9 +156,11 @@ async function renderMessageForJob(
   const message =
     job.type === "appointment_confirmation"
       ? renderAppointmentConfirmation(data)
-      : job.type === "appointment_reminder_24h"
-        ? renderAppointmentReminder24h(data)
-        : renderAppointmentReminder2h(data);
+      : job.type === "appointment_created"
+        ? renderAppointmentCreated(data)
+        : job.type === "appointment_reminder_24h"
+          ? renderAppointmentReminder24h(data)
+          : renderAppointmentReminder2h(data);
 
   return { message, skip: null, appointmentStartsAt: appt.starts_at };
 }
