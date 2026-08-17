@@ -1,13 +1,21 @@
-// Server functions do MVP de WhatsApp (conexão Evolution). Todas exigem sessão
-// autenticada e derivam a conta SEMPRE de context.userId — nunca aceitam um
-// professional_id vindo do cliente, exatamente pra impedir a profissional A de
-// operar a conexão da profissional B (context.userId vem do JWT verificado por
+// Server functions de WhatsApp. Todas exigem sessão autenticada e derivam a
+// conta SEMPRE de context.userId — nunca aceitam um professional_id vindo do
+// cliente, exatamente pra impedir a profissional A de operar a conexão da
+// profissional B (context.userId vem do JWT verificado por
 // requireSupabaseAuth, não é dado que o chamador possa forjar).
+//
+// createWhatsAppConnection/getQRCode continuam 100% Evolution (pareamento por
+// QR Code não existe em nenhum outro provider ainda) — mas getWhatsAppStatus
+// e disconnectWhatsApp já são provider-aware (resolvem por
+// whatsapp_instances.provider via getProvider(), nunca hardcoded), porque
+// consultar status e desconectar são operações que fazem sentido pra
+// qualquer provider, ao contrário de QR Code.
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { isValidPhoneBR, normalizePhoneBR } from "@/lib/phone";
 import { evolutionWhatsAppProvider } from "./providers/evolution.server";
+import { getProvider } from "./providers/registry";
 import { reconcileWhatsAppConnection } from "./reconcile-connection.server";
 import type { ProviderInstanceRef, WhatsAppConnectionStatus } from "./provider";
 
@@ -35,7 +43,7 @@ export const getWhatsAppStatus = createServerFn({ method: "GET" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data } = await supabaseAdmin
       .from("whatsapp_instances")
-      .select("status, phone_number, last_error")
+      .select("provider, status, phone_number, last_error")
       .eq("owner_id", context.userId)
       .maybeSingle();
 
@@ -43,7 +51,14 @@ export const getWhatsAppStatus = createServerFn({ method: "GET" })
       return { connected: false, status: "pending", phoneNumber: null, lastError: null };
     }
 
-    if (data.status !== "connecting") {
+    // "connecting" é um estado que só o fluxo de pareamento por QR da
+    // Evolution produz — outros providers (ex: meta_cloud_api) nunca deixam
+    // uma linha em "connecting" (a conexão é confirmada de forma síncrona
+    // antes de gravar). Reconciliar só faz sentido pra Evolution; qualquer
+    // outro provider em "connecting" (não deveria acontecer, mas se
+    // acontecer) só devolve o status bruto, sem tentar reconciliar contra a
+    // API errada.
+    if (data.status !== "connecting" || data.provider !== "evolution") {
       return {
         connected: data.status === "connected",
         status: data.status as WhatsAppConnectionStatus,
@@ -249,18 +264,21 @@ export const disconnectWhatsApp = createServerFn({ method: "POST" })
 
     const { data: instance, error } = await supabaseAdmin
       .from("whatsapp_instances")
-      .select("instance_name, instance_token, instance_id")
+      .select("provider, instance_name, instance_token, instance_id")
       .eq("owner_id", ownerId)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!instance) return { ok: true };
+
+    const provider = getProvider(instance.provider);
+    if (!provider) throw new Error(`Provider desconhecido: ${instance.provider}`);
 
     const ref: ProviderInstanceRef = {
       instanceName: instance.instance_name,
       instanceToken: instance.instance_token,
       instanceId: instance.instance_id,
     };
-    const result = await evolutionWhatsAppProvider.disconnect(ref);
+    const result = await provider.disconnect(ref);
 
     await supabaseAdmin
       .from("whatsapp_instances")
