@@ -5,12 +5,13 @@
 // Modelo de conexão é bem diferente da Evolution: não há pareamento por QR
 // Code nem estado assíncrono "connecting" — o número já é provisionado e
 // verificado diretamente no Meta Business Manager (fora do AURA) antes de
-// qualquer chamada aqui. O access token é uma credencial GLOBAL da conta Meta
-// da AURA (um único System User, com permissão sobre um ou mais números) —
-// ref.instanceId (phone_number_id) é o que varia por owner, exatamente como
-// EVOLUTION_GLOBAL_API_KEY é global e ref.instanceName varia por owner na
-// Evolution. ref.instanceToken nunca é usado aqui (fica null nas linhas
-// meta_cloud_api de whatsapp_instances).
+// qualquer chamada aqui. O access token é POR CONEXÃO — cada profissional
+// tem o seu próprio, vindo de ref.instanceToken (whatsapp_instances.instance_token,
+// coluna já existente, só reaproveitada) — nunca um token único
+// compartilhado entre contas. `createConnection` é a única exceção: não
+// recebe `ref` (a interface WhatsAppProvider não passa token pra ela), então
+// ainda usa META_WHATSAPP_ACCESS_TOKEN como fallback só pra essa função —
+// hoje não é chamada por nenhum fluxo real, ver comentário na própria função.
 //
 // Endpoints usados (Graph API):
 //   - GET  /{phone-number-id}?fields=...   → identidade/status real do número
@@ -47,7 +48,10 @@ function getGraphApiBase(): string {
   return `https://graph.facebook.com/${version}`;
 }
 
-function getAccessToken(): string | null {
+// Só usado por createConnection (não recebe ref, ver comentário na função) —
+// nenhuma outra função lê env var pra token; todas as outras usam
+// ref.instanceToken (por conexão, por profissional).
+function getGlobalAccessTokenFallback(): string | null {
   return process.env.META_WHATSAPP_ACCESS_TOKEN || null;
 }
 
@@ -110,9 +114,17 @@ function extractErrorMessage(status: number, body: unknown): string {
  * identificador que a Meta de fato usa) é válido e acessível com o access
  * token configurado, chamando GET /{phone-number-id} — nunca cria nada de
  * fato no lado da Meta.
+ *
+ * ATENÇÃO: esta função não recebe ProviderInstanceRef (a interface
+ * WhatsAppProvider não passa token pra createConnection), então ainda lê
+ * META_WHATSAPP_ACCESS_TOKEN — diferente de todo o resto deste arquivo, que
+ * já usa token por conexão. Não é usada por nenhum fluxo real hoje (não há
+ * chamador); quando um fluxo de conexão de verdade existir, ele deve validar
+ * a identidade via getConnectedIdentity(ref) (que já recebe token por
+ * conexão) em vez de createConnection.
  */
 async function createConnection(instanceName: string): Promise<CreateConnectionResult> {
-  const accessToken = getAccessToken();
+  const accessToken = getGlobalAccessTokenFallback();
   if (!accessToken) throw new Error("META_WHATSAPP_ACCESS_TOKEN não configurado.");
 
   const { status, body } = await metaFetch(`/${instanceName}?fields=id,display_phone_number`, {
@@ -127,7 +139,7 @@ async function createConnection(instanceName: string): Promise<CreateConnectionR
 }
 
 async function getConnectionStatus(ref: ProviderInstanceRef): Promise<WhatsAppConnectionState> {
-  const accessToken = getAccessToken();
+  const accessToken = ref.instanceToken;
   if (!accessToken) {
     return {
       status: "error",
@@ -135,7 +147,7 @@ async function getConnectionStatus(ref: ProviderInstanceRef): Promise<WhatsAppCo
       phoneNumber: null,
       lastConnectedAt: null,
       lastDisconnectedAt: null,
-      lastError: "META_WHATSAPP_ACCESS_TOKEN não configurado.",
+      lastError: "Access token não configurado para esta conexão.",
     };
   }
   if (!ref.instanceId) {
@@ -264,8 +276,8 @@ async function sendText(
   toPhoneE164: string,
   text: string,
 ): Promise<SendTextResult> {
-  const accessToken = getAccessToken();
-  if (!accessToken) return { ok: false, error: "META_WHATSAPP_ACCESS_TOKEN não configurado." };
+  const accessToken = ref.instanceToken;
+  if (!accessToken) return { ok: false, error: "Access token não configurado para esta conexão." };
   if (!ref.instanceId)
     return { ok: false, error: "phone_number_id não configurado para esta conexão." };
 

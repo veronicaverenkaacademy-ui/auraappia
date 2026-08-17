@@ -7,10 +7,9 @@
 // owner_id, e só é usada depois de identidade confirmada (status=connected
 // E phone_number preenchido — ver reconcile-connection.server.ts).
 import { isValidPhoneBR, normalizePhoneBR } from "@/lib/phone";
-import { evolutionWhatsAppProvider } from "./providers/evolution.server";
-import { metaCloudApiProvider } from "./providers/meta-cloud-api.server";
+import { PROVIDERS } from "./providers/registry";
 import { openConfirmationThread } from "./confirmation-threads.server";
-import type { ProviderInstanceRef, WhatsAppProvider } from "./provider";
+import type { ProviderInstanceRef } from "./provider";
 
 export type WhatsAppMessageType =
   | "appointment_confirmation"
@@ -48,11 +47,6 @@ export type SendMessageInput = {
 
 export type SendMessageResult =
   { ok: true; providerMessageId: string | null } | { ok: false; error: string };
-
-const PROVIDERS: Record<string, WhatsAppProvider> = {
-  evolution: evolutionWhatsAppProvider,
-  meta_cloud_api: metaCloudApiProvider,
-};
 
 async function sendMessage(input: SendMessageInput): Promise<SendMessageResult> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
