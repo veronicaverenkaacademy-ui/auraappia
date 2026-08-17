@@ -50,6 +50,10 @@ function WhatsAppConversation() {
   const { data: conv, isLoading } = useQuery({
     queryKey: ["whatsapp-conversation", id],
     queryFn: () => fetchMessages({ data: { clientId, phone } }),
+    // Mesmo motivo/intervalo do polling da lista (ver whatsapp.index.tsx) —
+    // Realtime não funciona hoje sem uma policy de SELECT que ainda não
+    // existe em whatsapp_messages para `authenticated`.
+    refetchInterval: 6000,
   });
 
   if (isLoading) {

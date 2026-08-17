@@ -81,6 +81,13 @@ function WhatsAppInbox() {
   const { data: conversations, isLoading } = useQuery({
     queryKey: ["whatsapp-conversations"],
     queryFn: () => fetchConversations(),
+    // Polling, não Supabase Realtime: whatsapp_messages não tem policy de
+    // SELECT para `authenticated` (só service_role) — uma subscription
+    // client-side conectaria sem erro mas nunca receberia evento nenhum.
+    // 6s é o intervalo escolhido para "sem refresh manual" sem virar
+    // dezenas de requisições; refetchIntervalInBackground fica no padrão
+    // (false), então não sondam nada com a aba em segundo plano.
+    refetchInterval: 6000,
   });
 
   const [q, setQ] = useState("");

@@ -50,9 +50,24 @@ export async function handleEvolutionWebhook(
     return new Response("Invalid JSON", { status: 400 });
   }
 
+  // Log incondicional, antes de qualquer decisão — prova que o webhook foi
+  // de fato chamado e com que evento/instância, independente do que acontece
+  // depois (mesmo se a instância for desconhecida ou o parser não reconhecer
+  // nada). É o primeiro lugar a checar pra saber se a Evolution está sequer
+  // alcançando o AURA.
+  const rawEvent = (payload as { event?: unknown })?.event;
+  const rawInstance = (payload as { instance?: unknown })?.instance;
+  console.log(
+    `[webhook:evolution] received ${JSON.stringify({
+      event: typeof rawEvent === "string" ? rawEvent : "unknown",
+      instance: typeof rawInstance === "string" ? rawInstance : "unknown",
+    })}`,
+  );
+
   try {
     const parsed = await evolutionWhatsAppProvider.handleWebhook(payload);
     if (!parsed.instanceName) {
+      console.log("[webhook:evolution] evento sem instanceName reconhecível — ignorado");
       return new Response("OK", { status: 200 });
     }
 
@@ -82,6 +97,9 @@ export async function handleEvolutionWebhook(
     }
     const ownerId = instance.owner_id as string;
     const attemptId = instance.attempt_id as string;
+    console.log(
+      `[webhook:evolution] owner_id resolvido owner=${ownerId} instance=${parsed.instanceName}`,
+    );
 
     if (parsed.connectionUpdate) {
       const { state } = parsed.connectionUpdate;
@@ -138,8 +156,14 @@ export async function handleEvolutionWebhook(
         msg.fromPhone,
       );
       const clientId = candidates.length === 1 ? candidates[0].id : null;
+      console.log(
+        `[webhook:evolution] inbound client_id resolution ${JSON.stringify({
+          candidateCount: candidates.length,
+          resolved: !!clientId,
+        })}`,
+      );
 
-      const { data: inserted } = await supabaseAdmin
+      const { data: inserted, error: insertError } = await supabaseAdmin
         .from("whatsapp_messages")
         .insert({
           owner_id: ownerId,
@@ -156,7 +180,26 @@ export async function handleEvolutionWebhook(
         .select("id")
         .single();
 
+      if (insertError) {
+        // 23505 = unique_violation — duplicata legítima (mesma provider_message_id
+        // já registrada), nunca um erro de verdade. Qualquer outro código é um
+        // erro real de gravação, que antes ficava mascarado como "não inserido"
+        // sem explicação nenhuma.
+        if (insertError.code === "23505") {
+          console.log(
+            `[webhook:evolution] inbound message já registrada (duplicata) owner=${ownerId}`,
+          );
+        } else {
+          console.error(
+            `[webhook:evolution] inbound insert falhou owner=${ownerId} code=${insertError.code ?? "?"} message=${insertError.message}`,
+          );
+        }
+      }
+
       if (inserted) {
+        console.log(
+          `[webhook:evolution] inbound message inserted id=${inserted.id} owner=${ownerId}`,
+        );
         await processInboundConfirmationReply(supabaseAdmin, {
           ownerId,
           fromPhoneRaw: msg.fromPhone,
@@ -199,15 +242,24 @@ export async function handleEvolutionWebhook(
       // de normalização) — só que aqui o telefone relevante é o destinatário.
       const candidates = await resolveClientCandidatesForPhone(supabaseAdmin, ownerId, msg.toPhone);
       const clientId = candidates.length === 1 ? candidates[0].id : null;
+      console.log(
+        `[webhook:evolution] outbound client_id resolution ${JSON.stringify({
+          candidateCount: candidates.length,
+          resolved: !!clientId,
+        })}`,
+      );
 
-      // .insert()+.select().single() sem checar `error`: se já existir uma
-      // linha com o mesmo (provider, provider_message_id) — seja de um evento
-      // duplicado (SEND_MESSAGE e MESSAGES_UPSERT da mesma mensagem) seja de
-      // um envio automático já registrado por WhatsAppMessageService — o
-      // índice único (provider, provider_message_id) faz a inserção falhar,
-      // `inserted` fica null/undefined e nada é duplicado. Mesmo padrão já
-      // usado pelo loop inbound acima.
-      const { data: inserted } = await supabaseAdmin
+      // Idempotência via índice único (provider, provider_message_id): se já
+      // existir uma linha com o mesmo id — seja de um evento duplicado
+      // (SEND_MESSAGE e MESSAGES_UPSERT da mesma mensagem) seja de um envio
+      // automático já registrado por WhatsAppMessageService — o insert falha
+      // com unique_violation (23505), tratado abaixo como duplicata legítima,
+      // nunca um erro. Qualquer OUTRO código de erro é gravação real que
+      // falhou e agora fica visível, em vez de silenciosamente virar
+      // "duplicata" (bug corrigido nesta revisão: antes, qualquer motivo de
+      // `inserted` vir vazio — inclusive um erro real — era rotulado como
+      // duplicata, escondendo falhas de verdade).
+      const { data: inserted, error: insertError } = await supabaseAdmin
         .from("whatsapp_messages")
         .insert({
           owner_id: ownerId,
@@ -224,9 +276,19 @@ export async function handleEvolutionWebhook(
         .select("id")
         .single();
 
-      if (!inserted) {
+      if (insertError) {
+        if (insertError.code === "23505") {
+          console.log(
+            `[webhook:evolution] outbound message já registrada (duplicata via provider_message_id) instance=${parsed.instanceName ?? "null"}`,
+          );
+        } else {
+          console.error(
+            `[webhook:evolution] outbound insert falhou instance=${parsed.instanceName ?? "null"} code=${insertError.code ?? "?"} message=${insertError.message}`,
+          );
+        }
+      } else if (inserted) {
         console.log(
-          `[webhook:evolution] outbound message já registrada (duplicata descartada) instance=${parsed.instanceName ?? "null"}`,
+          `[webhook:evolution] outbound message inserted id=${inserted.id} instance=${parsed.instanceName ?? "null"}`,
         );
       }
     }

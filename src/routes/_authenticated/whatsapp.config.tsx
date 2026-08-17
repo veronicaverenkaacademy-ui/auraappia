@@ -1,16 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import {
-  whatsappStats,
-  aiCapabilities,
-  currency,
-} from "@/lib/whatsapp";
+import { aiCapabilities } from "@/lib/whatsapp";
 import { WhatsAppConnectionCard } from "@/components/whatsapp-connection-card";
-import {
-  Sparkles, Bot,
-  MessageSquare, TrendingUp, Clock, Wallet, ArrowUpRight,
-  type LucideIcon,
-} from "lucide-react";
+import { Sparkles, ArrowUpRight } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
@@ -20,7 +12,7 @@ export const Route = createFileRoute("/_authenticated/whatsapp/config")({
 
 function WhatsAppConfig() {
   const [caps, setCaps] = useState(() =>
-    Object.fromEntries(aiCapabilities.map((c) => [c.id, c.active]))
+    Object.fromEntries(aiCapabilities.map((c) => [c.id, c.active])),
   );
   const [tone, setTone] = useState<"calorosa" | "profissional" | "descontraida">("calorosa");
   const [confidence, setConfidence] = useState(75);
@@ -38,17 +30,6 @@ function WhatsAppConfig() {
 
       <WhatsAppConnectionCard />
 
-      {/* Dashboard */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold tracking-tight">Desempenho deste mês</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <DashCard icon={MessageSquare} label="Mensagens enviadas" value={whatsappStats.sentMonth.toLocaleString("pt-BR")} sub={`${whatsappStats.deliveryRate}% entregues · ${whatsappStats.readRate}% lidas`} />
-          <DashCard icon={Clock} label="Tempo médio resposta" value={`${whatsappStats.avgResponseSec}s`} sub="via Aura IA" />
-          <DashCard icon={TrendingUp} label="Agendamentos via IA" value={String(whatsappStats.aiBookings)} sub={`${whatsappStats.aiBookingsShare}% do total`} tone="positive" />
-          <DashCard icon={Wallet} label="Receita gerada" value={currency(whatsappStats.attributedRevenue)} sub={`Transferências: ${whatsappStats.handoverRate}%`} tone="positive" />
-        </div>
-      </section>
-
       {/* AI capabilities */}
       <section className="rounded-3xl border border-border/60 bg-card p-6 md:p-7">
         <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -57,20 +38,24 @@ function WhatsAppConfig() {
               <Sparkles className="w-3 h-3" /> Recepcionista Inteligente
             </div>
             <h2 className="mt-2 text-xl font-display font-medium tracking-tight">
-              O que a Aura pode fazer sozinha
+              O que a Aura vai poder fazer sozinha
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Ligue e desligue capacidades. Ações críticas sempre validam regras de negócio.
+              Configure as capacidades desde já — a execução automática ainda está em
+              desenvolvimento e será ativada quando estiver pronta.
             </p>
           </div>
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300">
-            <Bot className="w-3 h-3" /> Aura IA ativa
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
+            Em configuração
           </span>
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           {aiCapabilities.map((c) => (
-            <div key={c.id} className="rounded-2xl border border-border/60 p-4 flex items-start justify-between gap-3">
+            <div
+              key={c.id}
+              className="rounded-2xl border border-border/60 p-4 flex items-start justify-between gap-3"
+            >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{c.title}</span>
@@ -102,7 +87,7 @@ function WhatsAppConfig() {
                     "h-8 px-3 rounded-full text-xs font-medium border transition capitalize",
                     tone === t
                       ? "bg-foreground text-background border-foreground"
-                      : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
+                      : "bg-card border-border/60 text-muted-foreground hover:text-foreground",
                   )}
                 >
                   {t === "descontraida" ? "descontraída" : t}
@@ -156,34 +141,6 @@ function WhatsAppConfig() {
           </button>
         </div>
       </section>
-    </div>
-  );
-}
-
-function DashCard({
-  icon: Icon, label, value, sub, tone,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
-  sub: string;
-  tone?: "positive";
-}) {
-  return (
-    <div className="rounded-2xl bg-card border border-border/60 p-4">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Icon className="w-3.5 h-3.5" />
-        <span className="text-[11px] uppercase tracking-wider">{label}</span>
-      </div>
-      <div
-        className={cn(
-          "mt-2 text-2xl font-medium tracking-tight",
-          tone === "positive" && "text-emerald-600 dark:text-emerald-400"
-        )}
-      >
-        {value}
-      </div>
-      <div className="mt-1 text-xs text-muted-foreground">{sub}</div>
     </div>
   );
 }
