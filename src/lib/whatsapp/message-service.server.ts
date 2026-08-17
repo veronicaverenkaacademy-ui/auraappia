@@ -13,19 +13,25 @@ import type { ProviderInstanceRef, WhatsAppProvider } from "./provider";
 
 export type WhatsAppMessageType =
   | "appointment_confirmation"
+  | "appointment_created"
   | "appointment_reminder_24h"
   | "appointment_reminder_2h"
   | "confirmation_reply"
   | "test";
 
 // Tipos que fazem uma pergunta à cliente e por isso abrem uma thread de
-// confirmação (ver confirmation-threads.server.ts) — "confirmation_reply" é
-// a RESPOSTA a uma pergunta, não uma pergunta nova, então nunca abre thread;
-// "test" nunca tem agendamento associado.
+// confirmação (ver confirmation-threads.server.ts) — só o pedido real de
+// confirmação (24h antes). "appointment_created" é só aviso de que o horário
+// foi agendado, nunca espera resposta; "appointment_reminder_2h" é só
+// lembrete, não reabre a pergunta de confirmação; "confirmation_reply" é a
+// RESPOSTA a uma pergunta, não uma pergunta nova; "test" nunca tem
+// agendamento associado. "appointment_confirmation" continua aqui só por
+// segurança para qualquer job desse tipo ainda pendente de antes desta
+// mudança — nenhum job novo desse tipo é mais criado (ver migration
+// 20260817160000).
 const THREAD_OPENING_TYPES: ReadonlySet<WhatsAppMessageType> = new Set([
   "appointment_confirmation",
   "appointment_reminder_24h",
-  "appointment_reminder_2h",
 ]);
 
 export type SendMessageInput = {
