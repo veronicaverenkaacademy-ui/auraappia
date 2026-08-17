@@ -8,6 +8,7 @@
 // E phone_number preenchido — ver reconcile-connection.server.ts).
 import { isValidPhoneBR, normalizePhoneBR } from "@/lib/phone";
 import { evolutionWhatsAppProvider } from "./providers/evolution.server";
+import { metaCloudApiProvider } from "./providers/meta-cloud-api.server";
 import { openConfirmationThread } from "./confirmation-threads.server";
 import type { ProviderInstanceRef, WhatsAppProvider } from "./provider";
 
@@ -50,6 +51,7 @@ export type SendMessageResult =
 
 const PROVIDERS: Record<string, WhatsAppProvider> = {
   evolution: evolutionWhatsAppProvider,
+  meta_cloud_api: metaCloudApiProvider,
 };
 
 async function sendMessage(input: SendMessageInput): Promise<SendMessageResult> {

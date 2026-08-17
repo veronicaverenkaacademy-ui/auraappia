@@ -4,6 +4,7 @@ import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 import { handle360dialogWebhook } from "./lib/communication/webhook-360dialog.server";
 import { handleEvolutionWebhook } from "./lib/whatsapp/webhook-evolution.server";
+import { handleMetaWhatsappWebhook } from "./lib/whatsapp/webhook-meta.server";
 import { handleWhatsappCronRequest } from "./lib/whatsapp/cron-endpoint.server";
 
 type ServerEntry = {
@@ -61,6 +62,9 @@ export default {
       if (url.pathname.startsWith("/webhooks/evolution/")) {
         const secretFromPath = url.pathname.slice("/webhooks/evolution/".length);
         return await handleEvolutionWebhook(request, secretFromPath);
+      }
+      if (url.pathname === "/webhooks/meta-whatsapp") {
+        return await handleMetaWhatsappWebhook(request);
       }
       if (url.pathname === "/api/cron/whatsapp-reminders") {
         return await handleWhatsappCronRequest(request);
