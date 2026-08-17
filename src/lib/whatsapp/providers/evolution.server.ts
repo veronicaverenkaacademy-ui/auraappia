@@ -346,23 +346,60 @@ async function sendText(
 }
 
 /**
- * Formato de webhook (evento "CONNECTION_UPDATE" e "MESSAGES_UPSERT" da v2) —
- * a Evolution inclui `instance` (nome) e `event`/`data` no corpo top-level.
- * `data` de CONNECTION_UPDATE não traz o telefone (confirmado no código-fonte
- * real: só `state`) — por isso phoneNumber aqui é sempre null. A identidade
- * real só é confirmada via getConnectedIdentity (fetchInstances), nunca
- * através do webhook — ver reconcile-connection.server.ts.
+ * Formato de webhook (eventos "CONNECTION_UPDATE", "MESSAGES_UPSERT" e
+ * "SEND_MESSAGE" da v2) — a Evolution inclui `instance` (nome) e `event`/`data`
+ * no corpo top-level. `data` de CONNECTION_UPDATE não traz o telefone
+ * (confirmado no código-fonte real: só `state`) — por isso phoneNumber aqui é
+ * sempre null. A identidade real só é confirmada via getConnectedIdentity
+ * (fetchInstances), nunca através do webhook — ver reconcile-connection.server.ts.
+ *
+ * MESSAGES_UPSERT cobre tanto inbound (fromMe ausente/false) quanto outbound
+ * (fromMe=true — mensagem enviada pelo próprio número conectado, inclusive
+ * manualmente pelo app). SEND_MESSAGE é o evento dedicado da Evolution pra
+ * envios pela instância; seu formato de `data` nunca foi confirmado contra
+ * uma instância real — ver extractMessageEnvelope.
  */
+type WebhookEventData = {
+  state?: string;
+  key?: { fromMe?: boolean; remoteJid?: string; id?: string };
+  message?: { conversation?: string };
+  messageTimestamp?: number;
+};
+
+/**
+ * Extrai o "envelope" comum de uma mensagem (JID da outra ponta da conversa,
+ * conteúdo, id, horário) — mesmos campos usados pelo MESSAGES_UPSERT inbound
+ * já existente. Reaproveitado pelas duas leituras outbound abaixo porque, em
+ * Baileys, `key.remoteJid` é sempre o JID da CONVERSA — quando `fromMe` é
+ * true, é o destinatário; quando é false/ausente, é o remetente (mesmo campo,
+ * significado depende só de `fromMe`). Para SEND_MESSAGE isso é uma hipótese
+ * defensiva (mesmo formato de `data` do MESSAGES_UPSERT), não confirmada
+ * contra uma instância real — por isso nunca é a única forma de saber se um
+ * evento outbound foi reconhecido (ver unrecognizedOutboundEvents).
+ */
+function extractMessageEnvelope(data: WebhookEventData): {
+  jidPhone: string | null;
+  content: string | null;
+  providerMessageId: string | null;
+  occurredAt: string;
+} {
+  const jid = data.key?.remoteJid ?? "";
+  const jidPhone = jid.split("@")[0] || null;
+  return {
+    jidPhone,
+    content: data.message?.conversation ?? null,
+    providerMessageId: data.key?.id ?? null,
+    occurredAt: data.messageTimestamp
+      ? new Date(data.messageTimestamp * 1000).toISOString()
+      : new Date().toISOString(),
+  };
+}
+
 async function handleWebhook(payload: unknown): Promise<WebhookParseResult> {
   const body = payload as {
     instance?: string;
     event?: string;
-    data?: {
-      state?: string;
-      key?: { fromMe?: boolean; remoteJid?: string; id?: string };
-      message?: { conversation?: string };
-      messageTimestamp?: number;
-    };
+    data?: WebhookEventData;
   };
 
   const instanceName = body.instance ?? null;
@@ -373,6 +410,8 @@ async function handleWebhook(payload: unknown): Promise<WebhookParseResult> {
     instanceName,
     connectionUpdate: null,
     incomingMessages: [],
+    outgoingMessages: [],
+    unrecognizedOutboundEvents: [],
   };
 
   if (event === "CONNECTION_UPDATE" || event === "connection.update") {
@@ -392,6 +431,53 @@ async function handleWebhook(payload: unknown): Promise<WebhookParseResult> {
         occurredAt: data.messageTimestamp
           ? new Date(data.messageTimestamp * 1000).toISOString()
           : new Date().toISOString(),
+      });
+    }
+  }
+
+  // Mensagem enviada pelo próprio número conectado — Baileys inclui essas no
+  // mesmo stream de MESSAGES_UPSERT, só com fromMe=true (JID da conversa
+  // continua em key.remoteJid, mas agora representa o DESTINATÁRIO).
+  if ((event === "MESSAGES_UPSERT" || event === "messages.upsert") && data.key?.fromMe) {
+    const envelope = extractMessageEnvelope(data);
+    if (envelope.jidPhone) {
+      result.outgoingMessages.push({
+        toPhone: envelope.jidPhone,
+        content: envelope.content,
+        providerMessageId: envelope.providerMessageId,
+        occurredAt: envelope.occurredAt,
+        sourceEvent: event,
+      });
+    } else {
+      result.unrecognizedOutboundEvents.push({
+        event,
+        reason: "MESSAGES_UPSERT fromMe=true sem key.remoteJid identificável",
+        payloadShape: Object.keys(data),
+      });
+    }
+  }
+
+  // SEND_MESSAGE — evento dedicado da Evolution para envios pela instância
+  // (assinado na criação da conexão, ver createConnection). Formato do `data`
+  // nunca foi confirmado contra uma instância real; tentamos o mesmo envelope
+  // do MESSAGES_UPSERT como hipótese defensiva, mas sempre registrando quando
+  // isso não bate, em vez de presumir sucesso.
+  if (event === "SEND_MESSAGE") {
+    const envelope = extractMessageEnvelope(data);
+    if (envelope.jidPhone) {
+      result.outgoingMessages.push({
+        toPhone: envelope.jidPhone,
+        content: envelope.content,
+        providerMessageId: envelope.providerMessageId,
+        occurredAt: envelope.occurredAt,
+        sourceEvent: event,
+      });
+    } else {
+      result.unrecognizedOutboundEvents.push({
+        event,
+        reason:
+          "SEND_MESSAGE sem key.remoteJid identificável no formato esperado (payload real ainda não confirmado)",
+        payloadShape: Object.keys(data),
       });
     }
   }

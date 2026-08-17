@@ -52,6 +52,30 @@ export type WebhookParseResult = {
     providerMessageId: string | null;
     occurredAt: string;
   }>;
+  /**
+   * Mensagens enviadas pelo próprio número conectado (fromMe) — capturadas
+   * tanto no app do WhatsApp quanto por qualquer outro caminho fora do
+   * WhatsAppMessageService. toPhone é o destinatário, extraído do payload;
+   * nunca inclui mensagem cujo destinatário não pôde ser identificado (ver
+   * unrecognizedOutboundEvents nesse caso).
+   */
+  outgoingMessages: Array<{
+    toPhone: string;
+    content: string | null;
+    providerMessageId: string | null;
+    occurredAt: string;
+    /** Evento bruto que originou esta mensagem ("MESSAGES_UPSERT" ou "SEND_MESSAGE") — só para diagnóstico. */
+    sourceEvent: string;
+  }>;
+  /**
+   * Eventos que o parser reconheceu como relacionados a envio (SEND_MESSAGE,
+   * ou MESSAGES_UPSERT com fromMe=true) mas cujo payload não trouxe um
+   * destinatário identificável no formato esperado — nunca vira mensagem
+   * inventada; só um log de diagnóstico pra quem investigar depois.
+   * payloadShape = só as chaves de nível superior de `data` (nunca conteúdo
+   * de mensagem/telefone), pra ajustar o parser sem expor dado sensível.
+   */
+  unrecognizedOutboundEvents: Array<{ event: string; reason: string; payloadShape: string[] }>;
 };
 
 /**
