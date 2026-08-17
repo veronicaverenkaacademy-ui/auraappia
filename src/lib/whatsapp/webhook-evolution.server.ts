@@ -14,6 +14,16 @@ import {
   resolveClientCandidatesForPhone,
 } from "./confirmation-inbound.server";
 
+// Diagnóstico de mensagens outbound capturadas via webhook — número mascarado
+// (só quantidade de dígitos e os últimos 4), mesmo padrão de
+// reconcile-connection.server.ts. Nunca loga o telefone completo nem o
+// conteúdo da mensagem.
+function maskPhone(phone: string | null | undefined): string {
+  if (!phone) return "null";
+  const digits = phone.replace(/\D/g, "");
+  return `***${digits.slice(-4)} length=${digits.length}`;
+}
+
 export async function handleEvolutionWebhook(
   request: Request,
   secretFromPath: string,
@@ -153,6 +163,71 @@ export async function handleEvolutionWebhook(
           content: msg.content,
           inboundMessageId: inserted.id,
         });
+      }
+    }
+
+    for (const unrecognized of parsed.unrecognizedOutboundEvents) {
+      // Nunca cria mensagem a partir de um evento que não deu pra interpretar
+      // com segurança — só diagnóstico. payloadShape (chaves de `data`, não o
+      // conteúdo) ajuda a ajustar o parser depois, sem logar mensagem/telefone.
+      console.warn(
+        `[webhook:evolution] outbound message could not be parsed ${JSON.stringify({
+          event: unrecognized.event,
+          instanceName: parsed.instanceName,
+          reason: unrecognized.reason,
+          payloadShape: unrecognized.payloadShape,
+        })}`,
+      );
+    }
+
+    for (const msg of parsed.outgoingMessages) {
+      // fromMe é sempre true aqui por definição (é o que torna a mensagem
+      // outbound) — não logamos o remetente separado: é sempre o próprio
+      // número conectado, já disponível em whatsapp_instances.phone_number.
+      console.log(
+        `[webhook:evolution] outbound message detected ${JSON.stringify({
+          event: msg.sourceEvent,
+          messageId: msg.providerMessageId,
+          instanceName: parsed.instanceName,
+          fromMe: true,
+          recipientPhone: maskPhone(msg.toPhone),
+          messageType: "text",
+        })}`,
+      );
+
+      // Mesma resolução de cliente do inbound (nunca uma segunda implementação
+      // de normalização) — só que aqui o telefone relevante é o destinatário.
+      const candidates = await resolveClientCandidatesForPhone(supabaseAdmin, ownerId, msg.toPhone);
+      const clientId = candidates.length === 1 ? candidates[0].id : null;
+
+      // .insert()+.select().single() sem checar `error`: se já existir uma
+      // linha com o mesmo (provider, provider_message_id) — seja de um evento
+      // duplicado (SEND_MESSAGE e MESSAGES_UPSERT da mesma mensagem) seja de
+      // um envio automático já registrado por WhatsAppMessageService — o
+      // índice único (provider, provider_message_id) faz a inserção falhar,
+      // `inserted` fica null/undefined e nada é duplicado. Mesmo padrão já
+      // usado pelo loop inbound acima.
+      const { data: inserted } = await supabaseAdmin
+        .from("whatsapp_messages")
+        .insert({
+          owner_id: ownerId,
+          client_id: clientId,
+          direction: "outbound",
+          message_type: "text",
+          recipient_phone: msg.toPhone,
+          content: msg.content,
+          provider: "evolution",
+          provider_message_id: msg.providerMessageId,
+          status: "sent",
+          sent_at: msg.occurredAt,
+        })
+        .select("id")
+        .single();
+
+      if (!inserted) {
+        console.log(
+          `[webhook:evolution] outbound message já registrada (duplicata descartada) instance=${parsed.instanceName ?? "null"}`,
+        );
       }
     }
   } catch (e) {
