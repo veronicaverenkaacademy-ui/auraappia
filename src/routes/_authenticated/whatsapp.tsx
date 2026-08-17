@@ -18,9 +18,8 @@ export const Route = createFileRoute("/_authenticated/whatsapp")({
 
 function WhatsAppLayout() {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
-  const isTemplates = pathname.startsWith("/whatsapp/templates");
   const isConfig = pathname.startsWith("/whatsapp/config");
-  const isConversation = /^\/whatsapp\/[^/]+$/.test(pathname) && !isTemplates && !isConfig;
+  const isConversation = /^\/whatsapp\/[^/]+$/.test(pathname) && !isConfig;
   const isInbox = pathname === "/whatsapp" || isConversation;
 
   return (
@@ -29,9 +28,6 @@ function WhatsAppLayout() {
         <nav className="flex gap-1 -mb-px overflow-x-auto no-scrollbar">
           <Tab to="/whatsapp" active={isInbox}>
             Conversas
-          </Tab>
-          <Tab to="/whatsapp/templates" active={isTemplates}>
-            Templates
           </Tab>
           <Tab to="/whatsapp/config" active={isConfig}>
             Conexão &amp; IA
@@ -43,15 +39,7 @@ function WhatsAppLayout() {
   );
 }
 
-function Tab({
-  to,
-  active,
-  children,
-}: {
-  to: string;
-  active: boolean;
-  children: React.ReactNode;
-}) {
+function Tab({ to, active, children }: { to: string; active: boolean; children: React.ReactNode }) {
   return (
     <Link
       to={to}
