@@ -3,18 +3,20 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  conversations,
-  HANDLER_LABEL,
-  TAG_LABEL,
-  whatsappStats,
-  type ConversationHandler,
-  type Conversation,
-} from "@/lib/whatsapp";
+  listConversations,
+  type ConversationSummary,
+} from "@/lib/whatsapp/conversations.functions";
 import { getWhatsAppStatus } from "@/lib/whatsapp/whatsapp.functions";
 import type { WhatsAppConnectionStatus } from "@/lib/whatsapp/provider";
 import {
-  Search, MessageSquare, Bot, User2, CheckCheck, Circle, Sparkles,
-  Signal, ChevronRight, Plus, AlertTriangle, Clock3, CheckCircle2,
+  Search,
+  MessageSquare,
+  Sparkles,
+  Signal,
+  ChevronRight,
+  AlertTriangle,
+  Clock3,
+  CheckCircle2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -47,7 +49,24 @@ export const Route = createFileRoute("/_authenticated/whatsapp/")({
   component: WhatsAppInbox,
 });
 
-type Filter = "all" | ConversationHandler;
+function initialsFor(name: string | null, phone: string): string {
+  if (name) {
+    const parts = name.trim().split(/\s+/);
+    const first = parts[0]?.[0] ?? "";
+    const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+    return (first + last).toUpperCase();
+  }
+  const digits = phone.replace(/\D/g, "");
+  return digits.slice(-2) || "?";
+}
+
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const isToday = d.toDateString() === today.toDateString();
+  if (isToday) return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
 
 function WhatsAppInbox() {
   const fetchStatus = useServerFn(getWhatsAppStatus);
@@ -58,42 +77,37 @@ function WhatsAppInbox() {
   const connectionStatus = status?.status ?? "pending";
   const ConnectionIcon = CONNECTION_ICON[connectionStatus];
 
-  const [filter, setFilter] = useState<Filter>("all");
+  const fetchConversations = useServerFn(listConversations);
+  const { data: conversations, isLoading } = useQuery({
+    queryKey: ["whatsapp-conversations"],
+    queryFn: () => fetchConversations(),
+  });
+
   const [q, setQ] = useState("");
 
-  const counts = useMemo(() => {
-    const c = { all: conversations.length, ai: 0, human: 0, done: 0 };
-    for (const conv of conversations) c[conv.handler]++;
-    return c;
-  }, []);
+  const list = useMemo(() => conversations ?? [], [conversations]);
 
   const filtered = useMemo(() => {
-    return conversations.filter((c) => {
-      if (filter !== "all" && c.handler !== filter) return false;
-      if (q && !c.clientName.toLowerCase().includes(q.toLowerCase())) return false;
-      return true;
+    if (!q.trim()) return list;
+    const needle = q.toLowerCase();
+    return list.filter((c) => {
+      const name = (c.clientName ?? "").toLowerCase();
+      const phone = c.phone.toLowerCase();
+      return name.includes(needle) || phone.includes(needle);
     });
-  }, [filter, q]);
+  }, [list, q]);
 
   return (
     <div className="px-4 md:px-8 py-6 md:py-10 max-w-5xl mx-auto space-y-6">
       <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight">
-              Central de conversas
-            </h1>
-            <span className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-dashed border-amber-300 dark:border-amber-800">
-              Dados de exemplo
-            </span>
-          </div>
+          <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight">
+            Central de conversas
+          </h1>
           <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
             <ConnectionIcon className={cn("w-3.5 h-3.5", CONNECTION_TONE[connectionStatus])} />
             {CONNECTION_LABEL[connectionStatus]}
             {status?.phoneNumber ? ` · ${status.phoneNumber}` : ""}
-          </p>
-          <p className="text-xs text-muted-foreground/80 mt-1">
-            As conversas abaixo são exemplos ilustrativos — ainda não refletem mensagens reais de clientes.
           </p>
         </div>
         <Link
@@ -104,178 +118,91 @@ function WhatsAppInbox() {
         </Link>
       </header>
 
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <MiniStat label="Abertas" value={String(whatsappStats.openConversations)} />
-        <MiniStat label="IA respondendo" value={String(counts.ai)} tone="ai" />
-        <MiniStat label="Preciso de mim" value={String(counts.human)} tone="human" />
-        <MiniStat
-          label="Tempo médio resposta"
-          value={`${whatsappStats.avgResponseSec}s`}
-          tone="positive"
-        />
-      </section>
-
       <section className="space-y-3">
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar conversa ou cliente"
+            placeholder="Buscar por nome ou telefone"
             className="pl-9 h-11 rounded-xl bg-secondary/40 border-border/50"
           />
         </div>
-        <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0">
-          <Chip active={filter === "all"} onClick={() => setFilter("all")}>
-            Todas · {counts.all}
-          </Chip>
-          <Chip active={filter === "ai"} onClick={() => setFilter("ai")}>
-            IA respondendo · {counts.ai}
-          </Chip>
-          <Chip active={filter === "human"} onClick={() => setFilter("human")}>
-            Preciso de mim · {counts.human}
-          </Chip>
-          <Chip active={filter === "done"} onClick={() => setFilter("done")}>
-            Resolvidas · {counts.done}
-          </Chip>
-        </div>
+        <div className="text-xs text-muted-foreground px-1">Todas · {list.length}</div>
       </section>
 
       <section className="space-y-2">
-        {filtered.map((c) => (
-          <ConversationRow key={c.id} c={c} />
-        ))}
-        {filtered.length === 0 && (
+        {isLoading && (
           <div className="rounded-2xl border border-dashed border-border/60 p-10 text-center text-sm text-muted-foreground">
-            Nenhuma conversa encontrada.
+            Carregando conversas…
+          </div>
+        )}
+
+        {!isLoading && list.length === 0 && <EmptyState connectionStatus={connectionStatus} />}
+
+        {!isLoading &&
+          list.length > 0 &&
+          filtered.map((c) => <ConversationRow key={c.key} c={c} />)}
+
+        {!isLoading && list.length > 0 && filtered.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-border/60 p-10 text-center text-sm text-muted-foreground">
+            Nenhuma conversa encontrada para "{q}".
           </div>
         )}
       </section>
-
-      <button
-        aria-label="Nova conversa"
-        className="md:hidden fixed right-4 bottom-24 w-14 h-14 rounded-full bg-foreground text-background shadow-xl flex items-center justify-center"
-      >
-        <Plus className="w-6 h-6" />
-      </button>
     </div>
   );
 }
 
-function MiniStat({
-  label, value, tone,
-}: {
-  label: string;
-  value: string;
-  tone?: "positive" | "ai" | "human";
-}) {
-  const color =
-    tone === "positive"
-      ? "text-emerald-600 dark:text-emerald-400"
-      : tone === "ai"
-      ? "text-sky-600 dark:text-sky-400"
-      : tone === "human"
-      ? "text-amber-600 dark:text-amber-400"
-      : "";
+function EmptyState({ connectionStatus }: { connectionStatus: WhatsAppConnectionStatus }) {
+  if (connectionStatus === "connected") {
+    return (
+      <div className="rounded-2xl border border-dashed border-border/60 p-10 text-center space-y-2">
+        <MessageSquare className="w-6 h-6 mx-auto text-muted-foreground" />
+        <p className="text-sm font-medium">Seu WhatsApp está conectado.</p>
+        <p className="text-xs text-muted-foreground">
+          Quando uma cliente enviar uma mensagem, ela aparecerá aqui.
+        </p>
+      </div>
+    );
+  }
   return (
-    <div className="rounded-2xl bg-card border border-border/60 p-4">
-      <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className={cn("mt-2 text-2xl font-medium tracking-tight", color)}>{value}</div>
+    <div className="rounded-2xl border border-dashed border-border/60 p-10 text-center space-y-2">
+      <AlertTriangle className="w-6 h-6 mx-auto text-muted-foreground" />
+      <p className="text-sm font-medium">WhatsApp não conectado.</p>
+      <p className="text-xs text-muted-foreground">
+        Conecte seu WhatsApp para começar a receber conversas aqui.
+      </p>
+      <Link to="/whatsapp/config" className="inline-block text-xs font-medium hover:underline mt-1">
+        Ir para configuração
+      </Link>
     </div>
   );
 }
 
-function Chip({
-  active, onClick, children,
-}: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "shrink-0 h-9 px-4 rounded-full text-xs font-medium border transition",
-        active
-          ? "bg-foreground text-background border-foreground"
-          : "bg-card border-border/60 text-muted-foreground hover:text-foreground"
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function ConversationRow({ c }: { c: Conversation }) {
-  const HandlerIcon =
-    c.handler === "ai" ? Bot : c.handler === "human" ? User2 : CheckCheck;
-  const handlerColor =
-    c.handler === "ai"
-      ? "bg-sky-500"
-      : c.handler === "human"
-      ? "bg-amber-500"
-      : "bg-emerald-500";
-
+function ConversationRow({ c }: { c: ConversationSummary }) {
   return (
     <Link
       to="/whatsapp/$id"
-      params={{ id: c.id }}
+      params={{ id: c.key }}
       className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-3 hover:border-border transition"
     >
-      <div className="relative shrink-0">
-        <div className="w-11 h-11 rounded-xl bg-secondary flex items-center justify-center text-sm font-semibold">
-          {c.initials}
-        </div>
-        <span
-          className={cn(
-            "absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ring-2 ring-card flex items-center justify-center",
-            handlerColor
-          )}
-        >
-          <HandlerIcon className="w-2 h-2 text-white" strokeWidth={3} />
-        </span>
+      <div className="w-11 h-11 rounded-xl bg-secondary flex items-center justify-center text-sm font-semibold shrink-0">
+        {initialsFor(c.clientName, c.phone)}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium truncate">{c.clientName}</span>
-          {c.tag && (
-            <span
-              className={cn(
-                "text-[10px] font-semibold px-1.5 py-0.5 rounded-full",
-                c.tag === "vip" && "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-                c.tag === "nova" && "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-                c.tag === "inativa" && "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300",
-                c.tag === "recorrente" && "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
-              )}
-            >
-              {TAG_LABEL[c.tag]}
-            </span>
-          )}
+        <div className="text-sm font-medium truncate">
+          {c.clientName ?? "Contato não identificado"}
         </div>
         <div className="text-xs text-muted-foreground truncate mt-0.5">
-          {c.lastMessagePreview}
+          {c.lastMessageDirection === "out" ? "Você: " : ""}
+          {c.lastMessagePreview || "(sem conteúdo)"}
         </div>
       </div>
       <div className="flex flex-col items-end gap-1 shrink-0">
-        <span className="text-[10px] text-muted-foreground">{c.time}</span>
-        {c.unread > 0 ? (
-          <span className="text-[10px] font-semibold px-1.5 h-4 min-w-4 rounded-full bg-emerald-500 text-white inline-flex items-center justify-center">
-            {c.unread}
-          </span>
-        ) : (
-          <span
-            className={cn(
-              "text-[9px] font-semibold px-1.5 py-0.5 rounded-full",
-              c.handler === "ai" && "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
-              c.handler === "human" && "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-              c.handler === "done" && "bg-secondary text-muted-foreground"
-            )}
-          >
-            {HANDLER_LABEL[c.handler]}
-          </span>
-        )}
+        <span className="text-[10px] text-muted-foreground">{formatTime(c.lastMessageAt)}</span>
       </div>
       <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
     </Link>
   );
 }
-
-// Suppress unused imports for icons kept for future variants
-void [MessageSquare, Circle];
