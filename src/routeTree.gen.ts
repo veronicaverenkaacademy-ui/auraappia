@@ -17,6 +17,7 @@ import { Route as PoliticaDePrivacidadeRouteImport } from './routes/politica-de-
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as TermoConsentimentoRouteImport } from './routes/termo-consentimento'
 import { Route as TermosDeUsoRouteImport } from './routes/termos-de-uso'
+import { Route as AuthenticatedAdminTesteMetaRouteImport } from './routes/_authenticated/admin-teste-meta'
 import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
 import { Route as AuthenticatedAssinaturaRouteImport } from './routes/_authenticated/assinatura'
 import { Route as AuthenticatedAuraIaRouteImport } from './routes/_authenticated/aura-ia'
@@ -112,6 +113,12 @@ const TermosDeUsoRoute = TermosDeUsoRouteImport.update({
   path: '/termos-de-uso',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedAdminTesteMetaRoute =
+  AuthenticatedAdminTesteMetaRouteImport.update({
+    id: '/admin-teste-meta',
+    path: '/admin-teste-meta',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAgendaRoute = AuthenticatedAgendaRouteImport.update({
   id: '/agenda',
   path: '/agenda',
@@ -420,6 +427,7 @@ export interface FileRoutesByFullPath {
   '/portal': typeof PortalRoute
   '/termo-consentimento': typeof TermoConsentimentoRoute
   '/termos-de-uso': typeof TermosDeUsoRoute
+  '/admin-teste-meta': typeof AuthenticatedAdminTesteMetaRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/assinatura': typeof AuthenticatedAssinaturaRoute
   '/aura-ia': typeof AuthenticatedAuraIaRouteWithChildren
@@ -484,6 +492,7 @@ export interface FileRoutesByTo {
   '/portal': typeof PortalRoute
   '/termo-consentimento': typeof TermoConsentimentoRoute
   '/termos-de-uso': typeof TermosDeUsoRoute
+  '/admin-teste-meta': typeof AuthenticatedAdminTesteMetaRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/assinatura': typeof AuthenticatedAssinaturaRoute
   '/dados': typeof AuthenticatedDadosRoute
@@ -541,6 +550,7 @@ export interface FileRoutesById {
   '/portal': typeof PortalRoute
   '/termo-consentimento': typeof TermoConsentimentoRoute
   '/termos-de-uso': typeof TermosDeUsoRoute
+  '/_authenticated/admin-teste-meta': typeof AuthenticatedAdminTesteMetaRoute
   '/_authenticated/agenda': typeof AuthenticatedAgendaRoute
   '/_authenticated/assinatura': typeof AuthenticatedAssinaturaRoute
   '/_authenticated/aura-ia': typeof AuthenticatedAuraIaRouteWithChildren
@@ -607,6 +617,7 @@ export interface FileRouteTypes {
     | '/portal'
     | '/termo-consentimento'
     | '/termos-de-uso'
+    | '/admin-teste-meta'
     | '/agenda'
     | '/assinatura'
     | '/aura-ia'
@@ -671,6 +682,7 @@ export interface FileRouteTypes {
     | '/portal'
     | '/termo-consentimento'
     | '/termos-de-uso'
+    | '/admin-teste-meta'
     | '/agenda'
     | '/assinatura'
     | '/dados'
@@ -727,6 +739,7 @@ export interface FileRouteTypes {
     | '/portal'
     | '/termo-consentimento'
     | '/termos-de-uso'
+    | '/_authenticated/admin-teste-meta'
     | '/_authenticated/agenda'
     | '/_authenticated/assinatura'
     | '/_authenticated/aura-ia'
@@ -853,6 +866,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/termos-de-uso'
       preLoaderRoute: typeof TermosDeUsoRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/admin-teste-meta': {
+      id: '/_authenticated/admin-teste-meta'
+      path: '/admin-teste-meta'
+      fullPath: '/admin-teste-meta'
+      preLoaderRoute: typeof AuthenticatedAdminTesteMetaRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/agenda': {
       id: '/_authenticated/agenda'
@@ -1396,6 +1416,7 @@ const AuthenticatedWhatsappRouteWithChildren =
   )
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAdminTesteMetaRoute: typeof AuthenticatedAdminTesteMetaRoute
   AuthenticatedAgendaRoute: typeof AuthenticatedAgendaRoute
   AuthenticatedAssinaturaRoute: typeof AuthenticatedAssinaturaRoute
   AuthenticatedAuraIaRoute: typeof AuthenticatedAuraIaRouteWithChildren
@@ -1424,6 +1445,7 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAdminTesteMetaRoute: AuthenticatedAdminTesteMetaRoute,
   AuthenticatedAgendaRoute: AuthenticatedAgendaRoute,
   AuthenticatedAssinaturaRoute: AuthenticatedAssinaturaRoute,
   AuthenticatedAuraIaRoute: AuthenticatedAuraIaRouteWithChildren,
