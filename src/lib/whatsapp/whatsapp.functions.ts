@@ -5,8 +5,11 @@
 // requireSupabaseAuth, não é dado que o chamador possa forjar).
 //
 // createWhatsAppConnection/getQRCode continuam 100% Evolution (pareamento por
-// QR Code não existe em nenhum outro provider ainda) — mas getWhatsAppStatus
-// e disconnectWhatsApp já são provider-aware (resolvem por
+// QR Code não existe em nenhum outro provider ainda) — não são mais chamadas
+// pela experiência pública de conexão (WhatsAppConnectionCard), só existem
+// no código pra contas Evolution antigas que já passaram por esse fluxo
+// continuarem funcionando por fora (suporte/admin), nunca apagadas.
+// getWhatsAppStatus e disconnectWhatsApp já são provider-aware (resolvem por
 // whatsapp_instances.provider via getProvider(), nunca hardcoded), porque
 // consultar status e desconectar são operações que fazem sentido pra
 // qualquer provider, ao contrário de QR Code.
@@ -15,6 +18,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { isValidPhoneBR, normalizePhoneBR } from "@/lib/phone";
 import { evolutionWhatsAppProvider } from "./providers/evolution.server";
+import { metaCloudApiProvider } from "./providers/meta-cloud-api.server";
 import { getProvider } from "./providers/registry";
 import { reconcileWhatsAppConnection } from "./reconcile-connection.server";
 import type { ProviderInstanceRef, WhatsAppConnectionStatus } from "./provider";
@@ -35,6 +39,8 @@ export type WhatsAppStatusResponse = {
   status: WhatsAppConnectionStatus;
   phoneNumber: string | null;
   lastError: string | null;
+  /** null = nenhuma conexão configurada ainda (nem Evolution nem Meta). */
+  provider: string | null;
 };
 
 export const getWhatsAppStatus = createServerFn({ method: "GET" })
@@ -43,19 +49,59 @@ export const getWhatsAppStatus = createServerFn({ method: "GET" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data } = await supabaseAdmin
       .from("whatsapp_instances")
-      .select("provider, status, phone_number, last_error")
+      .select(
+        "provider, status, phone_number, last_error, instance_name, instance_token, instance_id",
+      )
       .eq("owner_id", context.userId)
       .maybeSingle();
 
     if (!data) {
-      return { connected: false, status: "pending", phoneNumber: null, lastError: null };
+      return {
+        connected: false,
+        status: "pending",
+        phoneNumber: null,
+        lastError: null,
+        provider: null,
+      };
+    }
+
+    // Meta nunca fica em "connecting" (a conexão é confirmada de forma
+    // síncrona antes de gravar — ver whatsapp-meta-admin.functions.ts), e
+    // toda vez que a linha está marcada como conectada, revalida a
+    // identidade de verdade contra a Cloud API em vez de confiar cegamente
+    // na última gravação — mesmo princípio de "nunca confiar sem confirmar"
+    // que a Evolution já seguia (reconcileWhatsAppConnection), só que aqui a
+    // reconfirmação acontece a cada leitura de status (chamada leve, sem
+    // handshake), não só numa transição pontual.
+    if (data.provider === "meta_cloud_api" && data.status === "connected") {
+      const ref: ProviderInstanceRef = {
+        instanceName: data.instance_name,
+        instanceToken: data.instance_token,
+        instanceId: data.instance_id,
+      };
+      const identity = await metaCloudApiProvider.getConnectedIdentity(ref);
+      if (!identity.ok) {
+        return {
+          connected: false,
+          status: "error",
+          phoneNumber: null,
+          lastError: identity.error,
+          provider: data.provider,
+        };
+      }
+      return {
+        connected: true,
+        status: "connected",
+        phoneNumber: identity.phoneNumber ?? data.phone_number,
+        lastError: null,
+        provider: data.provider,
+      };
     }
 
     // "connecting" é um estado que só o fluxo de pareamento por QR da
     // Evolution produz — outros providers (ex: meta_cloud_api) nunca deixam
-    // uma linha em "connecting" (a conexão é confirmada de forma síncrona
-    // antes de gravar). Reconciliar só faz sentido pra Evolution; qualquer
-    // outro provider em "connecting" (não deveria acontecer, mas se
+    // uma linha em "connecting". Reconciliar só faz sentido pra Evolution;
+    // qualquer outro provider em "connecting" (não deveria acontecer, mas se
     // acontecer) só devolve o status bruto, sem tentar reconciliar contra a
     // API errada.
     if (data.status !== "connecting" || data.provider !== "evolution") {
@@ -64,6 +110,7 @@ export const getWhatsAppStatus = createServerFn({ method: "GET" })
         status: data.status as WhatsAppConnectionStatus,
         phoneNumber: data.phone_number,
         lastError: data.last_error,
+        provider: data.provider,
       };
     }
 
@@ -82,16 +129,24 @@ export const getWhatsAppStatus = createServerFn({ method: "GET" })
         status: "connected",
         phoneNumber: result.phoneNumber,
         lastError: null,
+        provider: data.provider,
       };
     }
     if (result.outcome === "rejected") {
-      return { connected: false, status: "error", phoneNumber: null, lastError: result.reason };
+      return {
+        connected: false,
+        status: "error",
+        phoneNumber: null,
+        lastError: result.reason,
+        provider: data.provider,
+      };
     }
     return {
       connected: false,
       status: "connecting",
       phoneNumber: data.phone_number,
       lastError: data.last_error,
+      provider: data.provider,
     };
   });
 
@@ -121,6 +176,11 @@ const CreateConnectionInput = z.object({
  * função e tudo dentro de reconcileWhatsAppConnection) é condicionada a esse
  * attempt_id — se uma tentativa mais nova já tiver começado nesse meio-tempo,
  * a escrita da tentativa antiga simplesmente não afeta nenhuma linha.
+ *
+ * Não é mais chamada por WhatsAppConnectionCard (a experiência pública de
+ * conexão passou a ser Meta Cloud API) — continua existindo pra contas
+ * Evolution antigas que precisem reconectar por fora da UI padrão
+ * (suporte/admin), nunca removida.
  */
 export const createWhatsAppConnection = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
