@@ -9,6 +9,10 @@
 // qualquer chamada (aviso no log) — configurar antes de ir pra produção.
 import { evolutionWhatsAppProvider } from "./providers/evolution.server";
 import { reconcileWhatsAppConnection } from "./reconcile-connection.server";
+import {
+  processInboundConfirmationReply,
+  resolveClientCandidatesForPhone,
+} from "./confirmation-inbound.server";
 
 export async function handleEvolutionWebhook(
   request: Request,
@@ -109,27 +113,47 @@ export async function handleEvolutionWebhook(
     }
 
     for (const msg of parsed.incomingMessages) {
-      // Identifica a cliente pelo telefone quando possível — prepara o terreno
-      // pra futura Inbox/IA (fora do escopo deste MVP, só registra por agora).
-      const { data: client } = await supabaseAdmin
-        .from("clients")
-        .select("id")
-        .eq("owner_id", ownerId)
-        .eq("phone", msg.fromPhone)
-        .maybeSingle();
+      // Identifica a cliente pelo telefone quando possível — via
+      // normalizePhoneBR + phoneVariantsForLookup, pois msg.fromPhone é o
+      // dígito bruto da JID (sem "+", às vezes sem o 9º dígito do celular
+      // BR — mesma inconsistência já tratada em phone-identity.ts pra
+      // identidade da conexão). Comparar direto contra clients.phone (que é
+      // gravado via normalizePhoneBR) nunca bate. Só grava client_id aqui
+      // quando exatamente uma cliente corresponde — >1 (telefone duplicado)
+      // fica null, mesma cautela usada pela confirmação (ver
+      // confirmation-inbound.server.ts).
+      const candidates = await resolveClientCandidatesForPhone(
+        supabaseAdmin,
+        ownerId,
+        msg.fromPhone,
+      );
+      const clientId = candidates.length === 1 ? candidates[0].id : null;
 
-      await supabaseAdmin.from("whatsapp_messages").insert({
-        owner_id: ownerId,
-        client_id: client?.id ?? null,
-        direction: "inbound",
-        message_type: "text",
-        recipient_phone: msg.fromPhone,
-        content: msg.content,
-        provider: "evolution",
-        provider_message_id: msg.providerMessageId,
-        status: "delivered",
-        sent_at: msg.occurredAt,
-      });
+      const { data: inserted } = await supabaseAdmin
+        .from("whatsapp_messages")
+        .insert({
+          owner_id: ownerId,
+          client_id: clientId,
+          direction: "inbound",
+          message_type: "text",
+          recipient_phone: msg.fromPhone,
+          content: msg.content,
+          provider: "evolution",
+          provider_message_id: msg.providerMessageId,
+          status: "delivered",
+          sent_at: msg.occurredAt,
+        })
+        .select("id")
+        .single();
+
+      if (inserted) {
+        await processInboundConfirmationReply(supabaseAdmin, {
+          ownerId,
+          fromPhoneRaw: msg.fromPhone,
+          content: msg.content,
+          inboundMessageId: inserted.id,
+        });
+      }
     }
   } catch (e) {
     // Loga mas responde 200 — mesmo raciocínio do webhook 360dialog: a

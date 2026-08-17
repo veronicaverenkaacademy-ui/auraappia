@@ -109,15 +109,16 @@ type ClaimedJob = {
 async function renderMessageForJob(
   supabaseAdmin: SupabaseAdmin,
   job: ClaimedJob,
-): Promise<{ message: string; skip: "cancelled" | null }> {
-  if (!job.appointment_id) return { message: "", skip: "cancelled" };
+): Promise<{ message: string; skip: "cancelled" | null; appointmentStartsAt: string | null }> {
+  if (!job.appointment_id) return { message: "", skip: "cancelled", appointmentStartsAt: null };
 
   const { data: appt } = await supabaseAdmin
     .from("appointments")
     .select("status, starts_at, service_name, professional_id, client_id, owner_id")
     .eq("id", job.appointment_id)
     .maybeSingle();
-  if (!appt || appt.status === "cancelled") return { message: "", skip: "cancelled" };
+  if (!appt || appt.status === "cancelled")
+    return { message: "", skip: "cancelled", appointmentStartsAt: null };
 
   const [{ data: client }, { data: company }] = await Promise.all([
     supabaseAdmin.from("clients").select("full_name").eq("id", appt.client_id).maybeSingle(),
@@ -154,14 +155,14 @@ async function renderMessageForJob(
         ? renderAppointmentReminder24h(data)
         : renderAppointmentReminder2h(data);
 
-  return { message, skip: null };
+  return { message, skip: null, appointmentStartsAt: appt.starts_at };
 }
 
 async function processOneJob(
   supabaseAdmin: SupabaseAdmin,
   job: ClaimedJob,
 ): Promise<"sent" | "failed" | "cancelled"> {
-  const { message, skip } = await renderMessageForJob(supabaseAdmin, job);
+  const { message, skip, appointmentStartsAt } = await renderMessageForJob(supabaseAdmin, job);
   if (skip) {
     await supabaseAdmin.from("notification_jobs").update({ status: "cancelled" }).eq("id", job.id);
     return "cancelled";
@@ -174,6 +175,7 @@ async function processOneJob(
     type: job.type,
     clientId: job.client_id,
     appointmentId: job.appointment_id,
+    appointmentStartsAt,
   });
 
   if (result.ok) {

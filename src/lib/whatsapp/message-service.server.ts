@@ -8,10 +8,25 @@
 // E phone_number preenchido — ver reconcile-connection.server.ts).
 import { isValidPhoneBR, normalizePhoneBR } from "@/lib/phone";
 import { evolutionWhatsAppProvider } from "./providers/evolution.server";
+import { openConfirmationThread } from "./confirmation-threads.server";
 import type { ProviderInstanceRef, WhatsAppProvider } from "./provider";
 
 export type WhatsAppMessageType =
-  "appointment_confirmation" | "appointment_reminder_24h" | "appointment_reminder_2h" | "test";
+  | "appointment_confirmation"
+  | "appointment_reminder_24h"
+  | "appointment_reminder_2h"
+  | "confirmation_reply"
+  | "test";
+
+// Tipos que fazem uma pergunta à cliente e por isso abrem uma thread de
+// confirmação (ver confirmation-threads.server.ts) — "confirmation_reply" é
+// a RESPOSTA a uma pergunta, não uma pergunta nova, então nunca abre thread;
+// "test" nunca tem agendamento associado.
+const THREAD_OPENING_TYPES: ReadonlySet<WhatsAppMessageType> = new Set([
+  "appointment_confirmation",
+  "appointment_reminder_24h",
+  "appointment_reminder_2h",
+]);
 
 export type SendMessageInput = {
   ownerId: string;
@@ -20,6 +35,8 @@ export type SendMessageInput = {
   type: WhatsAppMessageType;
   clientId?: string | null;
   appointmentId?: string | null;
+  /** Obrigatório pra abrir thread de confirmação — ver THREAD_OPENING_TYPES. */
+  appointmentStartsAt?: string | null;
 };
 
 export type SendMessageResult =
@@ -90,6 +107,22 @@ async function sendMessage(input: SendMessageInput): Promise<SendMessageResult> 
         : { status: "failed", error_message: result.error },
     )
     .eq("id", logRow.id);
+
+  if (
+    result.ok &&
+    THREAD_OPENING_TYPES.has(input.type) &&
+    input.clientId &&
+    input.appointmentId &&
+    input.appointmentStartsAt
+  ) {
+    await openConfirmationThread(supabaseAdmin, {
+      ownerId: input.ownerId,
+      clientId: input.clientId,
+      appointmentId: input.appointmentId,
+      outboundMessageId: logRow.id,
+      appointmentStartsAt: input.appointmentStartsAt,
+    });
+  }
 
   return result.ok
     ? { ok: true, providerMessageId: result.providerMessageId }

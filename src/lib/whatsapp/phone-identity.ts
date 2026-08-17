@@ -54,3 +54,23 @@ function parseBrazilianE164(e164: string): { ddd: string; subscriber: string } |
   if (rest.length !== 10 && rest.length !== 11) return null;
   return { ddd: rest.slice(0, 2), subscriber: rest.slice(2) };
 }
+
+/**
+ * Duas representações possíveis do mesmo celular brasileiro (com e sem o 9º
+ * dígito) — para BUSCAR uma cliente cujo telefone pode ter sido cadastrado em
+ * qualquer um dos dois formatos, a partir de um número já normalizado
+ * (normalizePhoneBR). Fora do padrão de celular BR, devolve só o próprio
+ * número — nunca inventa variantes pra números que não seguem esse formato.
+ */
+export function phoneVariantsForLookup(e164: string): string[] {
+  const parsed = parseBrazilianE164(e164);
+  if (!parsed) return [e164];
+
+  const variants = new Set<string>([e164]);
+  if (parsed.subscriber.length === 9 && parsed.subscriber.startsWith("9")) {
+    variants.add(`+55${parsed.ddd}${parsed.subscriber.slice(1)}`);
+  } else if (parsed.subscriber.length === 8) {
+    variants.add(`+55${parsed.ddd}9${parsed.subscriber}`);
+  }
+  return Array.from(variants);
+}
