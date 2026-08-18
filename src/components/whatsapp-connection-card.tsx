@@ -20,6 +20,16 @@
 // Pré-requisitos pra esse botão funcionar de verdade: VITE_META_APP_ID e
 // VITE_META_EMBEDDED_SIGNUP_CONFIG_ID configurados — sem eles, mostra aviso
 // claro em vez de abrir um popup quebrado.
+//
+// IMPORTANTE sobre onde configurar: VITE_* é inlining de build-time do Vite
+// (vira parte do bundle do navegador), não uma env var lida em runtime pelo
+// servidor — por isso o Lovable Cloud rejeita nomes VITE_ no painel de
+// Secrets ("build-time browser values ... devem ser definidos em .env").
+// O mecanismo correto (mesmo já usado neste projeto pra
+// VITE_SUPABASE_URL/VITE_SUPABASE_PUBLISHABLE_KEY, ver .env na raiz) é
+// colocar essas duas chaves no arquivo .env versionado — só valores
+// públicos vão aqui, nunca META_APP_SECRET (esse continua exclusivamente
+// como Secret do Lovable, lido só em meta-cloud-api.server.ts).
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
