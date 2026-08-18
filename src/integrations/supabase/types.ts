@@ -1876,6 +1876,7 @@ export type Database = {
           provider: string
           status: string
           updated_at: string
+          waba_id: string | null
         }
         Insert: {
           attempt_id?: string
@@ -1893,6 +1894,7 @@ export type Database = {
           provider?: string
           status?: string
           updated_at?: string
+          waba_id?: string | null
         }
         Update: {
           attempt_id?: string
@@ -1910,6 +1912,7 @@ export type Database = {
           provider?: string
           status?: string
           updated_at?: string
+          waba_id?: string | null
         }
         Relationships: []
       }

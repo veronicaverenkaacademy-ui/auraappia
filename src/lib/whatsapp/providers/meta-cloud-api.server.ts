@@ -57,7 +57,9 @@ function getGlobalAccessTokenFallback(): string | null {
 
 async function metaFetch(
   path: string,
-  init: RequestInit & { accessToken: string },
+  // accessToken ausente = endpoint que não usa Bearer (ex: troca de código,
+  // que autentica via client_id/client_secret na própria query string).
+  init: RequestInit & { accessToken?: string },
 ): Promise<{ status: number; body: unknown }> {
   const { accessToken, ...rest } = init;
   const controller = new AbortController();
@@ -68,7 +70,7 @@ async function metaFetch(
       ...rest,
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${accessToken}`,
+        ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
         ...(rest.headers ?? {}),
       },
       signal: controller.signal,
@@ -105,6 +107,53 @@ function extractErrorMessage(status: number, body: unknown): string {
     return base;
   }
   return `Meta respondeu ${status}: ${JSON.stringify(body).slice(0, 300)}`;
+}
+
+export type ExchangeCodeResult = { ok: true; accessToken: string } | { ok: false; error: string };
+
+/**
+ * Troca o código de autorização de curta duração que o Embedded Signup
+ * devolve no navegador (FB.login → authResponse.code) por um access token de
+ * longa duração — passo obrigatório do OAuth do Facebook Login (a Embedded
+ * Signup é construída em cima dele), documentado em
+ * developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/implementation.
+ * Único lugar do projeto que usa META_APP_ID/META_APP_SECRET — credenciais
+ * do App da AURA na Meta (globais, não por profissional; diferente do
+ * access token resultante, que é por conexão e nunca fica aqui, só é
+ * devolvido pra quem chamou persistir).
+ *
+ * Nunca loga o code nem o token — só o resultado ok/erro.
+ */
+export async function exchangeCodeForAccessToken(code: string): Promise<ExchangeCodeResult> {
+  const appId = process.env.META_APP_ID;
+  const appSecret = process.env.META_APP_SECRET;
+  if (!appId || !appSecret) {
+    return { ok: false, error: "META_APP_ID/META_APP_SECRET não configurados." };
+  }
+
+  try {
+    const params = new URLSearchParams({ client_id: appId, client_secret: appSecret, code });
+    const { status, body } = await metaFetch(`/oauth/access_token?${params.toString()}`, {
+      method: "GET",
+    });
+    if (status < 200 || status >= 300) {
+      return { ok: false, error: extractErrorMessage(status, body) };
+    }
+    const parsed = body as { access_token?: string };
+    if (!parsed.access_token) {
+      return { ok: false, error: "Meta não devolveu access_token na troca do código." };
+    }
+    return { ok: true, accessToken: parsed.access_token };
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") {
+      return {
+        ok: false,
+        error: `Timeout ao trocar o código na Meta Cloud API (${REQUEST_TIMEOUT_MS}ms).`,
+      };
+    }
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: `Falha ao trocar o código na Meta Cloud API: ${msg}` };
+  }
 }
 
 /**
