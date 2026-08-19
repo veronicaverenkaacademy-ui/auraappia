@@ -355,6 +355,7 @@ function AuthPage() {
                         value={address.cep}
                         onChange={(e) => handleCepChange(e.target.value)}
                         maxLength={9}
+                        autoComplete="off"
                         className="h-11 rounded-xl bg-background border-0 text-sm pr-9"
                       />
                       {cepLoading && (
@@ -374,6 +375,7 @@ function AuthPage() {
                       id="city"
                       value={address.city}
                       onChange={(e) => updateAddress({ city: e.target.value })}
+                      autoComplete="off"
                       className="h-11 rounded-xl bg-background border-0 text-sm"
                     />
                   </div>
@@ -389,6 +391,7 @@ function AuthPage() {
                       id="state"
                       value={address.state}
                       onChange={(e) => updateAddress({ state: e.target.value })}
+                      autoComplete="off"
                       className="h-11 rounded-xl bg-background border-0 text-sm"
                     />
                   </div>
@@ -405,6 +408,7 @@ function AuthPage() {
                       placeholder="Rua, número, bairro"
                       value={address.address}
                       onChange={(e) => updateAddress({ address: e.target.value })}
+                      autoComplete="off"
                       className="h-11 rounded-xl bg-background border-0 text-sm"
                     />
                   </div>
