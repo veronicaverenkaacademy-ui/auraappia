@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as CadastroRouteImport } from './routes/cadastro'
+import { Route as ExclusaoDeDadosRouteImport } from './routes/exclusao-de-dados'
 import { Route as PoliticaDePrivacidadeRouteImport } from './routes/politica-de-privacidade'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as TermoConsentimentoRouteImport } from './routes/termo-consentimento'
@@ -91,6 +92,11 @@ const AuthRoute = AuthRouteImport.update({
 const CadastroRoute = CadastroRouteImport.update({
   id: '/cadastro',
   path: '/cadastro',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExclusaoDeDadosRoute = ExclusaoDeDadosRouteImport.update({
+  id: '/exclusao-de-dados',
+  path: '/exclusao-de-dados',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PoliticaDePrivacidadeRoute = PoliticaDePrivacidadeRouteImport.update({
@@ -423,6 +429,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/cadastro': typeof CadastroRoute
+  '/exclusao-de-dados': typeof ExclusaoDeDadosRoute
   '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
   '/portal': typeof PortalRoute
   '/termo-consentimento': typeof TermoConsentimentoRoute
@@ -488,6 +495,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/cadastro': typeof CadastroRoute
+  '/exclusao-de-dados': typeof ExclusaoDeDadosRoute
   '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
   '/portal': typeof PortalRoute
   '/termo-consentimento': typeof TermoConsentimentoRoute
@@ -546,6 +554,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/cadastro': typeof CadastroRoute
+  '/exclusao-de-dados': typeof ExclusaoDeDadosRoute
   '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
   '/portal': typeof PortalRoute
   '/termo-consentimento': typeof TermoConsentimentoRoute
@@ -613,6 +622,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/cadastro'
+    | '/exclusao-de-dados'
     | '/politica-de-privacidade'
     | '/portal'
     | '/termo-consentimento'
@@ -678,6 +688,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/cadastro'
+    | '/exclusao-de-dados'
     | '/politica-de-privacidade'
     | '/portal'
     | '/termo-consentimento'
@@ -735,6 +746,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/auth'
     | '/cadastro'
+    | '/exclusao-de-dados'
     | '/politica-de-privacidade'
     | '/portal'
     | '/termo-consentimento'
@@ -802,6 +814,7 @@ export interface RootRouteChildren {
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
   CadastroRoute: typeof CadastroRoute
+  ExclusaoDeDadosRoute: typeof ExclusaoDeDadosRoute
   PoliticaDePrivacidadeRoute: typeof PoliticaDePrivacidadeRoute
   PortalRoute: typeof PortalRoute
   TermoConsentimentoRoute: typeof TermoConsentimentoRoute
@@ -837,6 +850,13 @@ declare module '@tanstack/react-router' {
       path: '/cadastro'
       fullPath: '/cadastro'
       preLoaderRoute: typeof CadastroRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/exclusao-de-dados': {
+      id: '/exclusao-de-dados'
+      path: '/exclusao-de-dados'
+      fullPath: '/exclusao-de-dados'
+      preLoaderRoute: typeof ExclusaoDeDadosRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/politica-de-privacidade': {
@@ -1481,6 +1501,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
   CadastroRoute: CadastroRoute,
+  ExclusaoDeDadosRoute: ExclusaoDeDadosRoute,
   PoliticaDePrivacidadeRoute: PoliticaDePrivacidadeRoute,
   PortalRoute: PortalRoute,
   TermoConsentimentoRoute: TermoConsentimentoRoute,
