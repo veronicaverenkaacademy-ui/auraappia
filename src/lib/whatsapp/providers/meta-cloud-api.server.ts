@@ -157,6 +157,46 @@ export async function exchangeCodeForAccessToken(code: string): Promise<Exchange
 }
 
 /**
+ * Revoga o access token de uma conexão via GET /oauth/revoke (endpoint da
+ * Meta pra revogação programática de tokens — client_id/client_secret são
+ * as credenciais do App da AURA, o token é o da conexão sendo revogada).
+ * Usado na exclusão de conta do profissional: sem isso, apagar a linha de
+ * whatsapp_instances localmente não invalida o token do lado da Meta.
+ *
+ * Deliberadamente nunca lança erro — chamado durante exclusão de conta, e
+ * uma falha de rede/token já inválido aqui não pode travar o resto da
+ * exclusão. Quem chama decide se loga o resultado; nunca é motivo pra
+ * abortar a exclusão da conta.
+ */
+export async function revokeAccessToken(
+  accessToken: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const appId = process.env.META_APP_ID;
+  const appSecret = process.env.META_APP_SECRET;
+  if (!appId || !appSecret) {
+    return { ok: false, error: "META_APP_ID/META_APP_SECRET não configurados." };
+  }
+
+  try {
+    const params = new URLSearchParams({
+      client_id: appId,
+      client_secret: appSecret,
+      access_token: accessToken,
+    });
+    const { status, body } = await metaFetch(`/oauth/revoke?${params.toString()}`, {
+      method: "GET",
+    });
+    if (status < 200 || status >= 300) {
+      return { ok: false, error: extractErrorMessage(status, body) };
+    }
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: `Falha ao revogar token na Meta Cloud API: ${msg}` };
+  }
+}
+
+/**
  * Não existe operação de "criar instância" na Cloud API — o número é
  * provisionado no Meta Business Manager, fora do AURA. Esta função só
  * CONFIRMA que o phone_number_id informado (passado como instanceName, único
