@@ -13,6 +13,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { GlobalErrorWatcher } from "../components/global-error-watcher";
 import { Toaster } from "@/components/ui/sonner";
+import { registerNativeNavBridge } from "../lib/native-bridge";
 
 function NotFoundComponent() {
   return (
@@ -81,9 +82,13 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
         <div className="mt-4 rounded-md border border-border/60 bg-muted/40 p-3 text-left">
-          <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Detalhe técnico</p>
+          <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            Detalhe técnico
+          </p>
           <p className="mt-1 text-xs font-mono break-words text-foreground">{message}</p>
-          <p className="mt-1 text-[11px] text-muted-foreground">rota: {router.state.location.pathname}</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            rota: {router.state.location.pathname}
+          </p>
         </div>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
@@ -116,13 +121,27 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "description", content: "Sistema operacional inteligente para negócios da beleza." },
       { name: "author", content: "AURA" },
       { property: "og:title", content: "AURA" },
-      { property: "og:description", content: "Sistema operacional inteligente para negócios da beleza." },
+      {
+        property: "og:description",
+        content: "Sistema operacional inteligente para negócios da beleza.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: "AURA" },
-      { name: "twitter:description", content: "Sistema operacional inteligente para negócios da beleza." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/4735fe46-0aad-4c5e-b1b3-979a9ebe1a9e/id-preview-844c1bd3--7161fd2c-c53f-4224-a52b-c6f95d779919.lovable.app-1785529531585.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/4735fe46-0aad-4c5e-b1b3-979a9ebe1a9e/id-preview-844c1bd3--7161fd2c-c53f-4224-a52b-c6f95d779919.lovable.app-1785529531585.png" },
+      {
+        name: "twitter:description",
+        content: "Sistema operacional inteligente para negócios da beleza.",
+      },
+      {
+        property: "og:image",
+        content:
+          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/4735fe46-0aad-4c5e-b1b3-979a9ebe1a9e/id-preview-844c1bd3--7161fd2c-c53f-4224-a52b-c6f95d779919.lovable.app-1785529531585.png",
+      },
+      {
+        name: "twitter:image",
+        content:
+          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/4735fe46-0aad-4c5e-b1b3-979a9ebe1a9e/id-preview-844c1bd3--7161fd2c-c53f-4224-a52b-c6f95d779919.lovable.app-1785529531585.png",
+      },
     ],
     links: [
       {
@@ -131,7 +150,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=Figtree:wght@300;400;500;600&display=swap" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=Figtree:wght@300;400;500;600&display=swap",
+      },
     ],
   }),
   shellComponent: RootShell,
@@ -156,6 +178,13 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const router = useRouter();
+
+  // No-op fora do Capacitor — só registra a ponte quando o app roda
+  // dentro do wrapper nativo (ver native-bridge.ts).
+  useEffect(() => {
+    registerNativeNavBridge(router);
+  }, [router]);
 
   return (
     <QueryClientProvider client={queryClient}>
