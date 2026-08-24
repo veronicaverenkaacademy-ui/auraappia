@@ -68,3 +68,79 @@ workflows:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
       - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+
+  ios-simulator-preview:
+    name: iOS Simulator Preview (screenshot, sem assinatura)
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+    environment:
+      xcode: latest
+      vars:
+        XCODE_PROJECT: "ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
+        APP_BUNDLE_ID: "com.auraagendaia.app"
+    scripts:
+      - name: Install npm dependencies
+        script: |
+          npm ci
+      - name: Build web app (TanStack Start)
+        script: |
+          npm run build
+      - name: Sync Capacitor iOS
+        script: |
+          npx cap sync ios
+      - name: Build app for iOS Simulator (sem assinatura de código)
+        script: |
+          xcodebuild build \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -sdk iphonesimulator \
+            -destination "generic/platform=iOS Simulator" \
+            -configuration Debug \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Instalar e abrir o app no simulador
+        script: |
+          set -e
+          echo "===== SIMULADORES DISPONÍVEIS NESTA MÁQUINA ====="
+          xcrun simctl list devices available
+          echo "===================================================="
+
+          DEVICE_UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)["devices"]
+          for runtime, devices in data.items():
+              if "iOS" not in runtime:
+                  continue
+              for d in devices:
+                  if d.get("isAvailable", True) and "iPhone" in d.get("name", ""):
+                      print(d["udid"])
+                      sys.exit(0)
+          sys.exit(1)
+          ')
+
+          if [ -z "$DEVICE_UDID" ]; then
+            echo "Nenhum simulador de iPhone disponível foi encontrado na lista acima."
+            exit 1
+          fi
+          echo "Simulador escolhido (UDID): $DEVICE_UDID"
+
+          xcrun simctl boot "$DEVICE_UDID" || true
+
+          APP_PATH=$(find "$HOME/Library/Developer/Xcode/DerivedData" -name "App.app" -path "*iphonesimulator*" | head -1)
+          echo "App encontrado em: $APP_PATH"
+
+          xcrun simctl install "$DEVICE_UDID" "$APP_PATH"
+          xcrun simctl launch "$DEVICE_UDID" "$APP_BUNDLE_ID"
+          echo "Aguardando o app carregar (a WebView depende de rede)..."
+          sleep 15
+
+          echo "$DEVICE_UDID" > /tmp/aura_sim_udid.txt
+      - name: Capturar screenshot da tela inicial
+        script: |
+          mkdir -p "$CM_BUILD_DIR/screenshots"
+          DEVICE_UDID=$(cat /tmp/aura_sim_udid.txt)
+          xcrun simctl io "$DEVICE_UDID" screenshot "$CM_BUILD_DIR/screenshots/tela-inicial.png"
+    artifacts:
+      - screenshots/*.png

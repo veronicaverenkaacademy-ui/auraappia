@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,9 @@ type AppShellProps = {
 export function AppShell({ children, title, right, className }: AppShellProps) {
   const isMobile = useIsMobile();
   const titleIsString = typeof title === "string";
+  // Dentro do Capacitor a navegação inferior é a tab bar nativa
+  // (MainViewController.swift) — mostrar essa também duplicaria a barra.
+  const showWebBottomNav = isMobile && !Capacitor.isNativePlatform();
 
   return (
     <div className="min-h-screen flex w-full bg-background">
@@ -22,7 +26,7 @@ export function AppShell({ children, title, right, className }: AppShellProps) {
             <div
               className={cn(
                 "min-w-0",
-                titleIsString && "text-xs text-muted-foreground uppercase tracking-wider"
+                titleIsString && "text-xs text-muted-foreground uppercase tracking-wider",
               )}
             >
               {title}
@@ -33,7 +37,7 @@ export function AppShell({ children, title, right, className }: AppShellProps) {
 
         <main className={cn("flex-1 w-full min-w-0", className)}>{children}</main>
 
-        {isMobile && (
+        {showWebBottomNav && (
           <MobileBottomNav className="fixed bottom-0 left-0 right-0 md:hidden" />
         )}
       </div>
