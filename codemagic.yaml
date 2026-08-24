@@ -68,3 +68,52 @@ workflows:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
       - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+
+  ios-simulator-preview:
+    name: iOS Simulator Preview (screenshot, sem assinatura)
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+    environment:
+      xcode: latest
+      vars:
+        XCODE_PROJECT: "ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
+        SIMULATOR_NAME: "iPhone 15"
+        APP_BUNDLE_ID: "com.auraagendaia.app"
+    scripts:
+      - name: Install npm dependencies
+        script: |
+          npm ci
+      - name: Build web app (TanStack Start)
+        script: |
+          npm run build
+      - name: Sync Capacitor iOS
+        script: |
+          npx cap sync ios
+      - name: Build app for iOS Simulator (sem assinatura de código)
+        script: |
+          xcodebuild build \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,name=$SIMULATOR_NAME" \
+            -configuration Debug \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Instalar e abrir o app no simulador
+        script: |
+          set -e
+          xcrun simctl boot "$SIMULATOR_NAME" || true
+          APP_PATH=$(find "$HOME/Library/Developer/Xcode/DerivedData" -name "App.app" -path "*iphonesimulator*" | head -1)
+          echo "App encontrado em: $APP_PATH"
+          xcrun simctl install booted "$APP_PATH"
+          xcrun simctl launch booted "$APP_BUNDLE_ID"
+          echo "Aguardando o app carregar (a WebView depende de rede)..."
+          sleep 15
+      - name: Capturar screenshot da tela inicial
+        script: |
+          mkdir -p screenshots
+          xcrun simctl io booted screenshot screenshots/tela-inicial.png
+    artifacts:
+      - screenshots/*.png
