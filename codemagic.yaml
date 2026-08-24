@@ -139,8 +139,8 @@ workflows:
           echo "$DEVICE_UDID" > /tmp/aura_sim_udid.txt
       - name: Capturar screenshot da tela inicial
         script: |
-          mkdir -p screenshots
+          mkdir -p "$CM_BUILD_DIR/screenshots"
           DEVICE_UDID=$(cat /tmp/aura_sim_udid.txt)
-          xcrun simctl io "$DEVICE_UDID" screenshot screenshots/tela-inicial.png
+          xcrun simctl io "$DEVICE_UDID" screenshot "$CM_BUILD_DIR/screenshots/tela-inicial.png"
     artifacts:
       - screenshots/*.png
