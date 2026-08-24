@@ -1,0 +1,70 @@
+workflows:
+  ios-release:
+    name: iOS Release (manual signing)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      groups:
+        - aura_signing
+      xcode: latest
+      vars:
+        XCODE_PROJECT: "ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
+      ios_signing:
+        provisioning_profiles:
+          - profile: "AURA App Store Profile"
+            environment_variable: AURA_PROVISIONING_PROFILE_PATH
+        certificates:
+          - certificate: "AURA Distribution"
+            environment_variable: AURA_CERTIFICATE_PATH
+    scripts:
+      - name: Install npm dependencies
+        script: |
+          npm ci
+      - name: Build web app (TanStack Start)
+        script: |
+          npm run build
+      - name: Sync Capacitor iOS
+        script: |
+          npx cap sync ios
+      - name: Initialize keychain for code signing
+        script: |
+          keychain initialize
+      - name: Add certificate to keychain
+        script: |
+          keychain add-certificates \
+            --certificate "$AURA_CERTIFICATE_PATH" \
+            --certificate-password "@env:AURA_CERTIFICATE_PASSWORD"
+      - name: Apply provisioning profile + certificate to Xcode project
+        script: |
+          xcode-project use-profiles
+      - name: Resolve Swift Package dependencies (diagnóstico isolado)
+        script: |
+          xcodebuild -resolvePackageDependencies \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME"
+      - name: List signing identities in keychain (diagnóstico do erro anterior)
+        script: |
+          echo "===== IDENTIDADES DE ASSINATURA DISPONÍVEIS NO KEYCHAIN ====="
+          security find-identity -v -p codesigning
+          echo "===== FIM DA LISTA ====="
+      - name: Build .ipa (manual signing, sem publicar)
+        script: |
+          set -o pipefail
+          xcode-project build-ipa \
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME" \
+            --verbose \
+          || BUILD_EXIT_CODE=$?
+          echo "===== LOG COMPLETO DO XCODEBUILD (xcodebuild_logs) ====="
+          if ls /tmp/xcodebuild_logs/*.log >/dev/null 2>&1; then
+            cat /tmp/xcodebuild_logs/*.log
+          else
+            echo "(nenhum arquivo encontrado em /tmp/xcodebuild_logs/)"
+          fi
+          echo "===== FIM DO LOG ====="
+          exit "${BUILD_EXIT_CODE:-0}"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
