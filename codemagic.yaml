@@ -31,11 +31,27 @@ workflows:
       - name: Apply provisioning profile + certificate to Xcode project
         script: |
           xcode-project use-profiles
+      - name: Resolve Swift Package dependencies (diagnóstico isolado)
+        script: |
+          xcodebuild -resolvePackageDependencies \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME"
       - name: Build .ipa (manual signing, sem publicar)
         script: |
+          set -o pipefail
           xcode-project build-ipa \
             --project "$XCODE_PROJECT" \
-            --scheme "$XCODE_SCHEME"
+            --scheme "$XCODE_SCHEME" \
+            --verbose \
+          || BUILD_EXIT_CODE=$?
+          echo "===== LOG COMPLETO DO XCODEBUILD (xcodebuild_logs) ====="
+          if ls /tmp/xcodebuild_logs/*.log >/dev/null 2>&1; then
+            cat /tmp/xcodebuild_logs/*.log
+          else
+            echo "(nenhum arquivo encontrado em /tmp/xcodebuild_logs/)"
+          fi
+          echo "===== FIM DO LOG ====="
+          exit "${BUILD_EXIT_CODE:-0}"
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
