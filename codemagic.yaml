@@ -36,6 +36,11 @@ workflows:
           xcodebuild -resolvePackageDependencies \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME"
+      - name: List signing identities in keychain (diagnóstico do erro anterior)
+        script: |
+          echo "===== IDENTIDADES DE ASSINATURA DISPONÍVEIS NO KEYCHAIN ====="
+          security find-identity -v -p codesigning
+          echo "===== FIM DA LISTA ====="
       - name: Build .ipa (manual signing, sem publicar)
         script: |
           set -o pipefail
