@@ -98,3 +98,38 @@ Sidebar ganha item **Equipe** (visível só para admin) via novo hook `usePermis
 - Papéis extras (Recepcionista, Financeiro, Marketing, Gerente) — arquitetura pronta, mas só habilitamos Administrador e Colaborador nesta entrega.
 
 Confirma que posso executar assim?
+
+---
+
+## Adendo (2026-08-25) — pendência descoberta: forma de pagamento ao finalizar comanda
+
+Nota adicionada durante a implementação dos 3 níveis de acesso nomeados (Recepcionista/
+Profissional/Gerente, que substituem o "Colaborador" genérico mencionado acima). Este
+adendo documenta uma lacuna real encontrada, para não precisar ser redescoberta depois —
+**não implementada ainda**.
+
+**O que falta**: `completeAppointment(id)` (`src/lib/agenda.ts`) hoje só muda
+`appointments.status` para `'completed'` — não recebe nenhum parâmetro de forma de
+pagamento. O valor lançado em `finance_transactions` vem de `appointments.price` (definido
+na criação do agendamento, não digitado na hora de finalizar). O gatilho
+`record_appointment_revenue()` (`SECURITY DEFINER`, dispara em `AFTER INSERT OR UPDATE ON
+appointments`) grava a receita automaticamente, mas a coluna `finance_transactions.method`
+não está na lista de colunas que ele preenche — fica sempre `NULL`.
+
+**Arquitetura recomendada para quando for implementada**: adicionar uma coluna
+`appointments.payment_method`, capturada na UI no momento de finalizar, e fazer o próprio
+`record_appointment_revenue()` ler essa coluna e gravar em `finance_transactions.method`
+dentro do mesmo `INSERT` que já existe hoje — **nunca** uma escrita direta do
+frontend/servidor em `finance_transactions`.
+
+**Por que essa arquitetura importa**: mantém a mesma garantia de segurança que já existe
+hoje (só o gatilho, com privilégio elevado, sempre vinculado ao `owner_id` correto do
+próprio agendamento) e evita ter que criar uma política de RLS de `INSERT` nova em
+`finance_transactions` para Recepcionista/Profissional — que teria risco real de erro
+(permitir apontar para um `appointment_id` de outra conta, se a `WITH CHECK` for mal
+escrita).
+
+**Também não existe hoje**: pagamento dividido/parcelado — o gatilho insere uma única
+linha por atendimento concluído, sem nenhum conceito de split. Se a feature de forma de
+pagamento também precisar suportar isso no futuro, é uma decisão de produto adicional a
+ser tomada na hora, não antecipada aqui.
