@@ -133,3 +133,29 @@ escrita).
 linha por atendimento concluído, sem nenhum conceito de split. Se a feature de forma de
 pagamento também precisar suportar isso no futuro, é uma decisão de produto adicional a
 ser tomada na hora, não antecipada aqui.
+
+## Adendo (2026-08-25) — pendência: financeiro filtrado por profissional
+
+Na etapa de RLS de Agenda/Clientes/Serviços (`staff_can()`, ver migration
+`20260825140000_staff_access.sql`), a visão de "Profissional" foi simplificada para ter o
+mesmo escopo amplo de Recepcionista (vê agenda e clientes inteiros do salão, não só os
+próprios). Essa simplificação vale **só** para agenda/clientes — **não** se aplica a
+`finance_transactions`: Profissional continua devendo ver financeiro **apenas dos
+próprios atendimentos**, não do salão inteiro (ela já tem `finance:view = true` em
+`access_level_permissions`, mas isso hoje concede tudo ou nada — o filtro por linha ainda
+não foi implementado).
+
+**Abordagem técnica recomendada** (já investigada, não implementada ainda): política de
+`SELECT` adicional em `finance_transactions`, com um `EXISTS` ligando
+`finance_transactions.appointment_id → appointments.id` e checando
+`appointments.professional_id = team_members.id WHERE team_members.user_id = auth.uid()`
+— provavelmente encapsulada numa função `SECURITY DEFINER STABLE` dedicada (mesmo padrão
+de `staff_can()`), para evitar reavaliação por linha.
+
+**Importante**: essa verificação é um vínculo direto entre a pessoa logada e o
+atendimento — **não depende** de nenhum conceito de "tipo de nível" (`kind` ou
+equivalente). A simplificação feita na etapa de agenda/clientes (remover a distinção por
+linha ali) não reintroduz complexidade aqui; são mecanismos independentes.
+
+Transações sem `appointment_id` (despesas gerais do salão) continuam invisíveis pra
+Profissional nesse filtro — comportamento esperado, já confirmado antes.
