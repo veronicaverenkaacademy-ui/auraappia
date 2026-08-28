@@ -6,6 +6,11 @@
 -- financeiro por profissional fica para uma etapa futura separada — ver nota no
 -- .lovable/plan.md.
 
+-- Transação explícita: garante tudo-ou-nada independente do comportamento do cliente
+-- SQL usado para aplicar (Postgres tem DDL transacional real — CREATE FUNCTION/POLICY
+-- participam normalmente e revertem juntos se qualquer statement no meio falhar).
+BEGIN;
+
 -- =====================================================================================
 -- SEÇÃO A — função auxiliar usada dentro das políticas de RLS
 -- =====================================================================================
@@ -120,3 +125,5 @@ CREATE POLICY client_photos_bucket_staff_insert ON storage.objects FOR INSERT TO
     bucket_id = 'client-photos'
     AND staff_can((storage.foldername(name))[1]::uuid, 'clients', 'edit')
   );
+
+COMMIT;
