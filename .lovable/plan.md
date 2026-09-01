@@ -98,3 +98,64 @@ Sidebar ganha item **Equipe** (visível só para admin) via novo hook `usePermis
 - Papéis extras (Recepcionista, Financeiro, Marketing, Gerente) — arquitetura pronta, mas só habilitamos Administrador e Colaborador nesta entrega.
 
 Confirma que posso executar assim?
+
+---
+
+## Adendo (2026-08-25) — pendência descoberta: forma de pagamento ao finalizar comanda
+
+Nota adicionada durante a implementação dos 3 níveis de acesso nomeados (Recepcionista/
+Profissional/Gerente, que substituem o "Colaborador" genérico mencionado acima). Este
+adendo documenta uma lacuna real encontrada, para não precisar ser redescoberta depois —
+**não implementada ainda**.
+
+**O que falta**: `completeAppointment(id)` (`src/lib/agenda.ts`) hoje só muda
+`appointments.status` para `'completed'` — não recebe nenhum parâmetro de forma de
+pagamento. O valor lançado em `finance_transactions` vem de `appointments.price` (definido
+na criação do agendamento, não digitado na hora de finalizar). O gatilho
+`record_appointment_revenue()` (`SECURITY DEFINER`, dispara em `AFTER INSERT OR UPDATE ON
+appointments`) grava a receita automaticamente, mas a coluna `finance_transactions.method`
+não está na lista de colunas que ele preenche — fica sempre `NULL`.
+
+**Arquitetura recomendada para quando for implementada**: adicionar uma coluna
+`appointments.payment_method`, capturada na UI no momento de finalizar, e fazer o próprio
+`record_appointment_revenue()` ler essa coluna e gravar em `finance_transactions.method`
+dentro do mesmo `INSERT` que já existe hoje — **nunca** uma escrita direta do
+frontend/servidor em `finance_transactions`.
+
+**Por que essa arquitetura importa**: mantém a mesma garantia de segurança que já existe
+hoje (só o gatilho, com privilégio elevado, sempre vinculado ao `owner_id` correto do
+próprio agendamento) e evita ter que criar uma política de RLS de `INSERT` nova em
+`finance_transactions` para Recepcionista/Profissional — que teria risco real de erro
+(permitir apontar para um `appointment_id` de outra conta, se a `WITH CHECK` for mal
+escrita).
+
+**Também não existe hoje**: pagamento dividido/parcelado — o gatilho insere uma única
+linha por atendimento concluído, sem nenhum conceito de split. Se a feature de forma de
+pagamento também precisar suportar isso no futuro, é uma decisão de produto adicional a
+ser tomada na hora, não antecipada aqui.
+
+## Adendo (2026-08-25) — pendência: financeiro filtrado por profissional
+
+Na etapa de RLS de Agenda/Clientes/Serviços (`staff_can()`, ver migration
+`20260825140000_staff_access.sql`), a visão de "Profissional" foi simplificada para ter o
+mesmo escopo amplo de Recepcionista (vê agenda e clientes inteiros do salão, não só os
+próprios). Essa simplificação vale **só** para agenda/clientes — **não** se aplica a
+`finance_transactions`: Profissional continua devendo ver financeiro **apenas dos
+próprios atendimentos**, não do salão inteiro (ela já tem `finance:view = true` em
+`access_level_permissions`, mas isso hoje concede tudo ou nada — o filtro por linha ainda
+não foi implementado).
+
+**Abordagem técnica recomendada** (já investigada, não implementada ainda): política de
+`SELECT` adicional em `finance_transactions`, com um `EXISTS` ligando
+`finance_transactions.appointment_id → appointments.id` e checando
+`appointments.professional_id = team_members.id WHERE team_members.user_id = auth.uid()`
+— provavelmente encapsulada numa função `SECURITY DEFINER STABLE` dedicada (mesmo padrão
+de `staff_can()`), para evitar reavaliação por linha.
+
+**Importante**: essa verificação é um vínculo direto entre a pessoa logada e o
+atendimento — **não depende** de nenhum conceito de "tipo de nível" (`kind` ou
+equivalente). A simplificação feita na etapa de agenda/clientes (remover a distinção por
+linha ali) não reintroduz complexidade aqui; são mecanismos independentes.
+
+Transações sem `appointment_id` (despesas gerais do salão) continuam invisíveis pra
+Profissional nesse filtro — comportamento esperado, já confirmado antes.
