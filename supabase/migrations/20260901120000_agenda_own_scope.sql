@@ -1,3 +1,23 @@
+-- ═══════════════════════════════════════════════════════════════════════════════════
+-- JÁ APLICADA MANUALMENTE EM PRODUÇÃO — não é uma migration pendente de execução.
+--
+-- Aplicada em 01/09/2026, colada diretamente no SQL Editor do Lovable. Este arquivo
+-- existe como registro/documentação do que já rodou, não como algo a ser executado
+-- por uma ferramenta de migration automática pela primeira vez (embora seja seguro
+-- rodar de novo, ver idempotência abaixo).
+--
+-- Verificação pós-aplicação confirmada (4 checagens, todas em produção real):
+--   1. access_levels.kind: Gerente/global, Profissional/own, Recepcionista/global.
+--   2. Constraint team_members_owner_user_unique existe.
+--   3. Funções current_team_member_id() e staff_access_kind() existem.
+--   4. As 10 políticas (9 de agenda/materiais + 1 de finance_transactions) refletem
+--      a lógica nova — confirmado lendo o texto real em pg_policies.
+--
+-- Idempotente: ADD COLUMN IF NOT EXISTS, CREATE OR REPLACE FUNCTION, DROP POLICY IF
+-- EXISTS antes de cada CREATE POLICY, e um bloco DO $$ ... EXCEPTION WHEN
+-- duplicate_object THEN NULL; END $$ para a constraint — seguro de rodar de novo.
+-- ═══════════════════════════════════════════════════════════════════════════════════
+
 -- Etapa 5, parte 1: restringe Profissional à própria agenda/materiais/financeiro.
 -- Recepcionista e Gerente continuam com acesso amplo, sem nenhuma mudança de
 -- comportamento. Opção B (coluna "kind" em access_levels) — ver discussão registrada
