@@ -1580,8 +1580,74 @@ export type Database = {
         }
         Relationships: []
       }
+      access_levels: {
+        Row: {
+          created_at: string
+          id: string
+          kind: string
+          name: string
+          owner_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind?: string
+          name: string
+          owner_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: string
+          name?: string
+          owner_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      access_level_permissions: {
+        Row: {
+          access_level_id: string
+          action: string
+          allowed: boolean
+          id: string
+          resource: string
+          updated_at: string
+        }
+        Insert: {
+          access_level_id: string
+          action: string
+          allowed?: boolean
+          id?: string
+          resource: string
+          updated_at?: string
+        }
+        Update: {
+          access_level_id?: string
+          action?: string
+          allowed?: boolean
+          id?: string
+          resource?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "access_level_permissions_access_level_id_fkey"
+            columns: ["access_level_id"]
+            isOneToOne: false
+            referencedRelation: "access_levels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       team_members: {
         Row: {
+          access_level_id: string | null
           agenda_color: string | null
           avatar_url: string | null
           bio: string | null
@@ -1605,6 +1671,7 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          access_level_id?: string | null
           agenda_color?: string | null
           avatar_url?: string | null
           bio?: string | null
@@ -1628,6 +1695,7 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          access_level_id?: string | null
           agenda_color?: string | null
           avatar_url?: string | null
           bio?: string | null
@@ -1650,7 +1718,15 @@ export type Database = {
           updated_at?: string
           user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "team_members_access_level_id_fkey"
+            columns: ["access_level_id"]
+            isOneToOne: false
+            referencedRelation: "access_levels"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       team_permissions: {
         Row: {

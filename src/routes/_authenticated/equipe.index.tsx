@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { listTeamMembers } from "@/lib/team";
+import { listTeamMembers, listAccessLevels } from "@/lib/team";
 import { createTeamMember, type CreateTeamMemberInput } from "@/lib/team.functions";
 import { initials } from "@/lib/clients";
 
@@ -157,7 +157,11 @@ function NewMemberForm({ loading, onSubmit }: { loading: boolean; onSubmit: (p: 
     full_name: "", phone: "", email: "", password: "",
     role_title: "", profession: "", agenda_color: AGENDA_COLORS[0],
     commission_type: "percent" as "percent" | "fixed", commission_value: 20,
-    monthly_goal: 8000, booking_slug: "", show_commission: false,
+    monthly_goal: 8000, access_level_id: "", show_commission: false,
+  });
+  const { data: accessLevels = [] } = useQuery({
+    queryKey: ["access-levels"],
+    queryFn: listAccessLevels,
   });
   return (
     <form
@@ -179,13 +183,22 @@ function NewMemberForm({ loading, onSubmit }: { loading: boolean; onSubmit: (p: 
         <Field label="Cargo"><Input value={form.role_title} onChange={(e) => setForm({ ...form, role_title: e.target.value })} placeholder="Lash Designer" /></Field>
         <Field label="Profissão"><Input value={form.profession} onChange={(e) => setForm({ ...form, profession: e.target.value })} placeholder="Ex.: Estética" /></Field>
       </div>
-      <Field label="Link exclusivo de agendamento">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">aura.app/l/</span>
-          <Input required pattern="[a-z0-9-]+" value={form.booking_slug}
-            onChange={(e) => setForm({ ...form, booking_slug: e.target.value.toLowerCase() })}
-            placeholder="carolina" />
-        </div>
+      <Field label="Nível de acesso">
+        <Select
+          value={form.access_level_id}
+          onValueChange={(v) => setForm({ ...form, access_level_id: v })}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Selecione um nível" />
+          </SelectTrigger>
+          <SelectContent>
+            {accessLevels.map((lvl) => (
+              <SelectItem key={lvl.id} value={lvl.id}>
+                {lvl.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </Field>
       <div className="grid grid-cols-[1fr_100px] gap-3">
         <Field label="Comissão">
@@ -218,7 +231,7 @@ function NewMemberForm({ loading, onSubmit }: { loading: boolean; onSubmit: (p: 
         </div>
         <Switch checked={form.show_commission} onCheckedChange={(v) => setForm({ ...form, show_commission: v })} />
       </div>
-      <Button type="submit" disabled={loading} className="w-full rounded-full">
+      <Button type="submit" disabled={loading || !form.access_level_id} className="w-full rounded-full">
         {loading ? "Criando…" : "Criar colaborador"}
       </Button>
     </form>

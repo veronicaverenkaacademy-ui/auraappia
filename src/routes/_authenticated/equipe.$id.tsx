@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Trash2, Save, ExternalLink, Copy } from "lucide-react";
+import { ArrowLeft, Trash2, Save, ExternalLink, Copy, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +15,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { getTeamMember, updateTeamMember, deleteTeamMember, type TeamMember } from "@/lib/team";
+import {
+  getTeamMember,
+  updateTeamMember,
+  deleteTeamMember,
+  listAccessLevels,
+  type TeamMember,
+} from "@/lib/team";
 import { initials } from "@/lib/clients";
 import { fetchCompanySlugByOwnerId } from "@/lib/companyProfile";
 
@@ -38,6 +44,10 @@ function MemberDetail() {
     queryKey: ["company-slug", member?.owner_id],
     queryFn: () => fetchCompanySlugByOwnerId(member!.owner_id),
     enabled: Boolean(member),
+  });
+  const { data: accessLevels = [] } = useQuery({
+    queryKey: ["access-levels"],
+    queryFn: listAccessLevels,
   });
 
   useEffect(() => {
@@ -133,6 +143,43 @@ function MemberDetail() {
               value={form.role_title ?? ""}
               onChange={(e) => setForm({ ...form, role_title: e.target.value })}
             />
+          </F>
+          <F label="Nível de acesso">
+            {form.access_level_id ? (
+              <Select
+                value={form.access_level_id}
+                onValueChange={(v) => setForm({ ...form, access_level_id: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {accessLevels.map((lvl) => (
+                    <SelectItem key={lvl.id} value={lvl.id}>
+                      {lvl.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-destructive/15 text-destructive px-3 py-1.5 text-xs font-medium">
+                  <AlertTriangle className="w-3.5 h-3.5" /> Nível não definido
+                </div>
+                <Select onValueChange={(v) => setForm({ ...form, access_level_id: v })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um nível" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accessLevels.map((lvl) => (
+                      <SelectItem key={lvl.id} value={lvl.id}>
+                        {lvl.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </F>
           <F label="Telefone">
             <Input

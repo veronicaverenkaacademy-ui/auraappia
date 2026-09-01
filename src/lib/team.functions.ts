@@ -14,12 +14,7 @@ const CreateMemberInput = z.object({
   commission_type: z.enum(["percent", "fixed"]).default("percent"),
   commission_value: z.number().nonnegative().default(0),
   monthly_goal: z.number().nonnegative().default(0),
-  booking_slug: z
-    .string()
-    .trim()
-    .min(2)
-    .max(40)
-    .regex(/^[a-z0-9-]+$/),
+  access_level_id: z.string().uuid(),
   show_commission: z.boolean().default(false),
 });
 
@@ -37,7 +32,7 @@ export const createTeamMember = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const email = (data.email ?? "").trim();
-    const authEmail = email || `${data.booking_slug}+${Date.now()}@team.aura.local`;
+    const authEmail = email || `${crypto.randomUUID()}@team.aura.local`;
     const phone = data.phone ? normalizePhoneBR(data.phone) : null;
 
     const { data: created, error: authErr } = await supabaseAdmin.auth.admin.createUser({
@@ -72,7 +67,7 @@ export const createTeamMember = createServerFn({ method: "POST" })
         commission_type: data.commission_type,
         commission_value: data.commission_value,
         monthly_goal: data.monthly_goal,
-        booking_slug: data.booking_slug,
+        access_level_id: data.access_level_id,
         show_commission: data.show_commission,
         status: "active",
       })
