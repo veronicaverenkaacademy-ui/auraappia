@@ -46,3 +46,49 @@ como um lembrete automático — não esperar a dona bater no erro:
    `supabase_migrations.schema_migrations` também manualmente (mesma versão do nome
    do arquivo), para não deixar o "livro de controle" incompleto — deixando claro em
    `created_by` que foi aplicação manual, não pelo pipeline normal da Lovable.
+
+## `src/integrations/supabase/types.ts` desatualizado após migração manual
+
+Descoberto em produção (01/09/2026, durante a Etapa 3 do sistema de níveis de acesso):
+`types.ts` é gerado automaticamente a partir do schema e só é regenerado quando a
+Lovable processa uma migração pelo fluxo dela (chat) — nunca quando a migração é
+aplicada manualmente (SQL Editor ou `query_database`). Isso já causou erros de
+compilação (colunas/tabelas novas ausentes de `types.ts`) e, num caso mais grave, o
+inverso: `types.ts` chegou a declarar `whatsapp_confirmation_threads` e duas colunas de
+`appointments` que a migração correspondente (`20260816150000`) nunca havia de fato
+aplicado — ou seja, o arquivo gerado "mentia" que uma feature existia no banco quando
+não existia.
+
+Comando oficial de regeneração (requer `SUPABASE_ACCESS_TOKEN` — pedir à dona,
+gerado uma vez em supabase.com/dashboard; **nunca** commitar esse token nem
+imprimi-lo em nenhuma resposta):
+```
+npx supabase gen types typescript --project-id vsgymacenyulrefmlspo --schema public \
+  > src/integrations/supabase/types.ts
+```
+Atenção: em pelo menos um ambiente de execução (sessão de 01/09/2026) esse comando
+falhou por política de rede do ambiente (`api.supabase.com` bloqueado pelo proxy,
+403), não por problema do token — não presumir que é falha de autenticação sem
+checar a mensagem de erro real. Se falhar assim, usar o fallback abaixo e avisar a
+dona explicitamente do motivo.
+
+Fallback (sem depender do comando oficial): auditar `information_schema.columns` via
+`query_database` para as tabelas/colunas afetadas pela migração aplicada, e editar
+`types.ts` manualmente só nesses pontos, seguindo o padrão exato dos blocos
+vizinhos (incluindo `Relationships` com os nomes reais de FK, confirmados via
+`pg_constraint` — não adivinhar o nome da constraint).
+
+Checklist permanente para **toda migração aplicada manualmente** (SQL Editor,
+`query_database`, ou merge direto pelo GitHub) daqui pra frente:
+
+1. Confirmar o ponto de partida (idempotência) antes de aplicar — reconfirmar em
+   tempo real, não reaproveitar resultado de verificação anterior na mesma conversa.
+2. Colar e rodar o SQL (dentro de `BEGIN;`/`COMMIT;`).
+3. Rodar as queries de verificação pós-aplicação e reportar a evidência.
+4. Regenerar `types.ts` — comando oficial acima; se a rede bloquear, aplicar o
+   fallback via `information_schema` e dizer explicitamente que foi o fallback.
+5. Rodar `tsc --noEmit` e `eslint` nos arquivos tocados (incluindo `types.ts`);
+   comparar contagem de erros antes/depois — zero erros novos é o critério de
+   aceite, não "parece que compila".
+6. Commitar a migração + o `types.ts` atualizado juntos, no mesmo commit.
+7. Registrar no documento de continuidade do projeto.
