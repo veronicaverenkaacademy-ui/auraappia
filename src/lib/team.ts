@@ -24,7 +24,10 @@ export type TeamMember = {
   onboarding_completed: boolean;
   created_at: string;
   updated_at: string;
+  access_level_id: string | null;
 };
+
+export type AccessLevel = { id: string; name: string; sort_order: number };
 
 export type TeamPermission = {
   id: string;
@@ -41,6 +44,15 @@ export async function listTeamMembers(): Promise<TeamMember[]> {
     .order("full_name");
   if (error) throw error;
   return (data ?? []) as TeamMember[];
+}
+
+export async function listAccessLevels(): Promise<AccessLevel[]> {
+  const { data, error } = await supabase
+    .from("access_levels")
+    .select("id, name, sort_order")
+    .order("sort_order");
+  if (error) throw error;
+  return (data ?? []) as AccessLevel[];
 }
 
 export async function getTeamMember(id: string): Promise<TeamMember> {
