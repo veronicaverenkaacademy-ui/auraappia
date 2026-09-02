@@ -1,8 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { ArrowLeft, Trash2, Save, ExternalLink, Copy, AlertTriangle } from "lucide-react";
+import { ArrowLeft, UserX, Trash2, Save, ExternalLink, Copy, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,14 +15,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
-  getTeamMember,
-  updateTeamMember,
-  deleteTeamMember,
-  listAccessLevels,
-  type TeamMember,
-} from "@/lib/team";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { getTeamMember, updateTeamMember, listAccessLevels, type TeamMember } from "@/lib/team";
+import { deleteTeamMemberPermanently } from "@/lib/team.functions";
+import { useCurrentRole } from "@/hooks/use-role";
 import { initials } from "@/lib/clients";
 import { fetchCompanySlugByOwnerId } from "@/lib/companyProfile";
 
@@ -49,6 +57,8 @@ function MemberDetail() {
     queryKey: ["access-levels"],
     queryFn: listAccessLevels,
   });
+  const { data: role } = useCurrentRole();
+  const [confirmName, setConfirmName] = useState("");
 
   useEffect(() => {
     if (member) setForm(member);
@@ -63,12 +73,28 @@ function MemberDetail() {
     },
   });
 
+  // "Remover" é soft delete (status='terminated') — preserva o histórico de
+  // agendamentos (professional_id) e mantém a conta de login existindo, mas inativa
+  // pra fins de RLS. Reversível: basta mudar o status de volta. A exclusão
+  // irreversível de verdade é a ação separada "Excluir permanentemente" abaixo.
   const remove = useMutation({
-    mutationFn: () => deleteTeamMember(id),
+    mutationFn: () => updateTeamMember(id, { status: "terminated" }),
     onSuccess: () => {
-      toast.success("Colaborador removido.");
+      toast.success("Colaborador desligado.");
+      qc.invalidateQueries({ queryKey: ["team-members"] });
       nav({ to: "/equipe" });
     },
+  });
+
+  const deletePermanentlyFn = useServerFn(deleteTeamMemberPermanently);
+  const deletePermanently = useMutation({
+    mutationFn: () => deletePermanentlyFn({ data: { id } }),
+    onSuccess: () => {
+      toast.success("Colaborador excluído permanentemente.");
+      qc.invalidateQueries({ queryKey: ["team-members"] });
+      nav({ to: "/equipe" });
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   if (isError) {
@@ -267,16 +293,58 @@ function MemberDetail() {
         </div>
       )}
 
-      <div className="flex justify-between gap-3">
-        <Button
-          variant="outline"
-          className="rounded-full gap-2 text-destructive"
-          onClick={() => {
-            if (confirm("Remover colaborador?")) remove.mutate();
-          }}
-        >
-          <Trash2 className="w-4 h-4" /> Remover
-        </Button>
+      <div className="flex flex-wrap justify-between gap-3">
+        <div className="flex flex-wrap gap-3">
+          <Button
+            variant="outline"
+            className="rounded-full gap-2 text-destructive"
+            onClick={() => {
+              if (
+                confirm(
+                  `Desligar ${form.full_name}? Ela deixa de aparecer como colaboradora ativa, mas o histórico de agendamentos é preservado. Você pode reverter depois mudando o status.`,
+                )
+              )
+                remove.mutate();
+            }}
+          >
+            <UserX className="w-4 h-4" /> Remover
+          </Button>
+          {role === "admin" && (
+            <AlertDialog onOpenChange={(open) => !open && setConfirmName("")}>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" className="rounded-full gap-2 text-destructive">
+                  <Trash2 className="w-4 h-4" /> Excluir permanentemente
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Excluir {form.full_name} permanentemente?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Isso apaga o cadastro e a conta de login para sempre — não pode ser desfeito, e
+                    o histórico de agendamentos perde a referência a esta profissional. Use
+                    "Remover" em vez disso se só quiser desativá-la. Para confirmar, digite o nome
+                    completo dela: <strong>{form.full_name}</strong>.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <Input
+                  value={confirmName}
+                  onChange={(e) => setConfirmName(e.target.value)}
+                  placeholder={form.full_name}
+                />
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    disabled={confirmName !== form.full_name || deletePermanently.isPending}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={() => deletePermanently.mutate()}
+                  >
+                    Excluir permanentemente
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
         <Button
           className="rounded-full gap-2"
           disabled={save.isPending}

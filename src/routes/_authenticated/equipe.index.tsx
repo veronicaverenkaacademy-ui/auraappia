@@ -29,6 +29,12 @@ function EquipeIndex() {
   const { data: members = [], isLoading } = useQuery({ queryKey: ["team-members"], queryFn: listTeamMembers });
   const [open, setOpen] = useState(false);
   const [creds, setCreds] = useState<{ login: string; password: string } | null>(null);
+  const [showTerminated, setShowTerminated] = useState(false);
+
+  const terminated = members.filter((m) => m.status === "terminated");
+  const visibleMembers = showTerminated
+    ? members
+    : members.filter((m) => m.status !== "terminated");
 
   const createFn = useServerFn(createTeamMember);
   const create = useMutation({
@@ -85,13 +91,17 @@ function EquipeIndex() {
         </div>
         {isLoading ? (
           <div className="p-8 text-sm text-muted-foreground text-center">Carregando…</div>
-        ) : members.length === 0 ? (
+        ) : visibleMembers.length === 0 ? (
           <div className="p-12 text-center">
             <Sparkle className="w-8 h-8 mx-auto text-muted-foreground mb-3" />
-            <p className="text-sm text-muted-foreground">Nenhum colaborador ainda. Adicione o primeiro para começar.</p>
+            <p className="text-sm text-muted-foreground">
+              {members.length === 0
+                ? "Nenhum colaborador ainda. Adicione o primeiro para começar."
+                : "Todas as colaboradoras estão desligadas."}
+            </p>
           </div>
         ) : (
-          members.map((m) => (
+          visibleMembers.map((m) => (
             <Link
               key={m.id}
               to="/equipe/$id"
@@ -119,6 +129,18 @@ function EquipeIndex() {
           ))
         )}
       </div>
+
+      {terminated.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowTerminated((v) => !v)}
+          className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+        >
+          {showTerminated
+            ? "Ocultar desligados"
+            : `Mostrar desligados (${terminated.length})`}
+        </button>
+      )}
     </div>
   );
 }

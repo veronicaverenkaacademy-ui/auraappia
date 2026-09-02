@@ -131,3 +131,74 @@ export const updateMemberRole = createServerFn({ method: "POST" })
 
     return { ok: true };
   });
+
+const DeletePermanentlyInput = z.object({
+  id: z.string().uuid(),
+});
+
+// "Remover" (equipe.$id.tsx) faz soft delete (status='terminated') e preserva o
+// histórico de agendamentos. Esta função é a exclusão irreversível separada: apaga a
+// linha de team_members E a conta de auth.users correspondente — sem isso, o
+// telefone/e-mail dela ficaria bloqueado pra sempre (UNIQUE em auth.users.phone/email),
+// mesmo depois de "removida". Só a dona (is_admin) pode chamar.
+export const deleteTeamMemberPermanently = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((raw) => DeletePermanentlyInput.parse(raw))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: adminCheck } = await supabase.rpc("is_admin", { _user_id: userId });
+    if (!adminCheck) throw new Error("Apenas administradores podem excluir permanentemente.");
+
+    // Mesmo cuidado do updateMemberRole: o alvo precisa pertencer à própria conta do
+    // admin que está chamando (RLS já garante isso via team_members_owner_all, mas a
+    // checagem explícita evita depender só da RLS para uma operação irreversível).
+    const { data: member, error: fetchErr } = await supabase
+      .from("team_members")
+      .select("id, user_id, full_name")
+      .eq("id", data.id)
+      .eq("owner_id", userId)
+      .maybeSingle();
+    if (fetchErr) throw new Error(fetchErr.message);
+    if (!member) throw new Error("Colaboradora não encontrada nesta conta.");
+
+    const { error: deleteErr } = await supabase.from("team_members").delete().eq("id", member.id);
+    if (deleteErr) throw new Error(deleteErr.message);
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    let authDeleteError: string | null = null;
+    if (member.user_id) {
+      const { error: authErr } = await supabaseAdmin.auth.admin.deleteUser(member.user_id);
+      if (authErr) {
+        authDeleteError = authErr.message;
+        console.error(
+          `[deleteTeamMemberPermanently] team_members ${member.id} apagado, mas ` +
+            `auth.admin.deleteUser(${member.user_id}) falhou — conta de auth pode ter ` +
+            `ficado órfã (telefone/e-mail bloqueados), verificar manualmente.`,
+          authErr,
+        );
+      }
+    }
+
+    await supabaseAdmin.from("audit_log").insert({
+      owner_id: userId,
+      actor_id: userId,
+      action: "delete_permanent",
+      resource: "team_member",
+      resource_id: member.id,
+      details: {
+        full_name: member.full_name,
+        auth_account_deleted: member.user_id ? authDeleteError === null : null,
+        ...(authDeleteError ? { auth_delete_error: authDeleteError } : {}),
+      } as never,
+    });
+
+    if (authDeleteError) {
+      throw new Error(
+        `Colaboradora removida, mas a conta de login não pôde ser apagada (${authDeleteError}). ` +
+          `O telefone/e-mail dela pode continuar bloqueado — verifique manualmente em auth.users.`,
+      );
+    }
+
+    return { ok: true };
+  });
