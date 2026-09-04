@@ -85,9 +85,15 @@ export async function updateTeamMember(id: string, patch: Partial<TeamMember>): 
   return data as TeamMember;
 }
 
-export async function deleteTeamMember(id: string): Promise<void> {
-  const { error } = await supabase.from("team_members").delete().eq("id", id);
+export async function countFutureAppointments(professionalId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from("appointments")
+    .select("id", { count: "exact", head: true })
+    .eq("professional_id", professionalId)
+    .neq("status", "cancelled")
+    .gt("starts_at", new Date().toISOString());
   if (error) throw error;
+  return count ?? 0;
 }
 
 export async function listPermissions(memberId: string): Promise<TeamPermission[]> {
