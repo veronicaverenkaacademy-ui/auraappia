@@ -27,7 +27,13 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { getTeamMember, updateTeamMember, listAccessLevels, type TeamMember } from "@/lib/team";
+import {
+  getTeamMember,
+  updateTeamMember,
+  listAccessLevels,
+  countFutureAppointments,
+  type TeamMember,
+} from "@/lib/team";
 import { deleteTeamMemberPermanently } from "@/lib/team.functions";
 import { useCurrentRole } from "@/hooks/use-role";
 import { initials } from "@/lib/clients";
@@ -59,6 +65,7 @@ function MemberDetail() {
   });
   const { data: role } = useCurrentRole();
   const [confirmName, setConfirmName] = useState("");
+  const [vacationWarning, setVacationWarning] = useState<{ count: number } | null>(null);
 
   useEffect(() => {
     if (member) setForm(member);
@@ -72,6 +79,21 @@ function MemberDetail() {
       qc.invalidateQueries({ queryKey: ["team-member", id] });
     },
   });
+
+  // Aviso (não bloqueio) ao entrar em férias: só dispara na transição real
+  // (status salvo era outro e o rascunho atual é 'vacation'), nunca em toda
+  // edição do formulário nem se ela mudar de ideia antes de salvar.
+  const handleSaveClick = async () => {
+    const enteringVacation = member?.status !== "vacation" && form?.status === "vacation";
+    if (enteringVacation) {
+      const count = await countFutureAppointments(id);
+      if (count > 0) {
+        setVacationWarning({ count });
+        return;
+      }
+    }
+    save.mutate();
+  };
 
   // "Remover" é soft delete (status='terminated') — preserva o histórico de
   // agendamentos (professional_id) e mantém a conta de login existindo, mas inativa
@@ -345,14 +367,38 @@ function MemberDetail() {
             </AlertDialog>
           )}
         </div>
-        <Button
-          className="rounded-full gap-2"
-          disabled={save.isPending}
-          onClick={() => save.mutate()}
-        >
+        <Button className="rounded-full gap-2" disabled={save.isPending} onClick={handleSaveClick}>
           <Save className="w-4 h-4" /> Salvar alterações
         </Button>
       </div>
+
+      <AlertDialog
+        open={vacationWarning !== null}
+        onOpenChange={(open) => !open && setVacationWarning(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Colocar {form.full_name} de férias?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {form.full_name} tem {vacationWarning?.count}{" "}
+              {vacationWarning?.count === 1 ? "agendamento futuro" : "agendamentos futuros"} que não
+              estão cancelados. Eles continuam existindo normalmente — isso só impede que o portal
+              público ofereça novos horários com ela durante o período. Quer continuar mesmo assim?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setVacationWarning(null);
+                save.mutate();
+              }}
+            >
+              Confirmar férias
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
