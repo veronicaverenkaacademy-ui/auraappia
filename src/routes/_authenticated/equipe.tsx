@@ -16,7 +16,6 @@ export const Route = createFileRoute("/_authenticated/equipe")({
 const tabs = [
   { to: "/equipe", label: "Colaboradores", exact: true },
   { to: "/equipe/permissoes", label: "Papéis & Permissões" },
-  { to: "/equipe/auditoria", label: "Auditoria" },
 ];
 
 function EquipeLayout() {

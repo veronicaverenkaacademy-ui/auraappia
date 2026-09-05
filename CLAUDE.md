@@ -92,3 +92,35 @@ Checklist permanente para **toda migração aplicada manualmente** (SQL Editor,
    aceite, não "parece que compila".
 6. Commitar a migração + o `types.ts` atualizado juntos, no mesmo commit.
 7. Registrar no documento de continuidade do projeto.
+
+## Exclusão manual de colaboradora de teste sempre deixa conta órfã em `auth.users`
+
+Descoberto em produção (01-05/09/2026, duas vezes na mesma leva de testes da Etapa 3):
+qualquer exclusão de `team_members` que **não** passe pelo botão "Excluir
+permanentemente" (`deleteTeamMemberPermanently`, que chama
+`supabaseAdmin.auth.admin.deleteUser()` depois de apagar a linha) deixa a conta de
+`auth.users` correspondente órfã para sempre — e como `auth.users` tem `UNIQUE` em
+`phone` e `email`, isso bloqueia esse telefone/e-mail de ser reusado em qualquer
+cadastro futuro, silenciosamente, até alguém achar e apagar a conta órfã manualmente.
+
+Isso vale pra **qualquer** exclusão fora do botão: `DELETE FROM team_members` direto
+via SQL/`query_database`, edição manual, ou qualquer script futuro. Não existe atalho
+seguro — a única forma de remover uma colaboradora sem deixar rastro em `auth.users` é
+pelo fluxo da UI ("Excluir permanentemente"), porque só ele tem acesso à Admin API do
+Supabase Auth.
+
+Regra permanente: ao limpar dado de teste manualmente (SQL direto, painel Cloud →
+Users, ou qualquer via que não seja o botão da UI), **sempre** verificar depois se
+sobrou conta órfã em `auth.users` com o mesmo telefone/e-mail antes de dar o caso por
+encerrado — não presumir que "apaguei a linha" e "conta de auth sumiu junto" são a
+mesma coisa.
+
+**Trade-off aceito conscientemente (05/09/2026, junto da remoção da aba de
+Auditoria):** `deleteTeamMemberPermanently` não grava mais log estruturado do
+resultado da chamada de `auth.admin.deleteUser()` em `audit_log` — só
+`console.error()` no servidor quando ela falha. Isso foi exatamente a evidência
+(`details.auth_account_deleted`/`auth_delete_error`) usada pra diagnosticar o caso de
+órfã acima. Se um bug parecido de conta órfã voltar a acontecer, o diagnóstico vai ser
+mais lento — sem nada consultável via SQL, só o que aparecer no log do servidor no
+momento exato da falha. A dona já sabia disso e decidiu que valia a pena de qualquer
+forma; não é um esquecimento a corrigir numa sessão futura.
