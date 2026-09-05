@@ -255,15 +255,6 @@ export const createClientAppointment = createServerFn({ method: "POST" })
       throw new Error(error.message);
     }
 
-    await supabaseAdmin.from("audit_log").insert({
-      owner_id: data.owner_id,
-      actor_id: context.userId,
-      action: "create",
-      resource: "appointment",
-      resource_id: appointment.id,
-      details: { via: "portal_publico", service_id: data.service_id } as never,
-    });
-
     return { appointment };
   });
 
@@ -330,15 +321,6 @@ export const rescheduleClientAppointment = createServerFn({ method: "POST" })
       throw new Error(error.message);
     }
 
-    await supabaseAdmin.from("audit_log").insert({
-      owner_id: data.owner_id,
-      actor_id: context.userId,
-      action: "reschedule",
-      resource: "appointment",
-      resource_id: data.appointment_id,
-      details: { via: "portal_publico", new_starts_at: startsAt.toISOString() } as never,
-    });
-
     return { ok: true };
   });
 
@@ -374,15 +356,6 @@ export const cancelClientAppointment = createServerFn({ method: "POST" })
       .update({ status: "cancelled" })
       .eq("id", data.appointment_id);
     if (error) throw new Error(error.message);
-
-    await supabaseAdmin.from("audit_log").insert({
-      owner_id: data.owner_id,
-      actor_id: context.userId,
-      action: "cancel",
-      resource: "appointment",
-      resource_id: data.appointment_id,
-      details: { via: "portal_publico" } as never,
-    });
 
     return { ok: true };
   });

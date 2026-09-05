@@ -56,7 +56,6 @@ import { Route as AuthenticatedClientesIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedClientesIdRouteImport } from './routes/_authenticated/clientes.$id'
 import { Route as AuthenticatedEquipeIndexRouteImport } from './routes/_authenticated/equipe.index'
 import { Route as AuthenticatedEquipeIdRouteImport } from './routes/_authenticated/equipe.$id'
-import { Route as AuthenticatedEquipeAuditoriaRouteImport } from './routes/_authenticated/equipe.auditoria'
 import { Route as AuthenticatedEquipePermissoesRouteImport } from './routes/_authenticated/equipe.permissoes'
 import { Route as AuthenticatedEstoqueIndexRouteImport } from './routes/_authenticated/estoque.index'
 import { Route as AuthenticatedEstoqueIdRouteImport } from './routes/_authenticated/estoque.$id'
@@ -319,12 +318,6 @@ const AuthenticatedEquipeIdRoute = AuthenticatedEquipeIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AuthenticatedEquipeRoute,
 } as any)
-const AuthenticatedEquipeAuditoriaRoute =
-  AuthenticatedEquipeAuditoriaRouteImport.update({
-    id: '/auditoria',
-    path: '/auditoria',
-    getParentRoute: () => AuthenticatedEquipeRoute,
-  } as any)
 const AuthenticatedEquipePermissoesRoute =
   AuthenticatedEquipePermissoesRouteImport.update({
     id: '/permissoes',
@@ -468,7 +461,6 @@ export interface FileRoutesByFullPath {
   '/bi/servicos': typeof AuthenticatedBiServicosRoute
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/equipe/$id': typeof AuthenticatedEquipeIdRoute
-  '/equipe/auditoria': typeof AuthenticatedEquipeAuditoriaRoute
   '/equipe/permissoes': typeof AuthenticatedEquipePermissoesRoute
   '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
@@ -525,7 +517,6 @@ export interface FileRoutesByTo {
   '/bi/servicos': typeof AuthenticatedBiServicosRoute
   '/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/equipe/$id': typeof AuthenticatedEquipeIdRoute
-  '/equipe/auditoria': typeof AuthenticatedEquipeAuditoriaRoute
   '/equipe/permissoes': typeof AuthenticatedEquipePermissoesRoute
   '/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
@@ -593,7 +584,6 @@ export interface FileRoutesById {
   '/_authenticated/bi/servicos': typeof AuthenticatedBiServicosRoute
   '/_authenticated/clientes/$id': typeof AuthenticatedClientesIdRoute
   '/_authenticated/equipe/$id': typeof AuthenticatedEquipeIdRoute
-  '/_authenticated/equipe/auditoria': typeof AuthenticatedEquipeAuditoriaRoute
   '/_authenticated/equipe/permissoes': typeof AuthenticatedEquipePermissoesRoute
   '/_authenticated/estoque/$id': typeof AuthenticatedEstoqueIdRoute
   '/_authenticated/estoque/preditivo': typeof AuthenticatedEstoquePreditivoRoute
@@ -661,7 +651,6 @@ export interface FileRouteTypes {
     | '/bi/servicos'
     | '/clientes/$id'
     | '/equipe/$id'
-    | '/equipe/auditoria'
     | '/equipe/permissoes'
     | '/estoque/$id'
     | '/estoque/preditivo'
@@ -718,7 +707,6 @@ export interface FileRouteTypes {
     | '/bi/servicos'
     | '/clientes/$id'
     | '/equipe/$id'
-    | '/equipe/auditoria'
     | '/equipe/permissoes'
     | '/estoque/$id'
     | '/estoque/preditivo'
@@ -785,7 +773,6 @@ export interface FileRouteTypes {
     | '/_authenticated/bi/servicos'
     | '/_authenticated/clientes/$id'
     | '/_authenticated/equipe/$id'
-    | '/_authenticated/equipe/auditoria'
     | '/_authenticated/equipe/permissoes'
     | '/_authenticated/estoque/$id'
     | '/_authenticated/estoque/preditivo'
@@ -1153,13 +1140,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedEquipeIdRouteImport
       parentRoute: typeof AuthenticatedEquipeRoute
     }
-    '/_authenticated/equipe/auditoria': {
-      id: '/_authenticated/equipe/auditoria'
-      path: '/auditoria'
-      fullPath: '/equipe/auditoria'
-      preLoaderRoute: typeof AuthenticatedEquipeAuditoriaRouteImport
-      parentRoute: typeof AuthenticatedEquipeRoute
-    }
     '/_authenticated/equipe/permissoes': {
       id: '/_authenticated/equipe/permissoes'
       path: '/permissoes'
@@ -1332,14 +1312,12 @@ const AuthenticatedClientesRouteWithChildren =
 
 interface AuthenticatedEquipeRouteChildren {
   AuthenticatedEquipeIdRoute: typeof AuthenticatedEquipeIdRoute
-  AuthenticatedEquipeAuditoriaRoute: typeof AuthenticatedEquipeAuditoriaRoute
   AuthenticatedEquipePermissoesRoute: typeof AuthenticatedEquipePermissoesRoute
   AuthenticatedEquipeIndexRoute: typeof AuthenticatedEquipeIndexRoute
 }
 
 const AuthenticatedEquipeRouteChildren: AuthenticatedEquipeRouteChildren = {
   AuthenticatedEquipeIdRoute: AuthenticatedEquipeIdRoute,
-  AuthenticatedEquipeAuditoriaRoute: AuthenticatedEquipeAuditoriaRoute,
   AuthenticatedEquipePermissoesRoute: AuthenticatedEquipePermissoesRoute,
   AuthenticatedEquipeIndexRoute: AuthenticatedEquipeIndexRoute,
 }

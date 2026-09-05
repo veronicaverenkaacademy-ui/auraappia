@@ -156,14 +156,6 @@ export const verifyClientOtp = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { verifyOtpCode, generateRandomPassword } = await import("./otp-crypto.server");
 
-    const logEvent = (action: string, details: Record<string, unknown> = {}) =>
-      supabaseAdmin.from("audit_log").insert({
-        owner_id: data.owner_id,
-        action,
-        resource: "client_otp",
-        details: { phone: maskPhone(phone), ...details } as never,
-      } as never);
-
     const { data: row, error: rowErr } = await supabaseAdmin
       .from("client_otp_codes")
       .select("id, code_hash, expires_at, attempts, max_attempts, used_at")
@@ -177,7 +169,6 @@ export const verifyClientOtp = createServerFn({ method: "POST" })
     if (row.used_at) throw new Error(EXPIRED_MSG);
     if (new Date(row.expires_at).getTime() < now.getTime()) throw new Error(EXPIRED_MSG);
     if (row.attempts >= row.max_attempts) {
-      await logEvent("client_otp_locked");
       throw new Error(ATTEMPTS_EXCEEDED_MSG);
     }
 
@@ -185,7 +176,6 @@ export const verifyClientOtp = createServerFn({ method: "POST" })
     if (!matches) {
       const attempts = row.attempts + 1;
       await supabaseAdmin.from("client_otp_codes").update({ attempts }).eq("id", row.id);
-      await logEvent("client_otp_wrong_code", { attempts });
       throw new Error(attempts >= row.max_attempts ? ATTEMPTS_EXCEEDED_MSG : WRONG_CODE_MSG);
     }
 
@@ -218,9 +208,6 @@ export const verifyClientOtp = createServerFn({ method: "POST" })
         userId = created.user.id;
       } catch (e) {
         console.error("[verifyClientOtp] Falha ao criar/resolver auth.users para telefone", e);
-        await logEvent("client_otp_session_mint_failed", {
-          error: e instanceof Error ? e.message : String(e),
-        });
         throw new Error(GENERIC_LOGIN_FAIL_MSG);
       }
     }
@@ -231,7 +218,6 @@ export const verifyClientOtp = createServerFn({ method: "POST" })
     });
     if (pwErr) {
       console.error("[verifyClientOtp] Falha ao definir senha temporária", pwErr);
-      await logEvent("client_otp_session_mint_failed", { error: pwErr.message });
       throw new Error(GENERIC_LOGIN_FAIL_MSG);
     }
 
@@ -250,11 +236,8 @@ export const verifyClientOtp = createServerFn({ method: "POST" })
     });
     if (signInErr || !signIn.session) {
       console.error("[verifyClientOtp] Falha ao montar sessão emprestada", signInErr);
-      await logEvent("client_otp_session_mint_failed", { error: signInErr?.message });
       throw new Error(GENERIC_LOGIN_FAIL_MSG);
     }
-
-    await logEvent("client_otp_verified");
 
     return {
       access_token: signIn.session.access_token,

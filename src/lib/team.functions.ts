@@ -75,15 +75,6 @@ export const createTeamMember = createServerFn({ method: "POST" })
       .single();
     if (memErr) throw new Error(memErr.message);
 
-    await supabaseAdmin.from("audit_log").insert({
-      owner_id: userId,
-      actor_id: userId,
-      action: "create",
-      resource: "team_member",
-      resource_id: member.id,
-      details: { full_name: data.full_name, role: "staff" } as never,
-    });
-
     return {
       member,
       credentials: { login: authEmail, password: data.password },
@@ -119,15 +110,6 @@ export const updateMemberRole = createServerFn({ method: "POST" })
       .from("user_roles")
       .insert({ user_id: data.user_id, role: data.role, granted_by: userId });
     if (error) throw new Error(error.message);
-
-    await supabaseAdmin.from("audit_log").insert({
-      owner_id: userId,
-      actor_id: userId,
-      action: "role_update",
-      resource: "user_roles",
-      resource_id: data.user_id,
-      details: { role: data.role } as never,
-    });
 
     return { ok: true };
   });
@@ -179,19 +161,6 @@ export const deleteTeamMemberPermanently = createServerFn({ method: "POST" })
         );
       }
     }
-
-    await supabaseAdmin.from("audit_log").insert({
-      owner_id: userId,
-      actor_id: userId,
-      action: "delete_permanent",
-      resource: "team_member",
-      resource_id: member.id,
-      details: {
-        full_name: member.full_name,
-        auth_account_deleted: member.user_id ? authDeleteError === null : null,
-        ...(authDeleteError ? { auth_delete_error: authDeleteError } : {}),
-      } as never,
-    });
 
     if (authDeleteError) {
       throw new Error(
