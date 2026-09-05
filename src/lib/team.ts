@@ -96,6 +96,23 @@ export async function countFutureAppointments(professionalId: string): Promise<n
   return count ?? 0;
 }
 
+export type AccessLevelPermission = {
+  resource: Resource;
+  action: Action;
+  allowed: boolean;
+};
+
+export async function listAccessLevelPermissions(
+  accessLevelId: string,
+): Promise<AccessLevelPermission[]> {
+  const { data, error } = await supabase
+    .from("access_level_permissions")
+    .select("resource, action, allowed")
+    .eq("access_level_id", accessLevelId);
+  if (error) throw error;
+  return (data ?? []) as AccessLevelPermission[];
+}
+
 export async function listPermissions(memberId: string): Promise<TeamPermission[]> {
   const { data, error } = await supabase
     .from("team_permissions")

@@ -106,6 +106,11 @@ export const upsertCompanyProfile = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((raw: unknown) => UpsertInput.parse(raw))
   .handler(async ({ data, context }) => {
+    const { data: adminCheck } = await context.supabase.rpc("is_admin", {
+      _user_id: context.userId,
+    });
+    if (!adminCheck) throw new Error("Apenas administradores podem editar os dados da empresa.");
+
     const { data: existing } = await context.supabase
       .from("company_profiles")
       .select("owner_id")
