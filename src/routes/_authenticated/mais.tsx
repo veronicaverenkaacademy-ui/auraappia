@@ -1,8 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
-import { useCurrentRole } from "@/hooks/use-role";
+import { useStaffPermissions } from "@/hooks/use-staff-permissions";
 import { supabase } from "@/integrations/supabase/client";
+import type { Resource } from "@/lib/permissions";
 import {
   Users, Calendar, Package, Sparkles, DollarSign, BarChart3, Megaphone, ShoppingBag,
   FileText, Settings, HelpCircle, MessageCircle, LineChart, Wand2, UsersRound, User,
@@ -27,42 +28,177 @@ type Item = {
   icon: typeof Users;
   desc: string;
   soon?: boolean;
-  // Mesma restrição que existia no menu lateral removido — sem isso, um perfil
-  // "staff" passaria a ver (e tentar abrir) áreas que antes ficavam escondidas.
+  // Restrição estática por papel — usada quando não faz sentido nenhum nível de staff
+  // ver o item (ex: feature nem lançada, ou tela exclusiva da dona).
   roles?: ("admin" | "staff")[];
+  // Restrição dinâmica por permissão real (access_level_permissions) — usada nos
+  // itens funcionais onde Gerente/Profissional podem legitimamente ter acesso.
+  resource?: Resource;
 };
 
 const items: Item[] = [
-  { to: "/meu-espaco", label: "Meu Espaço", icon: User, desc: "Sua agenda e comissões", roles: ["staff"] },
+  {
+    to: "/meu-espaco",
+    label: "Meu Espaço",
+    icon: User,
+    desc: "Sua agenda e comissões",
+    roles: ["staff"],
+  },
   { to: "/clientes", label: "Clientes", icon: Users, desc: "Fichas e histórico" },
   { to: "/agenda", label: "Agenda", icon: Calendar, desc: "Horários e compromissos" },
   { to: "/servicos", label: "Serviços", icon: Sparkles, desc: "Protocolos e preços" },
-  { to: "/estoque", label: "Estoque", icon: Package, desc: "Produtos e compras", roles: ["admin"] },
-  { to: "/financeiro", label: "Financeiro", icon: DollarSign, desc: "Caixa, DRE e CFO IA", roles: ["admin"] },
-  { to: "/marketing", label: "Marketing", icon: Megaphone, desc: "Automações e jornadas", roles: ["admin"] },
-  { to: "/whatsapp", label: "WhatsApp", icon: MessageCircle, desc: "Mensagens e templates", roles: ["admin"] },
+  {
+    to: "/estoque",
+    label: "Estoque",
+    icon: Package,
+    desc: "Produtos e compras",
+    resource: "stock",
+  },
+  {
+    to: "/financeiro",
+    label: "Financeiro",
+    icon: DollarSign,
+    desc: "Caixa, DRE e CFO IA",
+    resource: "finance",
+  },
+  {
+    to: "/marketing",
+    label: "Marketing",
+    icon: Megaphone,
+    desc: "Automações e jornadas",
+    roles: ["admin"],
+  },
+  {
+    to: "/whatsapp",
+    label: "WhatsApp",
+    icon: MessageCircle,
+    desc: "Mensagens e templates",
+    roles: ["admin"],
+  },
   { to: "/bi", label: "BI", icon: LineChart, desc: "Indicadores e previsões", roles: ["admin"] },
-  { to: "/aura-ia", label: "AURA IA", icon: Wand2, desc: "Assistente inteligente", roles: ["admin"] },
-  { to: "/equipe", label: "Equipe", icon: UsersRound, desc: "Colaboradores e unidades", roles: ["admin"] },
-  { to: "/relatorios", label: "Relatórios", icon: BarChart3, desc: "Indicadores do negócio", soon: true },
-  { to: "/venda-rapida", label: "Venda rápida", icon: ShoppingBag, desc: "Pacotes e produtos", soon: true },
-  { to: "/anamnese", label: "Anamnese", icon: FileText, desc: "Ficha de avaliação", soon: true },
-  { to: "/perfil", label: "Perfil", icon: Settings, desc: "Dados da profissional", soon: true },
+  {
+    to: "/aura-ia",
+    label: "AURA IA",
+    icon: Wand2,
+    desc: "Assistente inteligente",
+    resource: "aura_ia",
+  },
+  {
+    to: "/equipe",
+    label: "Equipe",
+    icon: UsersRound,
+    desc: "Colaboradores e unidades",
+    roles: ["admin"],
+  },
+  {
+    to: "/relatorios",
+    label: "Relatórios",
+    icon: BarChart3,
+    desc: "Indicadores do negócio",
+    soon: true,
+    roles: ["admin"],
+  },
+  {
+    to: "/venda-rapida",
+    label: "Venda rápida",
+    icon: ShoppingBag,
+    desc: "Pacotes e produtos",
+    soon: true,
+    roles: ["admin"],
+  },
+  {
+    to: "/anamnese",
+    label: "Anamnese",
+    icon: FileText,
+    desc: "Ficha de avaliação",
+    soon: true,
+    roles: ["admin"],
+  },
+  {
+    to: "/perfil",
+    label: "Perfil",
+    icon: Settings,
+    desc: "Dados da profissional",
+    soon: true,
+    roles: ["admin"],
+  },
 ];
 
 // Itens que antes só existiam dentro do Control Center (removido — era uma segunda
 // tela de navegação). Cada um agora é sua própria rota/tela real, sem hub no meio.
+// Exclusivo da dona, sem exceção — nenhum é ação de equipe (a de equipe de verdade
+// já vive em /equipe/permissoes, uma tela separada).
 const settingsItems: Item[] = [
-  { to: "/governanca", label: "Centro de Governança", icon: LayoutDashboard, desc: "Health Score e recomendações" },
-  { to: "/empresa", label: "Empresa", icon: Building2, desc: "Dados cadastrais e informações da empresa" },
-  { to: "/personalizacao", label: "Personalização", icon: Palette, desc: "Identidade visual e experiência" },
-  { to: "/permissoes", label: "Permissões", icon: Shield, desc: "Controle de acessos e permissões" },
-  { to: "/seguranca", label: "Segurança", icon: Lock, desc: "Proteção, sessões e autenticação" },
-  { to: "/integracoes", label: "Integrações", icon: Plug, desc: "Conexões e sistemas integrados" },
-  { to: "/notificacoes", label: "Notificações", icon: Bell, desc: "Alertas, lembretes e comunicações" },
-  { to: "/assinatura", label: "Assinatura", icon: CreditCard, desc: "Plano atual, limites e cobranças" },
-  { to: "/dados", label: "Dados", icon: Database, desc: "Importação, exportação e migração" },
-  { to: "/sistema", label: "Sistema", icon: Settings2, desc: "Configurações gerais e atualizações" },
+  {
+    to: "/governanca",
+    label: "Centro de Governança",
+    icon: LayoutDashboard,
+    desc: "Health Score e recomendações",
+    roles: ["admin"],
+  },
+  {
+    to: "/empresa",
+    label: "Empresa",
+    icon: Building2,
+    desc: "Dados cadastrais e informações da empresa",
+    roles: ["admin"],
+  },
+  {
+    to: "/personalizacao",
+    label: "Personalização",
+    icon: Palette,
+    desc: "Identidade visual e experiência",
+    roles: ["admin"],
+  },
+  {
+    to: "/permissoes",
+    label: "Permissões",
+    icon: Shield,
+    desc: "Controle de acessos e permissões",
+    roles: ["admin"],
+  },
+  {
+    to: "/seguranca",
+    label: "Segurança",
+    icon: Lock,
+    desc: "Proteção, sessões e autenticação",
+    roles: ["admin"],
+  },
+  {
+    to: "/integracoes",
+    label: "Integrações",
+    icon: Plug,
+    desc: "Conexões e sistemas integrados",
+    roles: ["admin"],
+  },
+  {
+    to: "/notificacoes",
+    label: "Notificações",
+    icon: Bell,
+    desc: "Alertas, lembretes e comunicações",
+    roles: ["admin"],
+  },
+  {
+    to: "/assinatura",
+    label: "Assinatura",
+    icon: CreditCard,
+    desc: "Plano atual, limites e cobranças",
+    roles: ["admin"],
+  },
+  {
+    to: "/dados",
+    label: "Dados",
+    icon: Database,
+    desc: "Importação, exportação e migração",
+    roles: ["admin"],
+  },
+  {
+    to: "/sistema",
+    label: "Sistema",
+    icon: Settings2,
+    desc: "Configurações gerais e atualizações",
+    roles: ["admin"],
+  },
 ];
 
 function ItemCard({ item }: { item: Item }) {
@@ -94,10 +230,26 @@ function ItemCard({ item }: { item: Item }) {
 }
 
 function Mais() {
-  const { data: role } = useCurrentRole();
+  const { role, canView, isLoading } = useStaffPermissions();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const visible = items.filter((item) => !item.roles || (role && item.roles.includes(role)));
+
+  // Caminho da dona nunca espera isLoading — canView já retorna true na hora pra
+  // admin, então "role === admin" resolve o item sem depender da permissão real ter
+  // carregado. Só staff passa pela checagem de isLoading (evita "aparece e some").
+  const hasAccess = (item: Item): boolean => {
+    if (item.roles) return !!role && item.roles.includes(role);
+    if (item.resource) {
+      if (role === "admin") return true;
+      if (role !== "staff") return false;
+      if (isLoading) return false;
+      return canView(item.resource);
+    }
+    return true;
+  };
+
+  const visible = items.filter(hasAccess);
+  const visibleSettings = settingsItems.filter(hasAccess);
 
   // Logout direto por clique, igual ao antigo botão do menu lateral — nunca roda em
   // beforeLoad/render do servidor, só em resposta a um evento real do navegador.
@@ -126,12 +278,18 @@ function Mais() {
         </p>
       </div>
 
-      <h2 className="text-xs uppercase tracking-[0.18em] text-muted-foreground mt-12 mb-3">Configurações</h2>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-        {settingsItems.map((item) => (
-          <ItemCard key={item.label} item={item} />
-        ))}
-      </div>
+      {visibleSettings.length > 0 && (
+        <>
+          <h2 className="text-xs uppercase tracking-[0.18em] text-muted-foreground mt-12 mb-3">
+            Configurações
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {visibleSettings.map((item) => (
+              <ItemCard key={item.label} item={item} />
+            ))}
+          </div>
+        </>
+      )}
 
       <h2 className="text-xs uppercase tracking-[0.18em] text-muted-foreground mt-12 mb-3">Conta</h2>
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">

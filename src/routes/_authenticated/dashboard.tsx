@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useStaffPermissions } from "@/hooks/use-staff-permissions";
 import { listProducts, formatBRL } from "@/lib/catalog";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -125,6 +126,19 @@ function Dashboard() {
   const now = new Date();
   const dayLabel = now.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
 
+  const { role, canView, isLoading: permsLoading } = useStaffPermissions();
+  // Mesmo critério de mais.tsx: dona nunca espera isLoading; staff só resolve depois
+  // que a permissão real carregou (evita mostrar e depois esconder o card).
+  const canSee = (resource: "finance" | "stock" | "aura_ia") => {
+    if (role === "admin") return true;
+    if (role !== "staff") return false;
+    if (permsLoading) return false;
+    return canView(resource);
+  };
+  const showFinance = canSee("finance");
+  const showStock = canSee("stock");
+  const showAuraIa = canSee("aura_ia");
+
   const { data: name = "Profissional" } = useQuery({ queryKey: ["profile-name"], queryFn: fetchProfileName });
   const { data: todayAppts = [] } = useQuery({ queryKey: ["today-appts"], queryFn: fetchToday });
   const { data: products = [] } = useQuery({ queryKey: ["products"], queryFn: listProducts });
@@ -247,71 +261,101 @@ function Dashboard() {
         </MetricCard>
 
         {/* Receita hoje */}
-        <MetricCard to="/financeiro" label="Receita hoje" icon={CircleDollarSign}>
-          <div className="text-3xl font-display font-medium tabular-nums">{formatBRL(todayTotal)}</div>
-          <div className="text-xs text-muted-foreground mt-0.5">previsto</div>
-          <MiniLine className="mt-3" />
-          <div className="mt-3 flex items-baseline gap-3 text-xs">
-            <span className="text-success font-medium tabular-nums">{formatBRL(todayReceived)}</span>
-            <span className="text-muted-foreground">já recebido</span>
-          </div>
-          <div className="flex items-baseline gap-3 text-xs">
-            <span className="text-destructive font-medium tabular-nums">{formatBRL(todayPending)}</span>
-            <span className="text-muted-foreground">falta receber</span>
-          </div>
-          <div className="mt-3">
-            <ProgressBar value={dailyPct} />
-            <div className="text-[10px] text-muted-foreground mt-1">{dailyPct}% da meta diária</div>
-          </div>
-        </MetricCard>
+        {showFinance && (
+          <>
+            <MetricCard to="/financeiro" label="Receita hoje" icon={CircleDollarSign}>
+              <div className="text-3xl font-display font-medium tabular-nums">
+                {formatBRL(todayTotal)}
+              </div>
+              <div className="text-xs text-muted-foreground mt-0.5">previsto</div>
+              <MiniLine className="mt-3" />
+              <div className="mt-3 flex items-baseline gap-3 text-xs">
+                <span className="text-success font-medium tabular-nums">
+                  {formatBRL(todayReceived)}
+                </span>
+                <span className="text-muted-foreground">já recebido</span>
+              </div>
+              <div className="flex items-baseline gap-3 text-xs">
+                <span className="text-destructive font-medium tabular-nums">
+                  {formatBRL(todayPending)}
+                </span>
+                <span className="text-muted-foreground">falta receber</span>
+              </div>
+              <div className="mt-3">
+                <ProgressBar value={dailyPct} />
+                <div className="text-[10px] text-muted-foreground mt-1">
+                  {dailyPct}% da meta diária
+                </div>
+              </div>
+            </MetricCard>
 
-        {/* Receita mês */}
-        <MetricCard to="/financeiro" label="Receita do mês" icon={TrendingUp}>
-          <div className="text-3xl font-display font-medium tabular-nums">{formatBRL(revenue.current)}</div>
-          {monthDelta !== null ? (
-            <div className={cn(
-              "inline-flex items-center gap-1 mt-1 text-xs font-medium tabular-nums",
-              monthDelta >= 0 ? "text-success" : "text-destructive"
-            )}>
-              {monthDelta >= 0 ? "+" : ""}{monthDelta}% <span className="text-muted-foreground font-normal">vs mês anterior</span>
-            </div>
-          ) : (
-            <div className="text-xs text-muted-foreground mt-1">acumulado</div>
-          )}
-          <BarsMini className="mt-3" />
-          <div className="mt-3 flex justify-between text-[11px]">
-            <div>
-              <div className="text-muted-foreground">Meta</div>
-              <div className="tabular-nums font-medium">{formatBRL(monthlyGoal)}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-muted-foreground">Falta</div>
-              <div className="tabular-nums font-medium">{formatBRL(Math.max(0, monthlyGoal - revenue.current))}</div>
-            </div>
-          </div>
-          <ProgressBar className="mt-2" value={goalPct} />
-        </MetricCard>
+            {/* Receita mês */}
+            <MetricCard to="/financeiro" label="Receita do mês" icon={TrendingUp}>
+              <div className="text-3xl font-display font-medium tabular-nums">
+                {formatBRL(revenue.current)}
+              </div>
+              {monthDelta !== null ? (
+                <div
+                  className={cn(
+                    "inline-flex items-center gap-1 mt-1 text-xs font-medium tabular-nums",
+                    monthDelta >= 0 ? "text-success" : "text-destructive",
+                  )}
+                >
+                  {monthDelta >= 0 ? "+" : ""}
+                  {monthDelta}%{" "}
+                  <span className="text-muted-foreground font-normal">vs mês anterior</span>
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground mt-1">acumulado</div>
+              )}
+              <BarsMini className="mt-3" />
+              <div className="mt-3 flex justify-between text-[11px]">
+                <div>
+                  <div className="text-muted-foreground">Meta</div>
+                  <div className="tabular-nums font-medium">{formatBRL(monthlyGoal)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-muted-foreground">Falta</div>
+                  <div className="tabular-nums font-medium">
+                    {formatBRL(Math.max(0, monthlyGoal - revenue.current))}
+                  </div>
+                </div>
+              </div>
+              <ProgressBar className="mt-2" value={goalPct} />
+            </MetricCard>
 
-        {/* Ticket médio */}
-        <MetricCard to="/financeiro" label="Ticket médio" icon={CreditCard}>
-          <div className="text-3xl font-display font-medium tabular-nums">{formatBRL(avgTicket)}</div>
-          {monthDelta !== null && (
-            <div className={cn("text-xs font-medium tabular-nums mt-1",
-              monthDelta >= 0 ? "text-success" : "text-destructive")}>
-              {monthDelta >= 0 ? "+" : ""}{monthDelta}% <span className="text-muted-foreground font-normal">vs mês passado</span>
-            </div>
-          )}
-          <div className="mt-5 text-[11px] text-muted-foreground">Maior ticket</div>
-          <div className="text-sm font-medium tabular-nums">{formatBRL(maxTicket)}</div>
-        </MetricCard>
+            {/* Ticket médio */}
+            <MetricCard to="/financeiro" label="Ticket médio" icon={CreditCard}>
+              <div className="text-3xl font-display font-medium tabular-nums">
+                {formatBRL(avgTicket)}
+              </div>
+              {monthDelta !== null && (
+                <div
+                  className={cn(
+                    "text-xs font-medium tabular-nums mt-1",
+                    monthDelta >= 0 ? "text-success" : "text-destructive",
+                  )}
+                >
+                  {monthDelta >= 0 ? "+" : ""}
+                  {monthDelta}%{" "}
+                  <span className="text-muted-foreground font-normal">vs mês passado</span>
+                </div>
+              )}
+              <div className="mt-5 text-[11px] text-muted-foreground">Maior ticket</div>
+              <div className="text-sm font-medium tabular-nums">{formatBRL(maxTicket)}</div>
+            </MetricCard>
 
-        {/* Lucro */}
-        <MetricCard to="/financeiro" label="Lucro líquido" icon={DollarSign}>
-          <div className="text-3xl font-display font-medium tabular-nums">{formatBRL(profit)}</div>
-          <div className="text-xs text-muted-foreground mt-1">estimado</div>
-          <div className="mt-5 text-[11px] text-muted-foreground">Margem</div>
-          <div className="text-sm font-medium tabular-nums">{margin}%</div>
-        </MetricCard>
+            {/* Lucro */}
+            <MetricCard to="/financeiro" label="Lucro líquido" icon={DollarSign}>
+              <div className="text-3xl font-display font-medium tabular-nums">
+                {formatBRL(profit)}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">estimado</div>
+              <div className="mt-5 text-[11px] text-muted-foreground">Margem</div>
+              <div className="text-sm font-medium tabular-nums">{margin}%</div>
+            </MetricCard>
+          </>
+        )}
 
         {/* Horas trabalhadas */}
         <MetricCard label="Horas trabalhadas" icon={Clock}>
@@ -350,23 +394,25 @@ function Dashboard() {
         </SubCard>
 
         {/* Produtos acabando */}
-        <SubCard icon={Package} label="Produtos acabando" className="col-span-2 lg:col-span-1">
-          {lowStock.length === 0 ? (
-            <div className="text-xs text-muted-foreground py-2">Estoque saudável</div>
-          ) : (
-            <ul className="space-y-1.5">
-              {lowStock.map((p) => (
-                <li key={p.id} className="flex items-center justify-between text-xs">
-                  <span className="truncate mr-2">{p.name}</span>
-                  <span className="text-destructive font-medium tabular-nums shrink-0">
-                    {Number(p.stock)}{p.unit}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <FooterLink to="/estoque">Ver estoque</FooterLink>
-        </SubCard>
+        {showStock && (
+          <SubCard icon={Package} label="Produtos acabando" className="col-span-2 lg:col-span-1">
+            {lowStock.length === 0 ? (
+              <div className="text-xs text-muted-foreground py-2">Estoque saudável</div>
+            ) : (
+              <ul className="space-y-1.5">
+                {lowStock.map((p) => (
+                  <li key={p.id} className="flex items-center justify-between text-xs">
+                    <span className="truncate mr-2">{p.name}</span>
+                    <span className="text-destructive font-medium tabular-nums shrink-0">
+                      {Number(p.stock)}{p.unit}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <FooterLink to="/estoque">Ver estoque</FooterLink>
+          </SubCard>
+        )}
 
         {/* Mensagens pendentes */}
         <SubCard icon={MessageCircle} label="Mensagens" className="col-span-2 lg:col-span-1">
@@ -378,45 +424,47 @@ function Dashboard() {
       </section>
 
       {/* AURA IA — hero card */}
-      <section className="mb-8 animate-fade-in">
-        <div className="relative overflow-hidden rounded-3xl bg-ai-card text-ai-card-foreground p-6 md:p-8">
-          <div
-            className="pointer-events-none absolute -right-24 -top-24 w-80 h-80 rounded-full opacity-40"
-            style={{ background: "radial-gradient(circle, var(--ai-glow), transparent 65%)" }}
-          />
-          <div className="relative flex items-start justify-between gap-4 mb-6">
-            <div className="flex items-center gap-3">
-              <div className="relative w-11 h-11 shrink-0">
-                <div className="absolute inset-0 rounded-full bg-ai-glow/40 blur-lg" />
-                <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_30%_30%,var(--ai-glow),var(--ai-card)_70%)] border border-white/10" />
+      {showAuraIa && (
+        <section className="mb-8 animate-fade-in">
+          <div className="relative overflow-hidden rounded-3xl bg-ai-card text-ai-card-foreground p-6 md:p-8">
+            <div
+              className="pointer-events-none absolute -right-24 -top-24 w-80 h-80 rounded-full opacity-40"
+              style={{ background: "radial-gradient(circle, var(--ai-glow), transparent 65%)" }}
+            />
+            <div className="relative flex items-start justify-between gap-4 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="relative w-11 h-11 shrink-0">
+                  <div className="absolute inset-0 rounded-full bg-ai-glow/40 blur-lg" />
+                  <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_30%_30%,var(--ai-glow),var(--ai-card)_70%)] border border-white/10" />
+                </div>
+                <div>
+                  <div className="text-sm font-medium tracking-[0.2em] uppercase">AURA IA</div>
+                  <div className="text-[11px] opacity-60">Sua gerente executiva</div>
+                </div>
               </div>
-              <div>
-                <div className="text-sm font-medium tracking-[0.2em] uppercase">AURA IA</div>
-                <div className="text-[11px] opacity-60">Sua gerente executiva</div>
-              </div>
+              <Link to="/aura-ia" className="text-xs font-medium inline-flex items-center gap-1 rounded-full border border-white/15 px-3 py-1.5 hover:bg-white/5 transition">
+                Ver todos os insights <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
             </div>
-            <Link to="/aura-ia" className="text-xs font-medium inline-flex items-center gap-1 rounded-full border border-white/15 px-3 py-1.5 hover:bg-white/5 transition">
-              Ver todos os insights <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
 
-          <div className="relative grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {insights.map((ins, i) => (
-              <div key={i} className="rounded-2xl bg-white/[0.04] border border-white/[0.06] p-4 flex flex-col">
-                <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest opacity-60 mb-2">
-                  <ins.icon className="w-3 h-3" /> {ins.tag}
+            <div className="relative grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              {insights.map((ins, i) => (
+                <div key={i} className="rounded-2xl bg-white/[0.04] border border-white/[0.06] p-4 flex flex-col">
+                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest opacity-60 mb-2">
+                    <ins.icon className="w-3 h-3" /> {ins.tag}
+                  </div>
+                  <p className="text-sm leading-snug flex-1">{ins.text}</p>
+                  <div className="mt-4">
+                    <Link to={ins.to} className="inline-flex items-center gap-1.5 text-xs font-medium rounded-full bg-white/10 hover:bg-white/15 px-3 py-1.5 transition">
+                      {ins.action} <ArrowRight className="w-3 h-3" />
+                    </Link>
+                  </div>
                 </div>
-                <p className="text-sm leading-snug flex-1">{ins.text}</p>
-                <div className="mt-4">
-                  <Link to={ins.to} className="inline-flex items-center gap-1.5 text-xs font-medium rounded-full bg-white/10 hover:bg-white/15 px-3 py-1.5 transition">
-                    {ins.action} <ArrowRight className="w-3 h-3" />
-                  </Link>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Atalhos */}
       <section className="mb-8">
@@ -430,9 +478,9 @@ function Dashboard() {
           <Shortcut to="/financeiro" icon={DollarSign} label="Financeiro" soon />
           <Shortcut to="/mais" icon={Megaphone} label="Campanhas" soon />
           <Shortcut to="/mais" icon={BarChart3} label="Relatórios" soon />
-          <Shortcut to="/estoque" icon={Package} label="Estoque" />
+          {showStock && <Shortcut to="/estoque" icon={Package} label="Estoque" />}
           <Shortcut to="/servicos" icon={FileText} label="Protocolos" />
-          <Shortcut to="/aura-ia" icon={Bot} label="AURA IA" />
+          {showAuraIa && <Shortcut to="/aura-ia" icon={Bot} label="AURA IA" />}
         </div>
       </section>
 
@@ -480,7 +528,7 @@ function Dashboard() {
       </section>
 
       {/* Alertas — só se houver */}
-      {(lowStock.length > 0 || pending > 0) && (
+      {((showStock && lowStock.length > 0) || pending > 0) && (
         <section className="mb-8">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground inline-flex items-center gap-2">
@@ -488,7 +536,7 @@ function Dashboard() {
             </h2>
           </div>
           <div className="grid gap-2">
-            {lowStock.length > 0 && (
+            {showStock && lowStock.length > 0 && (
               <AlertRow tone="danger" icon={Package} title="Estoque baixo"
                 sub={`${lowStock[0].name} próximo do mínimo`} to="/estoque" />
             )}
