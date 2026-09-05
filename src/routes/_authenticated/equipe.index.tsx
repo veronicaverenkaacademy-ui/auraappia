@@ -276,6 +276,10 @@ function CredentialsCard({ creds, onClose }: { creds: { login: string; password:
         <p className="text-xs text-muted-foreground mt-1">
           Compartilhe as credenciais abaixo. O colaborador deverá trocar a senha no primeiro acesso.
         </p>
+        <p className="text-xs text-muted-foreground mt-1">
+          O "Login" abaixo não é o e-mail pessoal dela — é só um identificador de acesso. Ela usa
+          essas credenciais em "Sou colaboradora" na tela de entrada do app.
+        </p>
         <div className="mt-4 space-y-2 text-sm">
           <div><span className="text-muted-foreground">Login:</span> <span className="font-mono">{creds.login}</span></div>
           <div><span className="text-muted-foreground">Senha:</span> <span className="font-mono">{creds.password}</span></div>
