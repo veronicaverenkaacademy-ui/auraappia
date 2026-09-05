@@ -3,8 +3,9 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Plus, Copy, Users, Target, DollarSign, Sparkle } from "lucide-react";
+import { Plus, Users, Target, DollarSign, Sparkle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CredentialsDisplay } from "@/components/credentials-display";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -265,10 +266,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function CredentialsCard({ creds, onClose }: { creds: { login: string; password: string }; onClose: () => void }) {
-  const copy = () => {
-    navigator.clipboard.writeText(`Login: ${creds.login}\nSenha: ${creds.password}`);
-    toast.success("Credenciais copiadas.");
-  };
   return (
     <div className="mt-6 space-y-4">
       <div className="rounded-2xl border border-success/30 bg-success/5 p-5">
@@ -280,17 +277,13 @@ function CredentialsCard({ creds, onClose }: { creds: { login: string; password:
           O "Login" abaixo não é o e-mail pessoal dela — é só um identificador de acesso. Ela usa
           essas credenciais em "Sou colaboradora" na tela de entrada do app.
         </p>
-        <div className="mt-4 space-y-2 text-sm">
-          <div><span className="text-muted-foreground">Login:</span> <span className="font-mono">{creds.login}</span></div>
-          <div><span className="text-muted-foreground">Senha:</span> <span className="font-mono">{creds.password}</span></div>
+        <div className="mt-4">
+          <CredentialsDisplay login={creds.login} password={creds.password} />
         </div>
       </div>
-      <div className="flex gap-2">
-        <Button variant="outline" className="flex-1 rounded-full gap-2" onClick={copy}>
-          <Copy className="w-4 h-4" /> Copiar
-        </Button>
-        <Button className="flex-1 rounded-full" onClick={onClose}>Concluir</Button>
-      </div>
+      <Button className="w-full rounded-full" onClick={onClose}>
+        Concluir
+      </Button>
     </div>
   );
 }
