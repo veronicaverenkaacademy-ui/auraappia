@@ -474,10 +474,12 @@ function Dashboard() {
         <div className="grid grid-cols-3 md:grid-cols-6 gap-2 md:gap-3">
           <Shortcut to="/agenda" icon={CalendarPlus} label="Novo agendamento" />
           <Shortcut to="/clientes" icon={UserPlus} label="Nova cliente" />
-          <Shortcut to="/mais" icon={ShoppingBag} label="Venda rápida" soon />
-          <Shortcut to="/financeiro" icon={DollarSign} label="Financeiro" soon />
-          <Shortcut to="/mais" icon={Megaphone} label="Campanhas" soon />
-          <Shortcut to="/mais" icon={BarChart3} label="Relatórios" soon />
+          {role === "admin" && <Shortcut to="/mais" icon={ShoppingBag} label="Venda rápida" soon />}
+          {role === "admin" && (
+            <Shortcut to="/financeiro" icon={DollarSign} label="Financeiro" soon />
+          )}
+          {role === "admin" && <Shortcut to="/mais" icon={Megaphone} label="Campanhas" soon />}
+          {role === "admin" && <Shortcut to="/mais" icon={BarChart3} label="Relatórios" soon />}
           {showStock && <Shortcut to="/estoque" icon={Package} label="Estoque" />}
           <Shortcut to="/servicos" icon={FileText} label="Protocolos" />
           {showAuraIa && <Shortcut to="/aura-ia" icon={Bot} label="AURA IA" />}
