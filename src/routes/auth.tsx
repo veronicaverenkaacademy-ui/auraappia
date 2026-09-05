@@ -271,7 +271,7 @@ function AuthPage() {
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({
       email: staffEmail.trim(),
-      password: staffPassword,
+      password: staffPassword.trim(),
     });
     setLoading(false);
     if (error) {
