@@ -77,7 +77,7 @@ async function applyPendingSignupData(userId: string) {
   }
 }
 
-type Step = "social" | "phone" | "otp";
+type Step = "social" | "phone" | "otp" | "staff";
 
 function AuthPage() {
   const navigate = useNavigate();
@@ -98,6 +98,8 @@ function AuthPage() {
   const [phone, setPhone] = useState(() => pendingSignup?.phone.replace(/^\+55/, "") ?? "");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
+  const [staffEmail, setStaffEmail] = useState("");
+  const [staffPassword, setStaffPassword] = useState("");
 
   // Bloco de endereço (etapa 2, opcional). Inicializa do rascunho se o usuário já
   // tinha preenchido e voltou/recarregou a página, pra não perder o que já digitou.
@@ -257,6 +259,36 @@ function AuthPage() {
     navigateAfterAuth();
   };
 
+  // Login de colaboradora: e-mail (identificador sintético gerado na criação) + senha
+  // definida pela proprietária. Mesmo mecanismo de sessão do resto do app —
+  // signInWithPassword no client principal (persistSession: true) já persiste igual
+  // ao que o OAuth faz via setSession(); nenhum wrapper adicional é necessário.
+  const staffSignIn = async () => {
+    if (!staffEmail.trim() || !staffPassword) {
+      toast.error("Preencha e-mail e senha.");
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({
+      email: staffEmail.trim(),
+      password: staffPassword,
+    });
+    setLoading(false);
+    if (error) {
+      if (error.message.includes("Email not confirmed")) {
+        toast.error(
+          "Esta conta ainda não foi confirmada. Entre em contato com a proprietária do estabelecimento.",
+        );
+      } else {
+        // Nunca expõe o erro técnico cru — "Invalid login credentials" e qualquer
+        // outra falha do provedor caem na mesma mensagem genérica e amigável.
+        toast.error("E-mail ou senha incorretos.");
+      }
+      return;
+    }
+    navigateAfterAuth();
+  };
+
   // DIAGNÓSTICO TEMPORÁRIO: sem try/catch aqui, qualquer erro lançado por
   // lovable.auth.signInWithOAuth (rejeição de promise, não um {error} retornado)
   // ficava completamente invisível — sem toast, sem log, a tela só "não fazia nada".
@@ -299,9 +331,11 @@ function AuthPage() {
       ? "Digite o código enviado"
       : step === "phone"
         ? "Entre com seu telefone"
-        : search.signup
-          ? "Continue seu cadastro"
-          : "Entre na sua conta";
+        : step === "staff"
+          ? "Entrar como colaboradora"
+          : search.signup
+            ? "Continue seu cadastro"
+            : "Entre na sua conta";
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -499,16 +533,24 @@ function AuthPage() {
               </button>
 
               {!search.signup && (
-                <p className="text-center text-xs text-muted-foreground pt-4">
-                  Ainda não tem conta?{" "}
-                  <Link
-                    to="/cadastro"
-                    search={{ next: search.next }}
-                    className="text-foreground underline underline-offset-2"
+                <>
+                  <button
+                    onClick={() => setStep("staff")}
+                    className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition"
                   >
-                    Criar conta
-                  </Link>
-                </p>
+                    Sou colaboradora
+                  </button>
+                  <p className="text-center text-xs text-muted-foreground pt-4">
+                    Ainda não tem conta?{" "}
+                    <Link
+                      to="/cadastro"
+                      search={{ next: search.next }}
+                      className="text-foreground underline underline-offset-2"
+                    >
+                      Criar conta
+                    </Link>
+                  </p>
+                </>
               )}
             </div>
           )}
@@ -575,6 +617,60 @@ function AuthPage() {
                 className="w-full text-xs text-muted-foreground hover:text-foreground transition"
               >
                 Usar outro número
+              </button>
+            </div>
+          )}
+
+          {step === "staff" && (
+            <div className="space-y-5">
+              <p className="text-xs text-muted-foreground leading-relaxed -mt-2">
+                Não é seu e-mail pessoal — é o login que a proprietária do estabelecimento te
+                passou.
+              </p>
+              <div className="space-y-2">
+                <Label
+                  htmlFor="staff-email"
+                  className="text-xs font-normal text-muted-foreground uppercase tracking-wider"
+                >
+                  E-mail
+                </Label>
+                <Input
+                  id="staff-email"
+                  type="email"
+                  value={staffEmail}
+                  onChange={(e) => setStaffEmail(e.target.value)}
+                  className="h-12 rounded-xl bg-secondary border-0 text-base"
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-2">
+                <Label
+                  htmlFor="staff-password"
+                  className="text-xs font-normal text-muted-foreground uppercase tracking-wider"
+                >
+                  Senha
+                </Label>
+                <Input
+                  id="staff-password"
+                  type="password"
+                  value={staffPassword}
+                  onChange={(e) => setStaffPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && staffSignIn()}
+                  className="h-12 rounded-xl bg-secondary border-0 text-base"
+                />
+              </div>
+              <Button onClick={staffSignIn} disabled={loading} className="w-full h-12 rounded-xl">
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Entrar"}
+              </Button>
+              <button
+                onClick={() => {
+                  setStep("social");
+                  setStaffEmail("");
+                  setStaffPassword("");
+                }}
+                className="w-full text-xs text-muted-foreground hover:text-foreground transition"
+              >
+                Voltar
               </button>
             </div>
           )}
