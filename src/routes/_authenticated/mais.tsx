@@ -34,6 +34,11 @@ type Item = {
   // Restrição dinâmica por permissão real (access_level_permissions) — usada nos
   // itens funcionais onde Gerente/Profissional podem legitimamente ter acesso.
   resource?: Resource;
+  // Some mesmo com canView(resource)=true quando quem está vendo é kind='own'
+  // (Profissional) — usado no Financeiro, que mostra dado agregado do negócio
+  // inteiro, sentido pra Gerente/Recepcionista mas não pra quem só vê o próprio
+  // recorte (ela tem a visão pessoal real em Meu Espaço).
+  hideForOwnKind?: boolean;
 };
 
 const items: Item[] = [
@@ -60,6 +65,7 @@ const items: Item[] = [
     icon: DollarSign,
     desc: "Caixa, DRE e CFO IA",
     resource: "finance",
+    hideForOwnKind: true,
   },
   {
     to: "/marketing",
@@ -230,7 +236,7 @@ function ItemCard({ item }: { item: Item }) {
 }
 
 function Mais() {
-  const { role, canView, isLoading } = useStaffPermissions();
+  const { role, canView, isLoading, isOwnKind } = useStaffPermissions();
   const navigate = useNavigate();
   const qc = useQueryClient();
 
@@ -243,6 +249,7 @@ function Mais() {
       if (role === "admin") return true;
       if (role !== "staff") return false;
       if (isLoading) return false;
+      if (item.hideForOwnKind && isOwnKind) return false;
       return canView(item.resource);
     }
     return true;

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCurrentRole, useSelfMember } from "@/hooks/use-role";
-import { listAccessLevelPermissions } from "@/lib/team";
+import { getAccessLevelKind, listAccessLevelPermissions } from "@/lib/team";
 import type { Resource, Action } from "@/lib/permissions";
 
 /**
@@ -27,8 +27,19 @@ export function useStaffPermissions() {
     staleTime: 60_000,
   });
 
+  // kind ('global' | 'own') decide se a pessoa vê o negócio inteiro ou só o próprio
+  // recorte (ex: Profissional). Query pequena e independente da de permissões — não
+  // duplica a leitura de access_level_permissions, só busca a coluna kind por PK.
+  const { data: kind, isLoading: kindLoading } = useQuery({
+    queryKey: ["access-level-kind", accessLevelId],
+    queryFn: () => getAccessLevelKind(accessLevelId as string),
+    enabled: isStaff && !!accessLevelId,
+    staleTime: 60_000,
+  });
+
   const isLoading =
-    roleLoading || (isStaff && (memberLoading || (!!accessLevelId && permissionsLoading)));
+    roleLoading ||
+    (isStaff && (memberLoading || (!!accessLevelId && (permissionsLoading || kindLoading))));
 
   const canDo = (resource: Resource, action: Action = "view"): boolean => {
     if (isAdmin) return true;
@@ -38,5 +49,8 @@ export function useStaffPermissions() {
 
   const canView = (resource: Resource) => canDo(resource, "view");
 
-  return { role, isAdmin, isStaff, canDo, canView, isLoading };
+  // Admin nunca é 'own' — o conceito só existe pra distinguir níveis de staff entre si.
+  const isOwnKind = isStaff && kind === "own";
+
+  return { role, isAdmin, isStaff, canDo, canView, isLoading, kind, isOwnKind };
 }

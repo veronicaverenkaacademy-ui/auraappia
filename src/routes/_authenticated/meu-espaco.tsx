@@ -7,8 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { useSelfMember } from "@/hooks/use-role";
+import { useStaffPermissions } from "@/hooks/use-staff-permissions";
 import { initials } from "@/lib/clients";
 import { fetchCompanySlugByOwnerId } from "@/lib/companyProfile";
+import { startOfMonth, endOfMonth, formatBRL } from "@/lib/finance";
+import { listOwnCommissionHistory } from "@/lib/team";
 
 export const Route = createFileRoute("/_authenticated/meu-espaco")({
   head: () => ({
@@ -26,11 +29,25 @@ export const Route = createFileRoute("/_authenticated/meu-espaco")({
 
 function MeuEspaco() {
   const { data: me, isLoading } = useSelfMember();
+  const { isOwnKind } = useStaffPermissions();
   const { data: companySlug } = useQuery({
     queryKey: ["company-slug", me?.owner_id],
     queryFn: () => fetchCompanySlugByOwnerId(me!.owner_id),
     enabled: Boolean(me),
   });
+
+  const monthStart = startOfMonth();
+  const monthEnd = endOfMonth();
+  const { data: commissionEntries = [] } = useQuery({
+    queryKey: ["own-commission-history", me?.id, monthStart.toISOString()],
+    queryFn: () =>
+      listOwnCommissionHistory(me!.id, monthStart.toISOString(), monthEnd.toISOString(), {
+        type: me!.commission_type,
+        value: Number(me!.commission_value),
+      }),
+    enabled: Boolean(me) && isOwnKind,
+  });
+  const commissionMonthTotal = commissionEntries.reduce((s, e) => s + e.commission, 0);
 
   if (isLoading)
     return (
@@ -81,17 +98,32 @@ function MeuEspaco() {
               Ver minha agenda
             </Link>
           </Card>
-          {me.show_commission && (
-            <Card icon={<TrendingUp className="w-4 h-4" />} title="Comissão estimada">
-              <div className="text-2xl font-display">
-                {me.commission_type === "percent"
-                  ? `${me.commission_value}%`
-                  : `R$ ${me.commission_value}`}
-              </div>
+          {isOwnKind ? (
+            <Card icon={<TrendingUp className="w-4 h-4" />} title="Comissão do mês">
+              {me.show_commission ? (
+                <div className="text-2xl font-display">{formatBRL(commissionMonthTotal)}</div>
+              ) : (
+                <div className="text-sm text-muted-foreground">Oculto</div>
+              )}
               <div className="text-xs text-muted-foreground mt-1">
-                Sobre atendimentos concluídos.
+                Sobre {commissionEntries.length} atendimento
+                {commissionEntries.length === 1 ? "" : "s"} concluído
+                {commissionEntries.length === 1 ? "" : "s"} este mês.
               </div>
             </Card>
+          ) : (
+            me.show_commission && (
+              <Card icon={<TrendingUp className="w-4 h-4" />} title="Comissão estimada">
+                <div className="text-2xl font-display">
+                  {me.commission_type === "percent"
+                    ? `${me.commission_value}%`
+                    : `R$ ${me.commission_value}`}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Sobre atendimentos concluídos.
+                </div>
+              </Card>
+            )
           )}
           <Card icon={<Award className="w-4 h-4" />} title="Estatísticas pessoais">
             <div className="grid grid-cols-3 gap-3 text-center">
@@ -101,6 +133,47 @@ function MeuEspaco() {
             </div>
           </Card>
         </div>
+
+        {isOwnKind && (
+          <div className="rounded-3xl border border-border/60 bg-card p-6">
+            <div className="text-xs uppercase tracking-wider text-muted-foreground mb-4">
+              Atendimentos concluídos este mês
+            </div>
+            {commissionEntries.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Nenhum atendimento concluído ainda este mês.
+              </p>
+            ) : (
+              <div className="divide-y divide-border/50">
+                {commissionEntries.map((e) => (
+                  <div
+                    key={e.appointmentId}
+                    className="py-3 flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{e.clientName}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {e.serviceName} ·{" "}
+                        {new Date(e.date).toLocaleDateString("pt-BR", {
+                          day: "2-digit",
+                          month: "2-digit",
+                        })}
+                      </div>
+                    </div>
+                    {me.show_commission && (
+                      <div className="text-right shrink-0">
+                        <div className="text-sm font-medium">{formatBRL(e.commission)}</div>
+                        {e.isEstimated && (
+                          <div className="text-[10px] text-muted-foreground">taxa atual</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {link && (
           <div className="rounded-3xl border border-border/60 bg-card p-6 space-y-3">
