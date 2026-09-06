@@ -113,6 +113,105 @@ export async function listAccessLevelPermissions(
   return (data ?? []) as AccessLevelPermission[];
 }
 
+export async function getAccessLevelKind(accessLevelId: string): Promise<"global" | "own"> {
+  const { data, error } = await supabase
+    .from("access_levels")
+    .select("kind")
+    .eq("id", accessLevelId)
+    .single();
+  if (error) throw error;
+  return data.kind as "global" | "own";
+}
+
+export type CommissionEntry = {
+  appointmentId: string;
+  date: string;
+  clientName: string;
+  serviceName: string;
+  amount: number;
+  commission: number;
+  isEstimated: boolean;
+};
+
+// Histórico de comissão real de uma Profissional (kind='own'), num intervalo de datas.
+// "Mês" é definido pela data de CONCLUSÃO (finance_transactions.paid_at, gravado pelo
+// trigger no momento em que o atendimento vira 'completed'), não pela data agendada
+// (appointments não tem coluna própria de "quando foi concluído" — só starts_at, que é
+// a data agendada, e updated_at, que muda por qualquer edição, não só conclusão).
+//
+// finance_transactions não tem FK declarada pra appointments (appointment_id é uuid
+// solto, só indexado) — o cliente Supabase não consegue fazer join embutido sem FK,
+// por isso são duas consultas separadas, casadas em memória por appointment_id.
+//
+// fallbackRate é a taxa ATUAL de team_members, usada só quando o snapshot do
+// atendimento é NULL (atendimentos concluídos antes desta feature existir) —
+// isEstimated=true sinaliza esse caso pra UI.
+export async function listOwnCommissionHistory(
+  professionalId: string,
+  monthStartISO: string,
+  monthEndISO: string,
+  fallbackRate: { type: "percent" | "fixed"; value: number },
+): Promise<CommissionEntry[]> {
+  const { data: txs, error: txErr } = await supabase
+    .from("finance_transactions")
+    .select("appointment_id, amount, paid_at, description, client_id")
+    .eq("kind", "income")
+    .eq("auto", true)
+    .eq("status", "paid")
+    .not("appointment_id", "is", null)
+    .gte("paid_at", monthStartISO)
+    .lte("paid_at", monthEndISO)
+    .order("paid_at", { ascending: false });
+  if (txErr) throw txErr;
+
+  const appointmentIds = (txs ?? [])
+    .map((t) => t.appointment_id)
+    .filter((id): id is string => !!id);
+  if (appointmentIds.length === 0) return [];
+
+  const { data: appts, error: apptErr } = await supabase
+    .from("appointments")
+    .select("id, professional_id, commission_type_snapshot, commission_value_snapshot")
+    .in("id", appointmentIds)
+    .eq("professional_id", professionalId);
+  if (apptErr) throw apptErr;
+  const apptMap = new Map((appts ?? []).map((a) => [a.id, a]));
+
+  const clientIds = [
+    ...new Set((txs ?? []).map((t) => t.client_id).filter((id): id is string => !!id)),
+  ];
+  const { data: clients, error: clientErr } = clientIds.length
+    ? await supabase.from("clients").select("id, full_name").in("id", clientIds)
+    : { data: [] as { id: string; full_name: string }[], error: null };
+  if (clientErr) throw clientErr;
+  const clientMap = new Map((clients ?? []).map((c) => [c.id, c.full_name]));
+
+  const entries: CommissionEntry[] = [];
+  for (const t of txs ?? []) {
+    if (!t.appointment_id) continue;
+    const appt = apptMap.get(t.appointment_id);
+    if (!appt) continue; // não é um atendimento desta profissional — ignora.
+
+    const isEstimated =
+      appt.commission_type_snapshot == null || appt.commission_value_snapshot == null;
+    const type = (appt.commission_type_snapshot ?? fallbackRate.type) as "percent" | "fixed";
+    const value = Number(appt.commission_value_snapshot ?? fallbackRate.value);
+    const amount = Number(t.amount);
+    const commission = type === "percent" ? amount * (value / 100) : value;
+
+    entries.push({
+      appointmentId: t.appointment_id,
+      date: t.paid_at as string,
+      clientName: (t.client_id && clientMap.get(t.client_id)) || "Cliente",
+      serviceName: t.description ?? "Atendimento",
+      amount,
+      commission,
+      isEstimated,
+    });
+  }
+  return entries;
+}
+
 export async function listPermissions(memberId: string): Promise<TeamPermission[]> {
   const { data, error } = await supabase
     .from("team_permissions")

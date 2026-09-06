@@ -109,6 +109,8 @@ export type Database = {
           client_confirmation_status: string
           client_confirmed_at: string | null
           client_id: string
+          commission_type_snapshot: string | null
+          commission_value_snapshot: number | null
           created_at: string
           ends_at: string
           force_overlap: boolean
@@ -129,6 +131,8 @@ export type Database = {
           client_confirmation_status?: string
           client_confirmed_at?: string | null
           client_id: string
+          commission_type_snapshot?: string | null
+          commission_value_snapshot?: number | null
           created_at?: string
           ends_at: string
           force_overlap?: boolean
@@ -149,6 +153,8 @@ export type Database = {
           client_confirmation_status?: string
           client_confirmed_at?: string | null
           client_id?: string
+          commission_type_snapshot?: string | null
+          commission_value_snapshot?: number | null
           created_at?: string
           ends_at?: string
           force_overlap?: boolean

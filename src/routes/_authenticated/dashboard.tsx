@@ -126,7 +126,7 @@ function Dashboard() {
   const now = new Date();
   const dayLabel = now.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
 
-  const { role, canView, isLoading: permsLoading } = useStaffPermissions();
+  const { role, canView, isLoading: permsLoading, isOwnKind } = useStaffPermissions();
   // Mesmo critério de mais.tsx: dona nunca espera isLoading; staff só resolve depois
   // que a permissão real carregou (evita mostrar e depois esconder o card).
   const canSee = (resource: "finance" | "stock" | "aura_ia") => {
@@ -135,7 +135,9 @@ function Dashboard() {
     if (permsLoading) return false;
     return canView(resource);
   };
-  const showFinance = canSee("finance");
+  // Financeiro aqui é dado agregado do negócio inteiro — não faz sentido pra quem só
+  // vê o próprio recorte (kind='own'); ela já tem a visão pessoal real em Meu Espaço.
+  const showFinance = canSee("finance") && !isOwnKind;
   const showStock = canSee("stock");
   const showAuraIa = canSee("aura_ia");
 
