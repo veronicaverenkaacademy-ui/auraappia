@@ -124,3 +124,53 @@ resultado da chamada de `auth.admin.deleteUser()` em `audit_log` — só
 mais lento — sem nada consultável via SQL, só o que aparecer no log do servidor no
 momento exato da falha. A dona já sabia disso e decidiu que valia a pena de qualquer
 forma; não é um esquecimento a corrigir numa sessão futura.
+
+## Codemagic — publicação ao TestFlight via Apple ID + senha específica de app (fallback temporário, 20/09/2026)
+
+A Apple está com um bug confirmado (caso de suporte nº 20000145256294) que impede o
+**download** de qualquer chave de API do App Store Connect recém-criada — 13 chaves
+criadas entre 23/08 e 06/09/2026 falharam todas no download, em múltiplos dispositivos
+e navegadores. Sem prazo de solução da Apple. Enquanto isso durar, `ios-release`
+publica ao TestFlight via `--apple-id`/`--password` (senha específica de app) no
+lugar de `--issuer-id`/`--key-id`/`--private-key`, usando o env group novo
+`aura_publishing` (`AURA_APPLE_ID`, `AURA_APP_SPECIFIC_PASSWORD`) — **paralelo** ao
+`aura_signing` existente, que nunca foi tocado (a assinatura de código já era manual,
+via certificado/profile pré-carregados no Codemagic, e nunca dependeu da API Key).
+
+Confirmado rodando a CLI real (`pip install codemagic-cli-tools`, versão 0.69.0, num
+ambiente Linux isolado — não é o mesmo binário/versão exata da imagem `mac_mini_m2`
+do Codemagic, mas as flags abaixo são centrais à ferramenta e improváveis de terem
+mudado): `app-store-connect publish --apple-id/--password` é documentado pela própria
+CLI como alternativa válida ao API Key, mas só para "application package validation
+and upload" — não há confirmação de que `--beta-group` (atribuição automática a grupo
+de teste do TestFlight) funcione combinado com esse método de autenticação, só que a
+flag existe. Por isso o `ios-release` **não** usa `--beta-group` nem `--testflight`
+nesta primeira versão — atribuir ao grupo de teste manualmente no App Store Connect
+depois de cada upload, até confirmar isso num teste real.
+
+**As duas lacunas acima foram resolvidas no mesmo dia (20/09/2026), autorizado pela
+dona:**
+1. `CURRENT_PROJECT_VERSION` agora é auto-incrementado a cada build, via
+   `agvtool new-version -all "$(date -u +%Y%m%d%H%M%S)"` (etapa "Auto-increment build
+   number" no `ios-release`, roda logo após `npx cap sync ios`, antes de qualquer
+   assinatura). Usa timestamp UTC **com segundos** (14 dígitos, dentro do limite de
+   18 da Apple) — não só minuto, pra evitar colisão num rerun manual logo após uma
+   falha, que pode cair dentro do mesmo minuto — e não uma variável de build number
+   própria do Codemagic (`PROJECT_BUILD_NUMBER`), já que há relatos na comunidade
+   Codemagic de builds onde essa variável não incrementa como esperado; timestamp
+   não depende de nenhum comportamento de plataforma e sempre cresce. Precisou
+   adicionar
+   `VERSIONING_SYSTEM = apple-generic;` nos build settings Debug e Release do
+   `project.pbxproj` (App target) — sem isso `agvtool` falha, e essa configuração não
+   existia no projeto antes desta mudança. **Não confirmável neste ambiente** (sem
+   Xcode/macOS) — o primeiro build real no Codemagic é que vai confirmar se
+   `agvtool` roda sem erro.
+2. `ITSAppUsesNonExemptEncryption = false` adicionado em `ios/App/App/Info.plist` —
+   confirmado pela dona: o AURA usa só HTTPS/TLS padrão (Supabase, WhatsApp API), sem
+   criptografia própria implementada.
+
+**Plano de reversão pra API Key**: assim que a Apple resolver o bug de download,
+trocar a etapa "Publish to TestFlight" de volta pra usar `--issuer-id`/`--key-id`/
+`--private-key` (grupo `aura_signing`, que já existe e nunca foi alterado) em vez de
+`--apple-id`/`--password` (`aura_publishing`) — não precisa recriar nada do zero, só
+trocar as flags dessa etapa específica.
