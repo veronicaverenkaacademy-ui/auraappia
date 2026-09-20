@@ -6,6 +6,7 @@ workflows:
     environment:
       groups:
         - aura_signing
+        - aura_publishing
       xcode: latest
       vars:
         XCODE_PROJECT: "ios/App/App.xcodeproj"
@@ -27,6 +28,27 @@ workflows:
       - name: Sync Capacitor iOS
         script: |
           npx cap sync ios
+      # Auto-incrementa CURRENT_PROJECT_VERSION (CFBundleVersion) antes de cada
+      # build — App Store Connect rejeita reenvio do mesmo número de build pra
+      # mesma versão (MARKETING_VERSION), e não havia nenhum incremento automático
+      # antes desta etapa (era fixo em "1" no pbxproj). Usa timestamp UTC com
+      # segundos (AAAAMMDDHHmmss, 14 dígitos — a Apple aceita até 18) em vez de
+      # alguma variável de build number própria do Codemagic (ex:
+      # PROJECT_BUILD_NUMBER) — há relatos na comunidade de builds onde essa
+      # variável não incrementa como esperado, e um timestamp não depende de
+      # nenhum comportamento específico da plataforma de CI, sempre cresce, e não
+      # exige estado entre builds. Granularidade de segundo (não só minuto) evita
+      # colisão num rerun manual logo após uma falha, que pode acontecer bem
+      # dentro do mesmo minuto. Precisa de VERSIONING_SYSTEM = apple-generic no
+      # pbxproj (adicionado nesta mesma mudança) para o agvtool funcionar — sem
+      # isso ele falha.
+      - name: Auto-increment build number (agvtool)
+        script: |
+          set -eo pipefail
+          cd ios/App
+          NEW_BUILD_NUMBER=$(date -u +%Y%m%d%H%M%S)
+          agvtool new-version -all "$NEW_BUILD_NUMBER"
+          echo "CURRENT_PROJECT_VERSION definido para $NEW_BUILD_NUMBER"
       - name: Initialize keychain for code signing
         script: |
           keychain initialize
@@ -64,6 +86,35 @@ workflows:
           fi
           echo "===== FIM DO LOG ====="
           exit "${BUILD_EXIT_CODE:-0}"
+      - name: Sanity check — versão e flags reais da CLI app-store-connect
+        script: |
+          set -eo pipefail
+          echo "===== app-store-connect --version ====="
+          app-store-connect --version
+          echo "===== app-store-connect publish --help (conferir --apple-id/--password/--beta-group aqui) ====="
+          app-store-connect publish --help
+      # Publicação via Apple ID + senha específica de app — fallback temporário
+      # enquanto o bug de download de API Key da Apple (caso 20000145256294) não é
+      # resolvido. Ver CLAUDE.md para o histórico completo e o plano de reversão
+      # para API Key assim que a Apple destravar o download.
+      #
+      # --apple-id/--password usam o prefixo "@env:" (mesmo padrão já usado acima em
+      # --certificate-password) — o próprio binário app-store-connect lê a env var
+      # diretamente, em vez do shell interpolar o valor no argumento — evita que a
+      # senha apareça em `ps`/histórico de processo.
+      #
+      # Sem --beta-group e sem --testflight nesta primeira versão: não há confirmação
+      # de que a atribuição automática a grupo de teste funcione combinada com
+      # Apple ID/senha (só é documentada como alternativa pra "validation and
+      # upload") — ver CLAUDE.md. Atribuir ao grupo de teste manualmente no App Store
+      # Connect por enquanto.
+      - name: Publish to TestFlight (Apple ID + senha específica de app — fallback sem API Key)
+        script: |
+          set -eo pipefail
+          app-store-connect publish \
+            --path "build/ios/ipa/*.ipa" \
+            --apple-id "@env:AURA_APPLE_ID" \
+            --password "@env:AURA_APP_SPECIFIC_PASSWORD"
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
