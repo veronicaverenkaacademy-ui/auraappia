@@ -218,18 +218,35 @@ continua até aquela outra frente ser concluída.
 
 **Achado lateral da mesma auditoria**: comparando todos os 37 arquivos em
 `supabase/migrations/` contra `supabase_migrations.schema_migrations`, 9 migrations
-não estão registradas no livro de controle (`20260730130000_agenda_real`,
+não estavam registradas no livro de controle (`20260730130000_agenda_real`,
 `20260811090000_whatsapp_evolution_mvp`, `20260816120000_whatsapp_expected_phone`,
 `20260817160000_whatsapp_appointment_created_notification`,
 `20260817220000_whatsapp_meta_cloud_api_provider`, `20260825120000_access_levels`,
 `20260825140000_staff_access`, `20260901120000_agenda_own_scope`,
 `20260906120000_commission_snapshot`) — mas, diferente do `client_otp_codes`, **todas
 as 9 foram confirmadas como realmente aplicadas** (tabelas/funções/colunas/constraints
-verificadas ao vivo uma a uma) — é só uma lacuna de registro, não um bug funcional.
+verificadas ao vivo uma a uma, incluindo contagem de políticas/triggers/índices nas
+três migrations com mais objetos — `whatsapp_evolution_mvp`, `access_levels` e
+`staff_access` — todas batendo exatamente com o esperado) — era só uma lacuna de
+registro, não um bug funcional.
+
+**Atualização de 05/10/2026**: as 9 migrations foram registradas em
+`supabase_migrations.schema_migrations` via `INSERT ... ON CONFLICT (version) DO
+NOTHING` (idempotente, sem nenhum DDL), com `created_by` citando a evidência
+específica de aplicação de cada uma. Ponto de partida reconfirmado em tempo real
+antes do INSERT (0 linhas para essas 9 versões) e resultado pós-INSERT confirmado
+com as 9 linhas presentes. Nenhuma migration foi reaplicada — só o registro no
+livro de controle, que estava faltando.
+
 Achado inverso também presente: `20260808030000_company_assets_select_policy.sql`
-está registrado como aplicado, mas o arquivo não existe no repositório. Nenhuma
-dessas 9 tem relação com `finance_goals`/`finance_settings`/`stock_movements` (o bug
-de CFO/DRE incompleto pra staff, documentado em investigação anterior) — só 5
+estava registrado como aplicado, mas o arquivo não existia no repositório. Recriado
+em PR separado (#78) a partir da definição real da policy em `pg_policies`
+(`roles`/`qual` confirmados batendo exatamente), com `DROP POLICY IF EXISTS` antes
+do `CREATE POLICY` para manter o padrão idempotente do projeto — também sem
+necessidade de reaplicar nada, já estava ativo em produção.
+
+Nenhuma dessas 9 tem relação com `finance_goals`/`finance_settings`/`stock_movements`
+(o bug de CFO/DRE incompleto pra staff, documentado em investigação anterior) — só 5
 migrations tocam essas 3 tabelas, e todas as 5 já estavam registradas e aplicadas
 desde sempre; aquele bug é uma lacuna do desenho original das políticas RLS dessas
 tabelas, não uma migration pendente.
