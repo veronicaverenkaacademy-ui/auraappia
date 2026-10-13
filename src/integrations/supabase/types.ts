@@ -316,15 +316,22 @@ export type Database = {
           category: string
           channel: string
           created_at: string
+          deleted_at: string | null
           description: string | null
           icon: string
           id: string
+          is_system: boolean
           max_frequency_per_day: number
           message_body: string
           message_buttons: string[]
+          meta_category: string | null
+          meta_status: string
+          meta_template_name: string | null
           name: string
           owner_id: string
+          rejection_reason: string | null
           source_template_id: string | null
+          template_key: string | null
           trigger_description: string
           updated_at: string
         }
@@ -336,15 +343,22 @@ export type Database = {
           category: string
           channel?: string
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
           icon?: string
           id?: string
+          is_system?: boolean
           max_frequency_per_day?: number
           message_body?: string
           message_buttons?: string[]
+          meta_category?: string | null
+          meta_status?: string
+          meta_template_name?: string | null
           name: string
           owner_id: string
+          rejection_reason?: string | null
           source_template_id?: string | null
+          template_key?: string | null
           trigger_description?: string
           updated_at?: string
         }
@@ -356,15 +370,22 @@ export type Database = {
           category?: string
           channel?: string
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
           icon?: string
           id?: string
+          is_system?: boolean
           max_frequency_per_day?: number
           message_body?: string
           message_buttons?: string[]
+          meta_category?: string | null
+          meta_status?: string
+          meta_template_name?: string | null
           name?: string
           owner_id?: string
+          rejection_reason?: string | null
           source_template_id?: string | null
+          template_key?: string | null
           trigger_description?: string
           updated_at?: string
         }
@@ -954,6 +975,7 @@ export type Database = {
         Row: {
           active: boolean
           created_at: string
+          deleted_at: string | null
           description: string | null
           id: string
           name: string
@@ -966,6 +988,7 @@ export type Database = {
         Insert: {
           active?: boolean
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
           id?: string
           name: string
@@ -978,6 +1001,7 @@ export type Database = {
         Update: {
           active?: boolean
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
           id?: string
           name?: string
@@ -1814,6 +1838,7 @@ export type Database = {
           description: string | null
           display_name: string
           facebook: string | null
+          google_review_url: string | null
           instagram: string | null
           logo_url: string | null
           open_hours_text: string | null
@@ -1836,6 +1861,7 @@ export type Database = {
           description?: string | null
           display_name: string
           facebook?: string | null
+          google_review_url?: string | null
           instagram?: string | null
           logo_url?: string | null
           open_hours_text?: string | null
@@ -1858,6 +1884,7 @@ export type Database = {
           description?: string | null
           display_name?: string
           facebook?: string | null
+          google_review_url?: string | null
           instagram?: string | null
           logo_url?: string | null
           open_hours_text?: string | null
