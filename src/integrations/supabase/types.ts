@@ -2326,6 +2326,39 @@ export type Database = {
           },
         ]
       }
+      whatsapp_central_orphan_messages: {
+        Row: {
+          candidate_count: number
+          content: string | null
+          created_at: string
+          from_phone: string
+          id: string
+          media_type: string
+          provider_message_id: string
+          received_at: string
+        }
+        Insert: {
+          candidate_count?: number
+          content?: string | null
+          created_at?: string
+          from_phone: string
+          id?: string
+          media_type?: string
+          provider_message_id: string
+          received_at: string
+        }
+        Update: {
+          candidate_count?: number
+          content?: string | null
+          created_at?: string
+          from_phone?: string
+          id?: string
+          media_type?: string
+          provider_message_id?: string
+          received_at?: string
+        }
+        Relationships: []
+      }
       app_notifications: {
         Row: {
           appointment_id: string | null
@@ -2500,6 +2533,15 @@ export type Database = {
       }
     }
     Functions: {
+      apply_whatsapp_central_reply: {
+        Args: {
+          p_thread_id: string
+          p_action: string
+          p_resolved_by_message_id: string
+          p_late_cancel_hours?: number
+        }
+        Returns: string
+      }
       claim_notification_jobs: {
         Args: { p_limit?: number }
         Returns: Database["public"]["Tables"]["notification_jobs"]["Row"][]
