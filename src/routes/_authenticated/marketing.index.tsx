@@ -2,21 +2,48 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
 import {
   listAutomations,
   setAutomationActive,
   createBlankAutomation,
+  deleteAutomation,
+  renameAutomation,
   getMarketingOverview,
   getMarketingAIInsight,
 } from "@/lib/marketing.functions";
 import { CHANNEL_LABEL } from "@/lib/marketing/types";
 import type { AutomationWithMetrics } from "@/lib/marketing/types";
+import { toMarketingError, getScreenMessage } from "@/lib/marketing/errors";
+import { useStaffPermissions } from "@/hooks/use-staff-permissions";
 import {
-  Sparkles, Search, Plus, TrendingUp, MessageCircle, MailOpen, Wallet,
-  ChevronRight, Zap, Clock3, Pause,
+  Sparkles,
+  Search,
+  Plus,
+  TrendingUp,
+  MessageCircle,
+  MailOpen,
+  Wallet,
+  ChevronRight,
+  Zap,
+  Clock3,
+  Pause,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  ShieldCheck,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { DeleteAutomationDialog, RenameAutomationDialog } from "@/components/automation-dialogs";
+import { META_STATUS_LABEL, type MetaStatus } from "@/lib/marketing/system-templates";
 
 export const Route = createFileRoute("/_authenticated/marketing/")({
   component: MarketingHome,
@@ -41,11 +68,15 @@ function MarketingHome() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
+  const { canDo, isLoading: permsLoading } = useStaffPermissions();
+
   const fetchAutomations = useServerFn(listAutomations);
   const fetchOverview = useServerFn(getMarketingOverview);
   const fetchInsight = useServerFn(getMarketingAIInsight);
   const fetchCreateBlank = useServerFn(createBlankAutomation);
   const fetchSetActive = useServerFn(setAutomationActive);
+  const fetchDelete = useServerFn(deleteAutomation);
+  const fetchRename = useServerFn(renameAutomation);
 
   const { data: automations, isLoading } = useQuery({
     queryKey: ["marketing-automations"],
@@ -63,13 +94,21 @@ function MarketingHome() {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<AutomationWithMetrics | null>(null);
+  const [renameTarget, setRenameTarget] = useState<AutomationWithMetrics | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [renaming, setRenaming] = useState(false);
 
   const list = useMemo(() => automations ?? [], [automations]);
 
   const filtered = useMemo(() => {
     return list.filter((a) => {
       if (filter !== "all" && a.category !== filter) return false;
-      if (search && !`${a.name} ${a.description ?? ""}`.toLowerCase().includes(search.toLowerCase())) return false;
+      if (
+        search &&
+        !`${a.name} ${a.description ?? ""}`.toLowerCase().includes(search.toLowerCase())
+      )
+        return false;
       return true;
     });
   }, [list, filter, search]);
@@ -87,7 +126,15 @@ function MarketingHome() {
 
   const handleToggle = async (id: string, active: boolean) => {
     queryClient.setQueryData<AutomationWithMetrics[]>(["marketing-automations"], (old) =>
-      old?.map((a) => (a.id === id ? { ...a, active, state: active ? (a.metrics.sentCount > 0 ? "active" : "no_history") : "paused" } : a)),
+      old?.map((a) =>
+        a.id === id
+          ? {
+              ...a,
+              active,
+              state: active ? (a.metrics.sentCount > 0 ? "active" : "no_history") : "paused",
+            }
+          : a,
+      ),
     );
     await fetchSetActive({ data: { id, active } });
     queryClient.invalidateQueries({ queryKey: ["marketing-automations"] });
@@ -101,6 +148,78 @@ function MarketingHome() {
       navigate({ to: "/marketing/$id", params: { id } });
     } finally {
       setCreating(false);
+    }
+  };
+
+  const invalidateAutomationQueries = (id: string) => {
+    queryClient.invalidateQueries({ queryKey: ["marketing-automations"] });
+    queryClient.invalidateQueries({ queryKey: ["marketing-overview"] });
+    queryClient.invalidateQueries({ queryKey: ["marketing-ai-insight"] });
+    queryClient.removeQueries({ queryKey: ["marketing-automation", id] });
+  };
+
+  // Duplo toque não exclui duas vezes (item 4.5) — `deleting` desativa o
+  // botão/ação durante a chamada; a lista atualiza na hora (otimista) e
+  // volta ao normal se der erro (item 4.3).
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget || deleting) return;
+    const target = deleteTarget;
+    setDeleting(true);
+    const previous = queryClient.getQueryData<AutomationWithMetrics[]>(["marketing-automations"]);
+    queryClient.setQueryData<AutomationWithMetrics[]>(["marketing-automations"], (old) =>
+      old?.filter((a) => a.id !== target.id),
+    );
+    try {
+      await fetchDelete({ data: { id: target.id } });
+      setDeleteTarget(null);
+      invalidateAutomationQueries(target.id);
+      toast.success("Automação excluída.");
+    } catch (e) {
+      queryClient.setQueryData(["marketing-automations"], previous);
+      const err = toMarketingError(e);
+      if (err.code === "ALREADY_DELETED") {
+        // Exclusão é idempotente — já estava excluída, trata como sucesso.
+        setDeleteTarget(null);
+        invalidateAutomationQueries(target.id);
+      } else if (err.code === "NETWORK") {
+        toast.error(err.message, {
+          action: { label: "Tentar de novo", onClick: handleConfirmDelete },
+        });
+      } else {
+        toast.error(getScreenMessage(err, "delete") || err.message);
+      }
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleConfirmRename = async (name: string) => {
+    if (!renameTarget || renaming) return;
+    const target = renameTarget;
+    setRenaming(true);
+    try {
+      const result = await fetchRename({ data: { id: target.id, name } });
+      queryClient.setQueryData<AutomationWithMetrics[]>(["marketing-automations"], (old) =>
+        old?.map((a) => (a.id === target.id ? { ...a, name: result.name } : a)),
+      );
+      setRenameTarget(null);
+      queryClient.invalidateQueries({ queryKey: ["marketing-automations"] });
+      queryClient.invalidateQueries({ queryKey: ["marketing-automation", target.id] });
+    } catch (e) {
+      const err = toMarketingError(e);
+      if (err.code === "NETWORK") {
+        toast.error(err.message, {
+          action: { label: "Tentar de novo", onClick: () => handleConfirmRename(name) },
+        });
+      } else {
+        toast.error(getScreenMessage(err, "rename") || err.message);
+      }
+      if (err.code === "ALREADY_DELETED" || err.code === "NOT_FOUND_OR_FORBIDDEN") {
+        setRenameTarget(null);
+        invalidateAutomationQueries(target.id);
+      }
+    } finally {
+      setRenaming(false);
     }
   };
 
@@ -150,7 +269,9 @@ function MarketingHome() {
           icon={Wallet}
           label="Receita atribuída"
           hasHistory={overview ? overview.state === "active" : false}
-          value={overview?.attributedRevenue != null ? currency(overview.attributedRevenue) : undefined}
+          value={
+            overview?.attributedRevenue != null ? currency(overview.attributedRevenue) : undefined
+          }
           tone="positive"
         />
       </section>
@@ -163,7 +284,9 @@ function MarketingHome() {
             <Sparkles className="w-4 h-4" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-[11px] uppercase tracking-wider text-background/60">AURA IA — Marketing</div>
+            <div className="text-[11px] uppercase tracking-wider text-background/60">
+              AURA IA — Marketing
+            </div>
             {insight ? (
               <>
                 <p className="mt-2 text-[15px] leading-relaxed">{insight.message}</p>
@@ -186,7 +309,9 @@ function MarketingHome() {
                 </div>
               </>
             ) : (
-              <p className="mt-2 text-[15px] leading-relaxed text-background/60">Carregando análise da Aura...</p>
+              <p className="mt-2 text-[15px] leading-relaxed text-background/60">
+                Carregando análise da Aura...
+              </p>
             )}
           </div>
         </div>
@@ -231,7 +356,8 @@ function MarketingHome() {
         {!isLoading && list.length === 0 && (
           <div className="rounded-2xl border border-dashed border-border/60 p-10 text-center space-y-3">
             <p className="text-sm text-muted-foreground">
-              Você ainda não tem nenhuma automação. Comece pela biblioteca de templates prontos ou crie uma do zero.
+              Você ainda não tem nenhuma automação. Comece pela biblioteca de templates prontos ou
+              crie uma do zero.
             </p>
             <div className="flex justify-center gap-2">
               <Link
@@ -250,19 +376,29 @@ function MarketingHome() {
             </div>
           </div>
         )}
-        {!isLoading && list.length > 0 && grouped.map(([label, items]) => (
-          <div key={label} className="space-y-3">
-            <div className="flex items-center justify-between px-1">
-              <h2 className="text-sm font-semibold tracking-tight">{label}</h2>
-              <span className="text-xs text-muted-foreground">{items.length} automações</span>
+        {!isLoading &&
+          list.length > 0 &&
+          grouped.map(([label, items]) => (
+            <div key={label} className="space-y-3">
+              <div className="flex items-center justify-between px-1">
+                <h2 className="text-sm font-semibold tracking-tight">{label}</h2>
+                <span className="text-xs text-muted-foreground">{items.length} automações</span>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {items.map((a) => (
+                  <AutomationCard
+                    key={a.id}
+                    a={a}
+                    onToggle={(v) => handleToggle(a.id, v)}
+                    canDelete={!permsLoading && canDo("marketing", "delete")}
+                    canRename={!permsLoading && canDo("marketing", "edit")}
+                    onRequestDelete={() => setDeleteTarget(a)}
+                    onRequestRename={() => setRenameTarget(a)}
+                  />
+                ))}
+              </div>
             </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              {items.map((a) => (
-                <AutomationCard key={a.id} a={a} onToggle={(v) => handleToggle(a.id, v)} />
-              ))}
-            </div>
-          </div>
-        ))}
+          ))}
         {!isLoading && list.length > 0 && grouped.length === 0 && (
           <div className="rounded-2xl border border-dashed border-border/60 p-10 text-center text-sm text-muted-foreground">
             Nenhuma automação encontrada.
@@ -293,6 +429,21 @@ function MarketingHome() {
           </Link>
         </div>
       </section>
+
+      <DeleteAutomationDialog
+        open={deleteTarget != null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        automationName={deleteTarget?.name ?? ""}
+        onConfirm={handleConfirmDelete}
+        deleting={deleting}
+      />
+      <RenameAutomationDialog
+        open={renameTarget != null}
+        onOpenChange={(open) => !open && setRenameTarget(null)}
+        currentName={renameTarget?.name ?? ""}
+        onConfirm={handleConfirmRename}
+        saving={renaming}
+      />
     </div>
   );
 }
@@ -302,7 +453,10 @@ function currency(v: number) {
 }
 
 function Kpi({
-  icon: Icon, label, value, sub,
+  icon: Icon,
+  label,
+  value,
+  sub,
 }: {
   icon: typeof TrendingUp;
   label: string;
@@ -323,7 +477,12 @@ function Kpi({
 
 /** Estados Inteligentes: sem valor real ainda -> mensagem, nunca "0". */
 function KpiSmart({
-  icon: Icon, label, hasHistory, value, sub, tone,
+  icon: Icon,
+  label,
+  hasHistory,
+  value,
+  sub,
+  tone,
 }: {
   icon: typeof TrendingUp;
   label: string;
@@ -340,7 +499,12 @@ function KpiSmart({
       </div>
       {hasHistory && value != null ? (
         <>
-          <div className={"mt-2 text-2xl font-medium tracking-tight " + (tone === "positive" ? "text-emerald-600 dark:text-emerald-400" : "")}>
+          <div
+            className={
+              "mt-2 text-2xl font-medium tracking-tight " +
+              (tone === "positive" ? "text-emerald-600 dark:text-emerald-400" : "")
+            }
+          >
             {value}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">{sub}</div>
@@ -356,8 +520,21 @@ function KpiSmart({
 }
 
 function AutomationCard({
-  a, onToggle,
-}: { a: AutomationWithMetrics; onToggle: (v: boolean) => void }) {
+  a,
+  onToggle,
+  canDelete,
+  canRename,
+  onRequestDelete,
+  onRequestRename,
+}: {
+  a: AutomationWithMetrics;
+  onToggle: (v: boolean) => void;
+  canDelete: boolean;
+  canRename: boolean;
+  onRequestDelete: () => void;
+  onRequestRename: () => void;
+}) {
+  const showMenu = a.is_system ? canRename : canRename || canDelete;
   return (
     <div className="group rounded-2xl border border-border/60 bg-card p-4 hover:border-border transition">
       <div className="flex items-start gap-3">
@@ -368,9 +545,44 @@ function AutomationCard({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="text-sm font-medium truncate">{a.name}</div>
-              <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{a.description}</div>
+              <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                {a.description}
+              </div>
             </div>
-            <Switch checked={a.active} onCheckedChange={onToggle} />
+            <div className="flex items-center gap-1 shrink-0">
+              <Switch checked={a.active} onCheckedChange={onToggle} />
+              {showMenu && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="rounded-full w-9 h-9 min-w-[44px] min-h-[44px] -mr-1"
+                      aria-label="Mais opções"
+                    >
+                      <MoreHorizontal className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {canRename && (
+                      <DropdownMenuItem onClick={onRequestRename}>
+                        <Pencil className="w-4 h-4 mr-2" />
+                        Renomear
+                      </DropdownMenuItem>
+                    )}
+                    {!a.is_system && canDelete && (
+                      <DropdownMenuItem
+                        onClick={onRequestDelete}
+                        className="text-red-600 dark:text-red-400"
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Excluir
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <span className="inline-flex items-center h-5 px-2 rounded-full bg-secondary/70 text-[10px] font-medium text-muted-foreground">
@@ -379,6 +591,12 @@ function AutomationCard({
             {a.trigger_description && (
               <span className="inline-flex items-center h-5 px-2 rounded-full bg-secondary/70 text-[10px] font-medium text-muted-foreground">
                 {a.trigger_description}
+              </span>
+            )}
+            {a.is_system && (
+              <span className="inline-flex items-center gap-1 h-5 px-2 rounded-full bg-secondary/70 text-[10px] font-medium text-muted-foreground">
+                <ShieldCheck className="w-2.5 h-2.5" />
+                {META_STATUS_LABEL[a.meta_status]}
               </span>
             )}
           </div>
@@ -410,7 +628,9 @@ function AutomationStateStrip({ a }: { a: AutomationWithMetrics }) {
         <Pause className="w-3.5 h-3.5" />
         <span>
           Automação pausada
-          {a.metrics.lastSendAt ? ` · Último envio: ${new Date(a.metrics.lastSendAt).toLocaleDateString("pt-BR")}` : " · Nunca executou"}
+          {a.metrics.lastSendAt
+            ? ` · Último envio: ${new Date(a.metrics.lastSendAt).toLocaleDateString("pt-BR")}`
+            : " · Nunca executou"}
         </span>
       </div>
     );
@@ -426,10 +646,15 @@ function AutomationStateStrip({ a }: { a: AutomationWithMetrics }) {
   return (
     <div className="grid grid-cols-3 gap-2">
       <Meta label="Enviadas" value={String(a.metrics.sentCount)} />
-      <Meta label="Entrega" value={a.metrics.deliveryRate != null ? `${a.metrics.deliveryRate}%` : "—"} />
+      <Meta
+        label="Entrega"
+        value={a.metrics.deliveryRate != null ? `${a.metrics.deliveryRate}%` : "—"}
+      />
       <Meta
         label="Última"
-        value={a.metrics.lastSendAt ? new Date(a.metrics.lastSendAt).toLocaleDateString("pt-BR") : "—"}
+        value={
+          a.metrics.lastSendAt ? new Date(a.metrics.lastSendAt).toLocaleDateString("pt-BR") : "—"
+        }
       />
     </div>
   );
@@ -438,7 +663,9 @@ function AutomationStateStrip({ a }: { a: AutomationWithMetrics }) {
 function Meta({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground truncate">{label}</div>
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground truncate">
+        {label}
+      </div>
       <div className="mt-0.5 text-xs font-medium truncate">{value}</div>
     </div>
   );
