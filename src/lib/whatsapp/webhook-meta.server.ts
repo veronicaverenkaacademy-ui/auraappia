@@ -18,6 +18,9 @@ import {
   processInboundConfirmationReply,
   resolveClientCandidatesForPhone,
 } from "./confirmation-inbound.server";
+import { verifyMetaWebhookSignature } from "./central-webhook-signature.server";
+import { parseMetaWebhookEvents } from "./central-webhook-parser";
+import { handleCentralWebhookEvents } from "./central-webhook-handler.server";
 
 function handleVerification(url: URL): Response {
   const mode = url.searchParams.get("hub.mode");
@@ -42,9 +45,26 @@ export async function handleMetaWhatsappWebhook(request: Request): Promise<Respo
     return new Response("Method Not Allowed", { status: 405 });
   }
 
+  // Assinatura validada sobre o corpo CRU, antes de qualquer JSON.parse —
+  // vale para TODO POST a este endpoint (número central e por salão, é um
+  // único App/assinatura). Falha fechada: cabeçalho ausente/errado ou
+  // segredo não configurado = 401, sem processar nada. Reaproveita
+  // META_APP_SECRET (já existe, usado na troca de código do Embedded
+  // Signup) — nenhum segredo novo é necessário só para isto.
+  const rawBody = await request.text();
+  const signatureResult = await verifyMetaWebhookSignature(
+    rawBody,
+    request.headers.get("x-hub-signature-256"),
+    process.env.META_APP_SECRET,
+  );
+  if (!signatureResult.ok) {
+    console.error(`[webhook:meta] Assinatura inválida: ${signatureResult.reason}`);
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   let payload: unknown;
   try {
-    payload = await request.json();
+    payload = JSON.parse(rawBody);
   } catch {
     return new Response("Invalid JSON", { status: 400 });
   }
@@ -129,8 +149,23 @@ export async function handleMetaWhatsappWebhook(request: Request): Promise<Respo
   } catch (e) {
     // Loga mas responde 200 — mesmo raciocínio dos outros webhooks: a Meta
     // reenvia (com backoff) em caso de erro, e um payload já malformado não
-    // vai se corrigir sozinho no reenvio.
+    // vai se corrigir sozinho no reenvio. Comportamento INTOCADO do fluxo
+    // por salão — a mudança abaixo (número central) tem sua própria regra.
     console.error("[webhook:meta] Falha ao processar payload", e);
+  }
+
+  // Caminho do número CENTRAL (lembretes 24h/2h, respostas de botão) —
+  // paralelo e independente do bloco acima (filtra só eventos cujo
+  // phone_number_id é o número central; eventos de salão passam direto,
+  // sem efeito). Diferente do bloco acima: erro de INFRAESTRUTURA real
+  // (não um "não encontrado" esperado) devolve status de erro de verdade,
+  // pra Meta reenviar esta requisição — pedido explícito do item M5.
+  try {
+    const { events } = parseMetaWebhookEvents(payload);
+    await handleCentralWebhookEvents(events);
+  } catch (e) {
+    console.error("[webhook:meta:central] Falha de infraestrutura ao processar evento(s)", e);
+    return new Response("Internal Error", { status: 500 });
   }
 
   return new Response("OK", { status: 200 });

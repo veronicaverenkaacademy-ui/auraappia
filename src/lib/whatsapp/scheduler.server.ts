@@ -1,11 +1,18 @@
 // Processamento assíncrono da fila de notificações — chamado pelo endpoint de
 // cron (src/server.ts, /api/cron/whatsapp-reminders), nunca pelo fluxo síncrono
 // de criação/confirmação de agendamento (isso é o trigger de banco, ver
-// migration 20260811090000). Duas responsabilidades:
-//   1. scanAndEnqueueReminders — descobre agendamentos confirmados que entraram
-//      na janela de 24h/2h e ainda não têm lembrete enviado, cria o job.
-//   2. processNotificationJobs — reivindica jobs pendentes (claim_notification_jobs,
-//      atômico via FOR UPDATE SKIP LOCKED) e efetivamente envia, com retry/backoff.
+// migration 20260811090000). Responsabilidade que resta aqui:
+// processNotificationJobs — reivindica jobs pendentes (claim_notification_jobs,
+// atômico via FOR UPDATE SKIP LOCKED) e efetivamente envia, com retry/backoff.
+//
+// IMPORTANTE (WhatsApp central, Etapa 1): appointment_reminder_24h/2h NÃO são
+// mais enfileirados nem enviados por este arquivo — scanAndEnqueueReminders
+// foi removida (sem chamador) e processOneJob agora desvia esses dois tipos
+// para central-reminder-scheduler.server.ts (template pelo número central da
+// AURA) ANTES de chegar em renderMessageForJob/WhatsAppMessageService. Os
+// ramos de reminder ali dentro ficaram inalcançáveis de propósito — não
+// removidos, pra não arriscar uma edição maior num arquivo legado que
+// continua ativo para appointment_confirmation/appointment_created.
 import {
   formatDateBR,
   formatTimeBR,
@@ -15,13 +22,7 @@ import {
   renderAppointmentReminder2h,
 } from "./templates";
 import { WhatsAppMessageService } from "./message-service.server";
-
-const REMINDER_24H_MS = 24 * 60 * 60 * 1000;
-const REMINDER_2H_MS = 2 * 60 * 60 * 1000;
-// Tolerância pro cron não precisar rodar no segundo exato — cobre um cron a
-// cada ~5-10min sem perder nem duplicar (o índice único em notification_jobs
-// cobre duplicação; a janela cobre "perder" o instante certo).
-const WINDOW_TOLERANCE_MS = 6 * 60 * 1000;
+import { processCentralReminderJob } from "./central-reminder-scheduler.server";
 
 // tentativa 1 -> 1min, tentativa 2 -> 5min, tentativa 3 -> 15min, depois failed.
 const BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000];
@@ -30,70 +31,12 @@ type SupabaseAdmin = Awaited<
   typeof import("@/integrations/supabase/client.server")
 >["supabaseAdmin"];
 
-const REMINDER_KINDS = [
-  {
-    type: "appointment_reminder_24h" as const,
-    offsetMs: REMINDER_24H_MS,
-    sentAtColumn: "reminder_24h_sent_at" as const,
-  },
-  {
-    type: "appointment_reminder_2h" as const,
-    offsetMs: REMINDER_2H_MS,
-    sentAtColumn: "reminder_2h_sent_at" as const,
-  },
-];
-
-export async function scanAndEnqueueReminders(): Promise<{ enqueued: number }> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const now = new Date();
-  let enqueued = 0;
-
-  for (const kind of REMINDER_KINDS) {
-    const windowStart = new Date(now.getTime() + kind.offsetMs - WINDOW_TOLERANCE_MS).toISOString();
-    const windowEnd = new Date(now.getTime() + kind.offsetMs + WINDOW_TOLERANCE_MS).toISOString();
-
-    const { data: due, error } = await supabaseAdmin
-      .from("appointments")
-      .select("id, owner_id, client_id")
-      .eq("status", "confirmed")
-      .is(kind.sentAtColumn, null)
-      .gte("starts_at", windowStart)
-      .lte("starts_at", windowEnd);
-    if (error) throw new Error(error.message);
-
-    for (const appt of due ?? []) {
-      const { data: client } = await supabaseAdmin
-        .from("clients")
-        .select("phone")
-        .eq("id", appt.client_id)
-        .maybeSingle();
-      if (!client?.phone) continue;
-
-      const { data: connectedInstance } = await supabaseAdmin
-        .from("whatsapp_instances")
-        .select("owner_id")
-        .eq("owner_id", appt.owner_id)
-        .eq("status", "connected")
-        .maybeSingle();
-      if (!connectedInstance) continue;
-
-      const { error: upsertErr, count } = await supabaseAdmin.from("notification_jobs").upsert(
-        {
-          owner_id: appt.owner_id,
-          appointment_id: appt.id,
-          client_id: appt.client_id,
-          type: kind.type,
-          recipient_phone: client.phone,
-          scheduled_for: now.toISOString(),
-        },
-        { onConflict: "appointment_id,type", ignoreDuplicates: true, count: "exact" },
-      );
-      if (!upsertErr && (count ?? 0) > 0) enqueued++;
-    }
-  }
-
-  return { enqueued };
-}
+// scanAndEnqueueReminders (criava appointment_reminder_24h/2h checando
+// whatsapp_instances conectada por salão) foi removida — substituída por
+// scanAndEnqueueCentralReminders (central-reminder-scheduler.server.ts),
+// que cria o MESMO tipo de job sem depender de conexão por salão (o envio
+// agora é pelo número central). Nenhum outro chamador desta função existia
+// (confirmado por busca) — remoção segura.
 
 type ClaimedJob = {
   id: string;
@@ -168,7 +111,18 @@ async function renderMessageForJob(
 async function processOneJob(
   supabaseAdmin: SupabaseAdmin,
   job: ClaimedJob,
-): Promise<"sent" | "failed" | "cancelled"> {
+): Promise<"sent" | "failed" | "cancelled" | "held"> {
+  // WhatsApp central, Etapa 1: lembretes 24h/2h desviam para o envio por
+  // template pelo número central ANTES de qualquer renderização/envio de
+  // texto livre — nunca chegam ao WhatsAppMessageService (provider por
+  // salão) daqui pra baixo.
+  if (job.type === "appointment_reminder_24h" || job.type === "appointment_reminder_2h") {
+    return processCentralReminderJob(
+      supabaseAdmin,
+      job as ClaimedJob & { type: "appointment_reminder_24h" | "appointment_reminder_2h" },
+    );
+  }
+
   const { message, skip, appointmentStartsAt } = await renderMessageForJob(supabaseAdmin, job);
   if (skip) {
     await supabaseAdmin.from("notification_jobs").update({ status: "cancelled" }).eq("id", job.id);
@@ -191,21 +145,9 @@ async function processOneJob(
       .update({ status: "sent", message, sent_at: new Date().toISOString(), last_error: null })
       .eq("id", job.id);
 
-    // appointment_id nunca é null aqui: renderMessageForJob já teria retornado
-    // skip="cancelled" (tratado acima, antes de chamar sendMessage) se fosse.
-    if (job.appointment_id) {
-      if (job.type === "appointment_reminder_24h") {
-        await supabaseAdmin
-          .from("appointments")
-          .update({ reminder_24h_sent_at: new Date().toISOString() })
-          .eq("id", job.appointment_id);
-      } else if (job.type === "appointment_reminder_2h") {
-        await supabaseAdmin
-          .from("appointments")
-          .update({ reminder_2h_sent_at: new Date().toISOString() })
-          .eq("id", job.appointment_id);
-      }
-    }
+    // Marcar reminder_24h_sent_at/reminder_2h_sent_at não é mais feito aqui —
+    // job.type nunca é mais um desses dois tipos neste ponto (desviados no
+    // início de processOneJob); quem marca agora é processCentralReminderJob.
     return "sent";
   }
 
@@ -228,7 +170,7 @@ async function processOneJob(
 
 export async function processNotificationJobs(
   limit = 20,
-): Promise<{ claimed: number; sent: number; failed: number; cancelled: number }> {
+): Promise<{ claimed: number; sent: number; failed: number; cancelled: number; held: number }> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
   const { data: jobs, error } = await supabaseAdmin.rpc("claim_notification_jobs", {
@@ -239,13 +181,15 @@ export async function processNotificationJobs(
   let sent = 0;
   let failed = 0;
   let cancelled = 0;
+  let held = 0;
 
   for (const job of (jobs ?? []) as ClaimedJob[]) {
     const outcome = await processOneJob(supabaseAdmin, job);
     if (outcome === "sent") sent++;
     else if (outcome === "failed") failed++;
+    else if (outcome === "held") held++;
     else cancelled++;
   }
 
-  return { claimed: (jobs ?? []).length, sent, failed, cancelled };
+  return { claimed: (jobs ?? []).length, sent, failed, cancelled, held };
 }

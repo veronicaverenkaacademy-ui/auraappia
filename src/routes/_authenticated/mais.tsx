@@ -1,9 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { AppShell } from "@/components/app-shell";
 import { useStaffPermissions } from "@/hooks/use-staff-permissions";
 import { supabase } from "@/integrations/supabase/client";
 import type { Resource } from "@/lib/permissions";
+import { getUnreadNotificationsCount } from "@/lib/notifications.functions";
 import {
   Users, Calendar, Package, Sparkles, DollarSign, BarChart3, Megaphone, ShoppingBag,
   FileText, Settings, HelpCircle, MessageCircle, LineChart, Wand2, UsersRound, User,
@@ -49,6 +51,7 @@ const items: Item[] = [
     desc: "Sua agenda e comissões",
     roles: ["staff"],
   },
+  { to: "/avisos", label: "Avisos", icon: Bell, desc: "Reagendamentos e mensagens sem resposta" },
   { to: "/clientes", label: "Clientes", icon: Users, desc: "Fichas e histórico" },
   { to: "/agenda", label: "Agenda", icon: Calendar, desc: "Horários e compromissos" },
   { to: "/servicos", label: "Serviços", icon: Sparkles, desc: "Protocolos e preços" },
@@ -207,12 +210,15 @@ const settingsItems: Item[] = [
   },
 ];
 
-function ItemCard({ item }: { item: Item }) {
+function ItemCard({ item, showUnreadDot }: { item: Item; showUnreadDot?: boolean }) {
   const Icon = item.icon;
   const content = (
     <div className="relative p-4 rounded-2xl bg-card border border-border/50 hover:border-border transition text-left h-full">
-      <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center mb-3">
+      <div className="relative w-10 h-10 rounded-xl bg-secondary flex items-center justify-center mb-3">
         <Icon className="w-4 h-4 text-muted-foreground" />
+        {showUnreadDot && (
+          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-destructive" />
+        )}
       </div>
       <div className="text-sm font-medium mb-0.5">{item.label}</div>
       <div className="text-xs text-muted-foreground">{item.desc}</div>
@@ -239,6 +245,11 @@ function Mais() {
   const { role, canView, isLoading, isOwnKind } = useStaffPermissions();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const fetchUnreadCount = useServerFn(getUnreadNotificationsCount);
+  const { data: unreadCount = 0 } = useQuery({
+    queryKey: ["app-notifications-unread-count"],
+    queryFn: () => fetchUnreadCount(),
+  });
 
   // Caminho da dona nunca espera isLoading — canView já retorna true na hora pra
   // admin, então "role === admin" resolve o item sem depender da permissão real ter
@@ -274,7 +285,11 @@ function Mais() {
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
         {visible.map((item) => (
-          <ItemCard key={item.label} item={item} />
+          <ItemCard
+            key={item.label}
+            item={item}
+            showUnreadDot={item.to === "/avisos" && unreadCount > 0}
+          />
         ))}
       </div>
 

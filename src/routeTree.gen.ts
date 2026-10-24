@@ -22,6 +22,7 @@ import { Route as AuthenticatedAdminTesteMetaRouteImport } from './routes/_authe
 import { Route as AuthenticatedAgendaRouteImport } from './routes/_authenticated/agenda'
 import { Route as AuthenticatedAssinaturaRouteImport } from './routes/_authenticated/assinatura'
 import { Route as AuthenticatedAuraIaRouteImport } from './routes/_authenticated/aura-ia'
+import { Route as AuthenticatedAvisosRouteImport } from './routes/_authenticated/avisos'
 import { Route as AuthenticatedBiRouteImport } from './routes/_authenticated/bi'
 import { Route as AuthenticatedClientesRouteImport } from './routes/_authenticated/clientes'
 import { Route as AuthenticatedDadosRouteImport } from './routes/_authenticated/dados'
@@ -137,6 +138,11 @@ const AuthenticatedAssinaturaRoute = AuthenticatedAssinaturaRouteImport.update({
 const AuthenticatedAuraIaRoute = AuthenticatedAuraIaRouteImport.update({
   id: '/aura-ia',
   path: '/aura-ia',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAvisosRoute = AuthenticatedAvisosRouteImport.update({
+  id: '/avisos',
+  path: '/avisos',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedBiRoute = AuthenticatedBiRouteImport.update({
@@ -431,6 +437,7 @@ export interface FileRoutesByFullPath {
   '/agenda': typeof AuthenticatedAgendaRoute
   '/assinatura': typeof AuthenticatedAssinaturaRoute
   '/aura-ia': typeof AuthenticatedAuraIaRouteWithChildren
+  '/avisos': typeof AuthenticatedAvisosRoute
   '/bi': typeof AuthenticatedBiRouteWithChildren
   '/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/dados': typeof AuthenticatedDadosRoute
@@ -495,6 +502,7 @@ export interface FileRoutesByTo {
   '/admin-teste-meta': typeof AuthenticatedAdminTesteMetaRoute
   '/agenda': typeof AuthenticatedAgendaRoute
   '/assinatura': typeof AuthenticatedAssinaturaRoute
+  '/avisos': typeof AuthenticatedAvisosRoute
   '/dados': typeof AuthenticatedDadosRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/empresa': typeof AuthenticatedEmpresaRoute
@@ -554,6 +562,7 @@ export interface FileRoutesById {
   '/_authenticated/agenda': typeof AuthenticatedAgendaRoute
   '/_authenticated/assinatura': typeof AuthenticatedAssinaturaRoute
   '/_authenticated/aura-ia': typeof AuthenticatedAuraIaRouteWithChildren
+  '/_authenticated/avisos': typeof AuthenticatedAvisosRoute
   '/_authenticated/bi': typeof AuthenticatedBiRouteWithChildren
   '/_authenticated/clientes': typeof AuthenticatedClientesRouteWithChildren
   '/_authenticated/dados': typeof AuthenticatedDadosRoute
@@ -621,6 +630,7 @@ export interface FileRouteTypes {
     | '/agenda'
     | '/assinatura'
     | '/aura-ia'
+    | '/avisos'
     | '/bi'
     | '/clientes'
     | '/dados'
@@ -685,6 +695,7 @@ export interface FileRouteTypes {
     | '/admin-teste-meta'
     | '/agenda'
     | '/assinatura'
+    | '/avisos'
     | '/dados'
     | '/dashboard'
     | '/empresa'
@@ -743,6 +754,7 @@ export interface FileRouteTypes {
     | '/_authenticated/agenda'
     | '/_authenticated/assinatura'
     | '/_authenticated/aura-ia'
+    | '/_authenticated/avisos'
     | '/_authenticated/bi'
     | '/_authenticated/clientes'
     | '/_authenticated/dados'
@@ -900,6 +912,13 @@ declare module '@tanstack/react-router' {
       path: '/aura-ia'
       fullPath: '/aura-ia'
       preLoaderRoute: typeof AuthenticatedAuraIaRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/avisos': {
+      id: '/_authenticated/avisos'
+      path: '/avisos'
+      fullPath: '/avisos'
+      preLoaderRoute: typeof AuthenticatedAvisosRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/bi': {
@@ -1418,6 +1437,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAgendaRoute: typeof AuthenticatedAgendaRoute
   AuthenticatedAssinaturaRoute: typeof AuthenticatedAssinaturaRoute
   AuthenticatedAuraIaRoute: typeof AuthenticatedAuraIaRouteWithChildren
+  AuthenticatedAvisosRoute: typeof AuthenticatedAvisosRoute
   AuthenticatedBiRoute: typeof AuthenticatedBiRouteWithChildren
   AuthenticatedClientesRoute: typeof AuthenticatedClientesRouteWithChildren
   AuthenticatedDadosRoute: typeof AuthenticatedDadosRoute
@@ -1447,6 +1467,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAgendaRoute: AuthenticatedAgendaRoute,
   AuthenticatedAssinaturaRoute: AuthenticatedAssinaturaRoute,
   AuthenticatedAuraIaRoute: AuthenticatedAuraIaRouteWithChildren,
+  AuthenticatedAvisosRoute: AuthenticatedAvisosRoute,
   AuthenticatedBiRoute: AuthenticatedBiRouteWithChildren,
   AuthenticatedClientesRoute: AuthenticatedClientesRouteWithChildren,
   AuthenticatedDadosRoute: AuthenticatedDadosRoute,
