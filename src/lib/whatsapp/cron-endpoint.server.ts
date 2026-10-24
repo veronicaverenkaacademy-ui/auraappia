@@ -3,7 +3,8 @@
 // ver docs/whatsapp-evolution-mvp.md). Protegido por CRON_SECRET via Bearer
 // token. Cada chamada: descobre lembretes que entraram na janela e enfileira,
 // depois processa a fila inteira (confirmações + lembretes + retries).
-import { processNotificationJobs, scanAndEnqueueReminders } from "./scheduler.server";
+import { processNotificationJobs } from "./scheduler.server";
+import { scanAndEnqueueCentralReminders } from "./central-reminder-scheduler.server";
 
 export async function handleWhatsappCronRequest(request: Request): Promise<Response> {
   if (request.method !== "POST") {
@@ -22,7 +23,7 @@ export async function handleWhatsappCronRequest(request: Request): Promise<Respo
   }
 
   try {
-    const scan = await scanAndEnqueueReminders();
+    const scan = await scanAndEnqueueCentralReminders();
     const processed = await processNotificationJobs();
     return new Response(JSON.stringify({ ok: true, scan, processed }), {
       status: 200,
