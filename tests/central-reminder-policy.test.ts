@@ -126,6 +126,23 @@ test("modo teste com telefone NA lista: envia normalmente", () => {
   assert.equal(r.action, "send");
 });
 
+test("modo teste: telefone da lista SEM o 9º dígito ainda casa com o número COM o 9º dígito do agendamento", () => {
+  // Lista de teste cadastrada como "554788887777" (formato antigo, sem o
+  // 9) — tem que casar com recipientPhoneE164="+5547988887777" (do
+  // cliente, com o 9).
+  const r = decideReminderJobAction(
+    baseInput({ testMode: true, recipientPhoneE164: "+5547988887777", testPhones: ["554788887777"] }),
+  );
+  assert.equal(r.action, "send");
+});
+
+test("modo teste: telefone da lista SEM +55/espaços/hífen ainda casa", () => {
+  const r = decideReminderJobAction(
+    baseInput({ testMode: true, recipientPhoneE164: "+5547988887777", testPhones: ["(47) 98888-7777"] }),
+  );
+  assert.equal(r.action, "send");
+});
+
 test("horário de silêncio (02:00 local) com janela válida antes do agendamento: defer", () => {
   // 02:00 em America/Sao_Paulo (UTC-3) = 05:00Z. Agendamento só às 15:00Z do
   // mesmo dia (12:00 local) — defere pra 07:00 local (10:00Z) sem problema.
