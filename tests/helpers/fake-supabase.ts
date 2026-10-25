@@ -105,6 +105,9 @@ export class FakeSupabaseAdmin {
         orderBy = { col, ascending: opts.ascending };
         return builder;
       },
+      limit(_n: number) {
+        return builder;
+      },
       async maybeSingle() {
         const rows = applyFilters();
         return { data: rows[0] ?? null, error: null };

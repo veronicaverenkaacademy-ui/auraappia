@@ -310,3 +310,31 @@ test("4: troca de profissional — nome usado no template é o da profissional v
   // nome é usado já está em central-template-variables.test.ts (função pura).
   await assert.doesNotReject(() => processCentralReminderJob(db as never, job(), () => NOW));
 });
+
+test("4/7: freio de emergência (incidente global aberto) interrompe o envio -> held, nunca chega a chamar a Meta", async () => {
+  const db = new FakeSupabaseAdmin({
+    tables: baseJobTables({
+      whatsapp_central_incidents: [
+        { id: "inc-1", scope: "global", template_key: null, reason: "token inválido", resolved_at: null },
+      ],
+    }),
+  });
+  // Nenhum dublê de fetch é instalado — se o código tentasse chamar a
+  // Meta de verdade, o teste falharia por erro de rede/ENOTFOUND, não
+  // silenciosamente. O freio tem que interceptar ANTES disso.
+  const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
+  assert.equal(outcome, "held");
+  assert.equal(db.tables.notification_jobs[0].status, "pending");
+});
+
+test("4/7: freio de emergência por TEMPLATE (não global) só afeta o template_key correspondente", async () => {
+  const db = new FakeSupabaseAdmin({
+    tables: baseJobTables({
+      whatsapp_central_incidents: [
+        { id: "inc-1", scope: "template", template_key: "lembrete_24h", reason: "template pausado", resolved_at: null },
+      ],
+    }),
+  });
+  const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
+  assert.equal(outcome, "held");
+});
