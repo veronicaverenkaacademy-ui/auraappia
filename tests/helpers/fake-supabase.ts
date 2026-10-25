@@ -48,7 +48,14 @@ export class FakeSupabaseAdmin {
   private matchesUnique(table: string, candidate: Row): boolean {
     const keysList = this.uniqueKeys[table] ?? [];
     const rows = this.tables[table] ?? [];
-    return keysList.some((keys) => rows.some((r) => keys.every((k) => r[k] === candidate[k])));
+    return keysList.some((keys) => {
+      // Padrão Postgres (índice único comum OU parcial "WHERE col IS NOT
+      // NULL"): NULL nunca conflita com nada, nem com outro NULL — só
+      // conta violação se TODAS as colunas da chave forem não-nulas na
+      // linha nova.
+      if (keys.some((k) => candidate[k] === null || candidate[k] === undefined)) return false;
+      return rows.some((r) => keys.every((k) => r[k] === candidate[k]));
+    });
   }
 
   from(table: string) {
