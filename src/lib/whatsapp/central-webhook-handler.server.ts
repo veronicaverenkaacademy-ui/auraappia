@@ -232,11 +232,27 @@ async function handleButtonEvent(
     reschedule: "reschedule",
     cancel: "cancel",
   };
-  const outcome = await applyCentralThreadReply(deps.supabaseAdmin, {
-    threadId: thread.id,
-    action: actionMap[parsedPayload.action],
-    resolvedByMessageId: inserted.id,
-  });
+  let outcome: Awaited<ReturnType<typeof applyCentralThreadReply>>;
+  try {
+    outcome = await applyCentralThreadReply(deps.supabaseAdmin, {
+      threadId: thread.id,
+      action: actionMap[parsedPayload.action],
+      resolvedByMessageId: inserted.id,
+    });
+  } catch (e) {
+    // DEFEITO CORRIGIDO (auditoria de testes desta etapa): a mensagem
+    // inbound (registro de idempotência) já foi gravada ACIMA, antes de
+    // chamar a RPC — se a RPC falhar agora (rede, timeout), sem esta
+    // compensação a reentrega da Meta deste MESMO evento encontraria a
+    // mensagem já gravada e pararia no "já processado" sem NUNCA tentar de
+    // novo, perdendo o toque da cliente pra sempre. Remove o registro
+    // antes de repropagar, pra a próxima tentativa (a Meta reenvia por
+    // causa do erro abaixo) começar do zero — mesmo padrão de compensação
+    // já usado em central-template-sender.server.ts (thread sem pergunta
+    // entregue também é removida, nunca fica pela metade).
+    await deps.supabaseAdmin.from("whatsapp_messages").delete().eq("id", inserted.id);
+    throw e;
+  }
 
   const notif = notificationForOutcome(outcome, thread.id);
   if (notif) {
