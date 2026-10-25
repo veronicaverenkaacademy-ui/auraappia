@@ -93,6 +93,10 @@ export class FakeSupabaseAdmin {
         filters.push((r) => String(r[col] ?? "") <= String(val));
         return builder;
       },
+      lt(col: string, val: unknown) {
+        filters.push((r) => String(r[col] ?? "") < String(val));
+        return builder;
+      },
       is(col: string, val: null) {
         filters.push((r) => (r[col] ?? null) === val);
         return builder;
@@ -150,21 +154,28 @@ export class FakeSupabaseAdmin {
           },
         };
       },
-      delete() {
-        return {
-          async eq(col: string, val: unknown) {
-            const before = db.tables[table].length;
-            db.tables[table] = db.tables[table].filter((r) => r[col] !== val);
-            return { data: null, error: null, count: before - db.tables[table].length };
-          },
-        };
+      delete(_opts: { count?: string } = {}) {
+        pendingDelete = true;
+        return builder;
       },
       // Permite `await supabaseAdmin.from(t).select(...).eq(...)` direto
-      // (sem .maybeSingle()), como em findOrphanCandidates.
-      then(resolve: (v: { data: Row[]; error: null }) => unknown, reject?: (e: unknown) => unknown) {
-        return Promise.resolve({ data: applyFilters(), error: null }).then(resolve, reject);
+      // (sem .maybeSingle()), como em findOrphanCandidates, e também
+      // `.select(..., {count:'exact', head:true})` (count sempre
+      // calculado, inofensivo pra quem não olha esse campo) e
+      // `.delete(...).lt(...)` (apaga ao resolver, count = linhas apagadas).
+      then(resolve: (v: { data: Row[] | null; error: null; count: number }) => unknown, reject?: (e: unknown) => unknown) {
+        if (pendingDelete) {
+          const toDelete = new Set(applyFilters());
+          const before = db.tables[table].length;
+          db.tables[table] = db.tables[table].filter((r) => !toDelete.has(r));
+          const deletedCount = before - db.tables[table].length;
+          return Promise.resolve({ data: null, error: null, count: deletedCount }).then(resolve, reject);
+        }
+        const rows = applyFilters();
+        return Promise.resolve({ data: rows, error: null, count: rows.length }).then(resolve, reject);
       },
     };
+    let pendingDelete = false;
     return builder;
   }
 

@@ -5,6 +5,7 @@
 // depois processa a fila inteira (confirmações + lembretes + retries).
 import { processNotificationJobs } from "./scheduler.server";
 import { scanAndEnqueueCentralReminders } from "./central-reminder-scheduler.server";
+import { cleanupExpiredOrphanMessages } from "./central-orphan-retention.server.ts";
 
 export async function handleWhatsappCronRequest(request: Request): Promise<Response> {
   if (request.method !== "POST") {
@@ -25,7 +26,8 @@ export async function handleWhatsappCronRequest(request: Request): Promise<Respo
   try {
     const scan = await scanAndEnqueueCentralReminders();
     const processed = await processNotificationJobs();
-    return new Response(JSON.stringify({ ok: true, scan, processed }), {
+    const orphanCleanup = await cleanupExpiredOrphanMessages();
+    return new Response(JSON.stringify({ ok: true, scan, processed, orphanCleanup }), {
       status: 200,
       headers: { "content-type": "application/json" },
     });

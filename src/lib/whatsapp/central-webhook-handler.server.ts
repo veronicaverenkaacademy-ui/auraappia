@@ -20,6 +20,10 @@ import {
   notificationForOutcome,
 } from "./central-reply-executor.server.ts";
 import { looksLikeStopRequest } from "./central-webhook-parser.ts";
+import {
+  countRecentOrphanMessagesForPhone,
+  ORPHAN_MAX_PER_PHONE_PER_DAY,
+} from "./central-orphan-retention.server.ts";
 
 type SupabaseAdmin = Awaited<
   typeof import("@/integrations/supabase/client.server")
@@ -330,6 +334,23 @@ async function handleTextOrOtherEvent(
     const candidates = await findOrphanCandidates(deps, event.fromPhone);
     if (candidates.length === 1) resolved = candidates[0];
     else {
+      // Limite de volume POR TELEFONE (item M7/seção 5 da auditoria de
+      // testes): um número que manda muitas mensagens não-correlacionáveis
+      // nunca enche a tabela a ponto de custar storage — mas o limite é só
+      // daquele telefone específico, nunca global, então nunca impede o
+      // registro de mensagens órfãs de OUTROS telefones no mesmo instante.
+      const recentCount = await countRecentOrphanMessagesForPhone(
+        deps.supabaseAdmin,
+        event.fromPhone,
+        deps.now,
+      );
+      if (recentCount >= ORPHAN_MAX_PER_PHONE_PER_DAY) {
+        deps.logger.error(
+          `[whatsapp:central] Limite de mensagens órfãs por telefone atingido (${ORPHAN_MAX_PER_PHONE_PER_DAY}/24h) — mensagem descartada sem gravar.`,
+        );
+        return;
+      }
+
       const { error } = await deps.supabaseAdmin.from("whatsapp_central_orphan_messages").insert({
         provider_message_id: event.messageId,
         from_phone: event.fromPhone,
