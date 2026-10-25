@@ -1,16 +1,13 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
-import {
-  getUnreadNotificationsCount,
-  listAttentionAppointmentIds,
-} from "@/lib/notifications.functions";
+import { NotificationBellButton } from "@/components/notification-bell-button";
+import { listAttentionAppointmentIds } from "@/lib/notifications.functions";
 import {
   Ban,
-  Bell,
   Check,
   CheckCircle2,
   ChevronLeft,
@@ -152,15 +149,11 @@ function Agenda() {
   const { data: team = [] } = useQuery({ queryKey: ["team-members"], queryFn: listTeamMembers });
   const activeProfessionals = useMemo(() => team.filter((t) => t.status === "active"), [team]);
 
-  // Avisos (WhatsApp central, Etapa 1) — contador no sino e marcador nos
-  // cards de agendamento com pedido de reagendamento/mensagem sem resposta.
-  const navigate = useNavigate();
-  const fetchUnreadCount = useServerFn(getUnreadNotificationsCount);
+  // Avisos (WhatsApp central, Etapa 1) — marcador nos cards de agendamento
+  // com pedido de reagendamento/mensagem sem resposta. O sino em si foi
+  // extraído para NotificationBellButton (compartilhado com a tela
+  // inicial) — mesmo comportamento de antes, só não vive mais aqui.
   const fetchAttentionIds = useServerFn(listAttentionAppointmentIds);
-  const { data: unreadCount = 0 } = useQuery({
-    queryKey: ["app-notifications-unread-count"],
-    queryFn: () => fetchUnreadCount(),
-  });
   const { data: attentionIdsList = [] } = useQuery({
     queryKey: ["agenda-attention-ids"],
     queryFn: () => fetchAttentionIds(),
@@ -187,17 +180,7 @@ function Agenda() {
           <Button variant="ghost" size="icon" className="rounded-full h-9 w-9">
             <Search className="w-4 h-4" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="rounded-full h-9 w-9 relative"
-            onClick={() => navigate({ to: "/avisos" })}
-          >
-            <Bell className="w-4 h-4" />
-            {unreadCount > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-destructive" />
-            )}
-          </Button>
+          <NotificationBellButton />
           <Button variant="ghost" size="icon" className="rounded-full h-9 w-9" onClick={() => setBlockFormOpen({})} title="Bloquear horário">
             <Ban className="w-4 h-4" />
           </Button>
