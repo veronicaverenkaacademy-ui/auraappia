@@ -21,24 +21,13 @@ import {
 import { verifyMetaWebhookSignature } from "./central-webhook-signature.server";
 import { parseMetaWebhookEvents } from "./central-webhook-parser";
 import { handleCentralWebhookEvents } from "./central-webhook-handler.server";
-
-function handleVerification(url: URL): Response {
-  const mode = url.searchParams.get("hub.mode");
-  const token = url.searchParams.get("hub.verify_token");
-  const challenge = url.searchParams.get("hub.challenge");
-  const expected = process.env.META_WHATSAPP_WEBHOOK_VERIFY_TOKEN;
-
-  if (mode === "subscribe" && expected && token === expected && challenge) {
-    return new Response(challenge, { status: 200 });
-  }
-  return new Response("Forbidden", { status: 403 });
-}
+import { handleWebhookVerification } from "./central-webhook-verification.ts";
 
 export async function handleMetaWhatsappWebhook(request: Request): Promise<Response> {
   const url = new URL(request.url);
 
   if (request.method === "GET") {
-    return handleVerification(url);
+    return handleWebhookVerification(url);
   }
 
   if (request.method !== "POST") {

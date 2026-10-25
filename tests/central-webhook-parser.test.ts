@@ -4,6 +4,7 @@
 // Rodar com: node --experimental-strip-types --test tests/central-webhook-parser.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   parseMetaWebhookEvents,
   looksLikeStopRequest,
@@ -11,6 +12,10 @@ import {
 
 function envelope(value: unknown) {
   return { entry: [{ changes: [{ value }] }] };
+}
+
+function fixture(name: string): unknown {
+  return JSON.parse(readFileSync(new URL(`./fixtures/meta/${name}`, import.meta.url), "utf8"));
 }
 
 test("mensagem de botão (quick_reply) é reconhecida", () => {
@@ -214,4 +219,82 @@ test("looksLikeStopRequest reconhece PARAR/SAIR/STOP em qualquer caixa e com ace
 test("looksLikeStopRequest não dá falso positivo em texto comum", () => {
   assert.equal(looksLikeStopRequest("Posso remarcar para sexta?"), false);
   assert.equal(looksLikeStopRequest("Sim, confirmo"), false);
+});
+
+test("looksLikeStopRequest: variações de PARAR (caixa, pontuação, frase)", () => {
+  assert.equal(looksLikeStopRequest("PARAR"), true);
+  assert.equal(looksLikeStopRequest("parar"), true);
+  assert.equal(looksLikeStopRequest("Parar."), true);
+  assert.equal(looksLikeStopRequest("quero parar de receber"), true);
+});
+
+test("looksLikeStopRequest: variações de SAIR/STOP", () => {
+  assert.equal(looksLikeStopRequest("sair"), true);
+  assert.equal(looksLikeStopRequest("STOP"), true);
+  assert.equal(looksLikeStopRequest("  stop  "), true);
+});
+
+test("looksLikeStopRequest: com acento e sem, com espaços e pontuação", () => {
+  assert.equal(looksLikeStopRequest("não quero receber"), true);
+  assert.equal(looksLikeStopRequest("nao quero receber"), true);
+  assert.equal(looksLikeStopRequest("  PARAR,  por favor"), true);
+});
+
+test("DEFEITO CORRIGIDO: 'não vou parar de ir aí' não é pedido de parar (negação nas 2 palavras antes)", () => {
+  // Bug original: a checagem era por substring puro (`.includes("parar")`),
+  // então qualquer frase contendo a palavra "parar" disparava o aviso,
+  // mesmo quando a cliente está negando que vai parar de frequentar o
+  // salão — o oposto de um pedido de opt-out.
+  assert.equal(looksLikeStopRequest("não vou parar de ir aí"), false);
+  assert.equal(looksLikeStopRequest("nao vou parar de ir ai"), false);
+});
+
+test("looksLikeStopRequest: falsos positivos adicionais não disparam", () => {
+  assert.equal(looksLikeStopRequest("estou saindo agora"), false); // "saindo" ≠ "sair" (palavra inteira)
+  assert.equal(looksLikeStopRequest("paraíso"), false); // palavra totalmente diferente
+  assert.equal(looksLikeStopRequest("nunca vou parar de recomendar vocês"), false); // negação "nunca"
+});
+
+// ===== 3b/3c — corpo e origem, usando as fixtures reais =====
+
+test("3b: entry vazio não gera evento nem lança exceção", () => {
+  const { events, unrecognized } = parseMetaWebhookEvents(fixture("empty-entry.json"));
+  assert.equal(events.length, 0);
+  assert.equal(unrecognized.length, 0);
+});
+
+test("3b: changes vazio não gera evento nem lança exceção", () => {
+  const { events } = parseMetaWebhookEvents(fixture("empty-changes.json"));
+  assert.equal(events.length, 0);
+});
+
+test("3b: várias entradas e várias mensagens na mesma requisição (fixture multi-entry) são todas processadas", () => {
+  const { events } = parseMetaWebhookEvents(fixture("multi-entry.json"));
+  assert.equal(events.length, 2);
+  assert.equal(events[0].kind, "button");
+  assert.equal(events[1].kind, "text");
+});
+
+test("3b: corpo muito grande (payload com muitas mensagens) é processado sem travar nem perder nenhuma", () => {
+  const messages = Array.from({ length: 5000 }, (_, i) => ({
+    from: "5547999990001",
+    id: `wamid.BULK_${i}`,
+    timestamp: "1700000000",
+    type: "text",
+    text: { body: `mensagem número ${i}` },
+  }));
+  const payload = envelope({ metadata: { phone_number_id: "CENTRAL_PNID" }, messages });
+  const { events } = parseMetaWebhookEvents(payload);
+  assert.equal(events.length, 5000);
+});
+
+test("3c: evento sem metadata (fixture no-metadata) é ignorado, sem lançar exceção", () => {
+  const { events } = parseMetaWebhookEvents(fixture("no-metadata.json"));
+  assert.equal(events.length, 0);
+});
+
+test("3c: evento de OUTRO número (fixture other-number) ainda é reconhecido pelo parser (o filtro central x por-salão é responsabilidade do handler, não do parser)", () => {
+  const { events } = parseMetaWebhookEvents(fixture("other-number.json"));
+  assert.equal(events.length, 1);
+  assert.equal(events[0].phoneNumberId, "SALAO_PNID_OUTRO");
 });

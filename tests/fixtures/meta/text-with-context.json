@@ -1,0 +1,28 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "0",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": { "display_phone_number": "15550001111", "phone_number_id": "CENTRAL_PNID" },
+            "contacts": [{ "profile": { "name": "Cliente Teste" }, "wa_id": "5547999990001" }],
+            "messages": [
+              {
+                "from": "5547999990001",
+                "id": "wamid.TEXT_WITH_CONTEXT_001",
+                "timestamp": "1700000100",
+                "type": "text",
+                "context": { "from": "15550001111", "id": "wamid.TEST_OUTBOUND_001" },
+                "text": { "body": "Posso ir 30 min mais tarde?" }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

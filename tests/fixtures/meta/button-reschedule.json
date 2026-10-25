@@ -1,0 +1,28 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "0",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": { "display_phone_number": "15550001111", "phone_number_id": "CENTRAL_PNID" },
+            "contacts": [{ "profile": { "name": "João 🙂" }, "wa_id": "5547999990002" }],
+            "messages": [
+              {
+                "from": "5547999990002",
+                "id": "wamid.BUTTON_RESCHEDULE_001",
+                "timestamp": "1700000300",
+                "type": "button",
+                "context": { "from": "15550001111", "id": "wamid.TEST_OUTBOUND_002" },
+                "button": { "payload": "v1|r|THREAD_PLACEHOLDER", "text": "Reagendar" }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

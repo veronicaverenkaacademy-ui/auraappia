@@ -1,0 +1,27 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "0",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": { "display_phone_number": "15550001111", "phone_number_id": "CENTRAL_PNID" },
+            "contacts": [{ "profile": { "name": "Ana" }, "wa_id": "5547999990004" }],
+            "messages": [
+              {
+                "from": "5547999990004",
+                "id": "wamid.MEDIA_AUDIO_001",
+                "timestamp": "1700000700",
+                "type": "audio",
+                "audio": { "id": "MEDIA_ID_AUDIO_001", "mime_type": "audio/ogg; codecs=opus" }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "0",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "messages": [
+              { "from": "5547999990001", "id": "wamid.NO_METADATA_001", "timestamp": "1700001000", "type": "text", "text": { "body": "oi" } }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

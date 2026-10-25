@@ -90,6 +90,22 @@ function isInQuietHours(now: Date, timezone: string): boolean {
   return hour >= QUIET_HOURS_START_LOCAL || hour < QUIET_HOURS_END_LOCAL;
 }
 
+/**
+ * Compara pelos últimos 8 dígitos (mesma técnica já usada na conferência de
+ * telefone remetente em central-webhook-handler.server.ts) — nunca exige
+ * que a lista de teste (WHATSAPP_REMINDERS_TEST_PHONES, digitada à mão)
+ * esteja no MESMO formato exato do telefone cadastrado da cliente (com/sem
+ * +55, com/sem o 9º dígito, com/sem espaços e hífen). DEFEITO CORRIGIDO
+ * (auditoria de testes desta etapa): antes comparava com `.includes()`
+ * exato, que falhava silenciosamente pra qualquer diferença de formato.
+ */
+function isPhoneInTestList(recipientPhoneE164: string, testPhones: readonly string[]): boolean {
+  const recipientDigits = recipientPhoneE164.replace(/\D/g, "");
+  if (!recipientDigits) return false;
+  const recipientLast8 = recipientDigits.slice(-8);
+  return testPhones.some((p) => p.replace(/\D/g, "").slice(-8) === recipientLast8);
+}
+
 export function decideReminderJobAction(input: ReminderPolicyInput): ReminderPolicyDecision {
   if (!input.remindersEnabled) {
     return {
@@ -153,7 +169,7 @@ export function decideReminderJobAction(input: ReminderPolicyInput): ReminderPol
     };
   }
 
-  if (input.testMode && !input.testPhones.includes(input.recipientPhoneE164)) {
+  if (input.testMode && !isPhoneInTestList(input.recipientPhoneE164, input.testPhones)) {
     return { action: "hold_pending", reason: "Modo teste: telefone fora da lista de testes." };
   }
 

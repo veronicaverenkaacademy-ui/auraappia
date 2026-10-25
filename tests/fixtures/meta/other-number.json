@@ -1,0 +1,27 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "0",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": { "display_phone_number": "15559998888", "phone_number_id": "SALAO_PNID_OUTRO" },
+            "contacts": [{ "profile": { "name": "Cliente de Salão" }, "wa_id": "5547999990009" }],
+            "messages": [
+              {
+                "from": "5547999990009",
+                "id": "wamid.OTHER_NUMBER_001",
+                "timestamp": "1700000900",
+                "type": "text",
+                "text": { "body": "Oi, confirmo meu horário." }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

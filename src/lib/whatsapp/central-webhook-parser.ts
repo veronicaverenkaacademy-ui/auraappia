@@ -207,10 +207,35 @@ export function parseMetaWebhookEvents(payload: unknown): ParseResult {
   return { events, unrecognized };
 }
 
-const STOP_KEYWORDS = ["parar", "sair", "stop", "não quero receber", "nao quero receber"];
+// Frases de várias palavras: risco baixo de falso positivo, comparação por
+// substring é suficiente ("quero parar de receber" nunca aparece por
+// acidente dentro de uma frase sobre outra coisa).
+const STOP_PHRASES = ["quero parar de receber", "não quero receber", "nao quero receber"];
+// Palavras isoladas: "parar"/"sair"/"stop" aparecem de verdade em frases que
+// NÃO são pedido de parar ("não vou parar de ir aí", "estou saindo agora").
+// Por isso exigem correspondência de PALAVRA INTEIRA (nunca substring dentro
+// de outra palavra, ex.: "saindo" não é "sair"), e são descartadas quando
+// antecedidas por uma negação nas até 2 palavras anteriores.
+const STOP_WORDS = ["parar", "sair", "stop"];
+const NEGATION_WORDS = ["nao", "nunca", "jamais"];
+const NEGATION_LOOKBACK = 2;
 
-/** Comparação tolerante a acento/caixa — "PARAR", "Parar!", "não quero receber mensagens" etc. */
+/** Comparação tolerante a acento/caixa/pontuação — "PARAR", "Parar!", "não quero receber mensagens" etc.
+ *  Regra: frases completas (STOP_PHRASES) batem por substring; palavras
+ *  isoladas e ambíguas (STOP_WORDS) só contam se não houver negação
+ *  ("não"/"nunca"/"jamais") nas 2 palavras imediatamente anteriores — ver
+ *  "Decisões que dependem de você" no relatório para o raciocínio completo. */
 export function looksLikeStopRequest(text: string): boolean {
   const normalized = text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
-  return STOP_KEYWORDS.some((kw) => normalized === kw || normalized.includes(kw));
+  if (STOP_PHRASES.some((p) => normalized === p || normalized.includes(p))) return true;
+  if (!normalized) return false;
+
+  const words = normalized.split(/\s+/).map((w) => w.replace(/[.,!?;:]+$/g, ""));
+  for (let i = 0; i < words.length; i++) {
+    if (!STOP_WORDS.includes(words[i])) continue;
+    const precedingWindow = words.slice(Math.max(0, i - NEGATION_LOOKBACK), i);
+    if (precedingWindow.some((w) => NEGATION_WORDS.includes(w))) continue; // negado, não conta
+    return true;
+  }
+  return false;
 }

@@ -60,11 +60,14 @@ const REMINDER_KINDS: ReadonlyArray<{
  * Se a chave estiver desligada, não cria nenhum job novo (os já existentes
  * ficam pendentes, tratados em processCentralReminderJobs).
  */
-export async function scanAndEnqueueCentralReminders(): Promise<{ enqueued: number }> {
+export async function scanAndEnqueueCentralReminders(
+  deps: { supabaseAdmin?: SupabaseAdmin; now?: () => Date } = {},
+): Promise<{ enqueued: number }> {
   if (!remindersEnabled()) return { enqueued: 0 };
 
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const now = new Date();
+  const supabaseAdmin =
+    deps.supabaseAdmin ?? (await import("@/integrations/supabase/client.server")).supabaseAdmin;
+  const now = (deps.now ?? (() => new Date()))();
   let enqueued = 0;
 
   for (const kind of REMINDER_KINDS) {
@@ -121,6 +124,7 @@ export type CentralReminderOutcome = "sent" | "failed" | "cancelled" | "held";
 export async function processCentralReminderJob(
   supabaseAdmin: SupabaseAdmin,
   job: ClaimedReminderJob,
+  now: () => Date = () => new Date(),
 ): Promise<CentralReminderOutcome> {
   if (!job.appointment_id || !job.client_id) {
     await supabaseAdmin
@@ -176,7 +180,7 @@ export async function processCentralReminderJob(
 
   const decision = decideReminderJobAction({
     templateKey,
-    now: new Date(),
+    now: now(),
     appointmentStartsAt: new Date(appt.starts_at),
     appointmentStatus: appt.status as AppointmentStatus,
     timezone: company?.timezone || "America/Sao_Paulo",
@@ -235,10 +239,11 @@ export async function processCentralReminderJob(
     toPhoneE164: phone,
     variables: variablesResult.variables,
     appointmentStartsAtIso: appt.starts_at,
+    supabaseAdmin,
   });
 
   if (sendResult.kind === "sent") {
-    const nowIso = new Date().toISOString();
+    const nowIso = now().toISOString();
     const appointmentUpdate =
       job.type === "appointment_reminder_24h"
         ? { reminder_24h_sent_at: nowIso }

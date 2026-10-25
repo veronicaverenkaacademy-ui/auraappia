@@ -6,6 +6,12 @@
 // outras de uma mesma requisição (cada evento é tratado em try/catch
 // isolado, erros de infraestrutura são relançados só no final, pro
 // chamador devolver status de erro à Meta reenviar).
+//
+// Testabilidade (refatoração mínima, sem mudar comportamento): `deps` é
+// opcional — em produção (webhook-meta.server.ts chama sem 2º argumento)
+// continua resolvendo supabaseAdmin pelo import dinâmico de sempre, relógio
+// real e console real. Testes passam um supabaseAdmin fake, um `now` fixo e
+// um logger capturado, sem precisar de rede nem de variável de ambiente real.
 import type { CentralInboundEvent } from "./central-webhook-parser.ts";
 import { parseButtonPayload, type ButtonAction } from "./central-button-payload.ts";
 import { shouldApplyIncomingStatus } from "./central-status-rank.ts";
@@ -14,20 +20,41 @@ import {
   notificationForOutcome,
 } from "./central-reply-executor.server.ts";
 import { looksLikeStopRequest } from "./central-webhook-parser.ts";
+import {
+  countRecentOrphanMessagesForPhone,
+  ORPHAN_MAX_PER_PHONE_PER_DAY,
+} from "./central-orphan-retention.server.ts";
 
 type SupabaseAdmin = Awaited<
   typeof import("@/integrations/supabase/client.server")
 >["supabaseAdmin"];
 
+export type CentralWebhookLogger = {
+  error: (...args: unknown[]) => void;
+  log: (...args: unknown[]) => void;
+};
+
+export type CentralWebhookDeps = {
+  supabaseAdmin?: SupabaseAdmin;
+  now?: () => Date;
+  logger?: CentralWebhookLogger;
+};
+
+type ResolvedDeps = {
+  supabaseAdmin: SupabaseAdmin;
+  now: () => Date;
+  logger: CentralWebhookLogger;
+};
+
 const PROVIDER = "meta_cloud_api_central";
 const ORPHAN_LOOKUP_WINDOW_DAYS = 7;
 
 async function resolveRecipientUserId(
-  supabaseAdmin: SupabaseAdmin,
+  deps: ResolvedDeps,
   professionalId: string | null,
 ): Promise<string | null> {
   if (!professionalId) return null;
-  const { data } = await supabaseAdmin
+  const { data } = await deps.supabaseAdmin
     .from("team_members")
     .select("user_id")
     .eq("id", professionalId)
@@ -36,7 +63,7 @@ async function resolveRecipientUserId(
 }
 
 async function createNotification(
-  supabaseAdmin: SupabaseAdmin,
+  deps: ResolvedDeps,
   params: {
     ownerId: string;
     appointmentId: string | null;
@@ -44,8 +71,8 @@ async function createNotification(
     notif: { kind: string; title: string; body: string; dedupeKey: string | null };
   },
 ): Promise<void> {
-  const recipientUserId = await resolveRecipientUserId(supabaseAdmin, params.professionalId);
-  const { error } = await supabaseAdmin.from("app_notifications").insert({
+  const recipientUserId = await resolveRecipientUserId(deps, params.professionalId);
+  const { error } = await deps.supabaseAdmin.from("app_notifications").insert({
     owner_id: params.ownerId,
     recipient_user_id: recipientUserId,
     kind: params.notif.kind,
@@ -56,15 +83,15 @@ async function createNotification(
   });
   // 23505 = já existe notificação com essa dedupe_key (repetição) — esperado, não é erro.
   if (error && error.code !== "23505") {
-    console.error("[whatsapp:central] Falha ao criar notificação", error.message);
+    deps.logger.error("[whatsapp:central] Falha ao criar notificação", error.message);
   }
 }
 
 async function handleStatusEvent(
-  supabaseAdmin: SupabaseAdmin,
+  deps: ResolvedDeps,
   event: Extract<CentralInboundEvent, { kind: "status" }>,
 ): Promise<void> {
-  const { data: message } = await supabaseAdmin
+  const { data: message } = await deps.supabaseAdmin
     .from("whatsapp_messages")
     .select("id, status")
     .eq("provider", PROVIDER)
@@ -74,14 +101,14 @@ async function handleStatusEvent(
   if (!message) {
     // Corrida: o status chegou antes de sabermos o wamid localmente — fila
     // de reconciliação, nunca descartado em silêncio.
-    const { error } = await supabaseAdmin.from("whatsapp_status_reconciliation").insert({
+    const { error } = await deps.supabaseAdmin.from("whatsapp_status_reconciliation").insert({
       provider_message_id: event.wamid,
       status: event.status,
       error_code: event.errorCode,
       occurred_at: event.occurredAt,
     });
     if (error && error.code !== "23505") {
-      console.error(
+      deps.logger.error(
         "[whatsapp:central] Falha ao enfileirar status p/ reconciliação",
         error.message,
       );
@@ -91,7 +118,7 @@ async function handleStatusEvent(
 
   if (!shouldApplyIncomingStatus(message.status, event.status)) return; // fora de ordem/duplicado — nunca retrocede
 
-  await supabaseAdmin
+  await deps.supabaseAdmin
     .from("whatsapp_messages")
     .update({
       status: event.status,
@@ -100,13 +127,13 @@ async function handleStatusEvent(
     .eq("id", message.id);
 
   if (event.status === "failed") {
-    const { data: full } = await supabaseAdmin
+    const { data: full } = await deps.supabaseAdmin
       .from("whatsapp_messages")
       .select("owner_id, appointment_id")
       .eq("id", message.id)
       .maybeSingle();
     if (full) {
-      await createNotification(supabaseAdmin, {
+      await createNotification(deps, {
         ownerId: full.owner_id,
         appointmentId: full.appointment_id,
         professionalId: null,
@@ -122,37 +149,37 @@ async function handleStatusEvent(
 }
 
 async function handleButtonEvent(
-  supabaseAdmin: SupabaseAdmin,
+  deps: ResolvedDeps,
   event: Extract<CentralInboundEvent, { kind: "button" }>,
 ): Promise<void> {
   const parsedPayload = parseButtonPayload(event.buttonPayload);
   if (!parsedPayload.ok) {
-    console.error(
+    deps.logger.error(
       `[whatsapp:central] Payload de botão adulterado/desconhecido (${parsedPayload.reason}) — ignorado.`,
     );
     return;
   }
   if (!event.contextId) {
-    console.error(
+    deps.logger.error(
       "[whatsapp:central] Resposta de botão sem context.id — ignorada (nunca resolve só pelo payload).",
     );
     return;
   }
 
-  const { data: outboundMessage } = await supabaseAdmin
+  const { data: outboundMessage } = await deps.supabaseAdmin
     .from("whatsapp_messages")
     .select("id, owner_id, client_id, appointment_id")
     .eq("provider", PROVIDER)
     .eq("provider_message_id", event.contextId)
     .maybeSingle();
   if (!outboundMessage || !outboundMessage.client_id || !outboundMessage.appointment_id) {
-    console.error(
+    deps.logger.error(
       "[whatsapp:central] context.id não corresponde a uma mensagem com cliente/agendamento associado — ignorado.",
     );
     return;
   }
 
-  const { data: client } = await supabaseAdmin
+  const { data: client } = await deps.supabaseAdmin
     .from("clients")
     .select("phone")
     .eq("id", outboundMessage.client_id)
@@ -160,21 +187,23 @@ async function handleButtonEvent(
   const normalizedFrom = event.fromPhone.replace(/\D/g, "");
   const normalizedOnFile = (client?.phone ?? "").replace(/\D/g, "");
   if (!normalizedOnFile || !normalizedFrom.endsWith(normalizedOnFile.slice(-8))) {
-    console.error("[whatsapp:central] Telefone remetente diverge do cliente esperado — ignorado.");
+    deps.logger.error(
+      "[whatsapp:central] Telefone remetente diverge do cliente esperado — ignorado.",
+    );
     return;
   }
 
-  const { data: thread } = await supabaseAdmin
+  const { data: thread } = await deps.supabaseAdmin
     .from("whatsapp_central_threads")
     .select("id, owner_id")
     .eq("outbound_message_id", outboundMessage.id)
     .maybeSingle();
   if (!thread) {
-    console.error("[whatsapp:central] Nenhuma thread associada a esta mensagem — ignorado.");
+    deps.logger.error("[whatsapp:central] Nenhuma thread associada a esta mensagem — ignorado.");
     return;
   }
   if (parsedPayload.threadId !== thread.id) {
-    console.error(
+    deps.logger.error(
       "[whatsapp:central] Payload aponta para outra thread (adulterado ou de outro salão) — ignorado.",
     );
     return;
@@ -182,7 +211,7 @@ async function handleButtonEvent(
 
   // Idempotência: grava a mensagem inbound ANTES de aplicar o efeito — se já
   // existir (reentrega da Meta), para aqui sem reaplicar nada.
-  const { data: inserted, error: insertErr } = await supabaseAdmin
+  const { data: inserted, error: insertErr } = await deps.supabaseAdmin
     .from("whatsapp_messages")
     .insert({
       owner_id: thread.owner_id,
@@ -209,20 +238,36 @@ async function handleButtonEvent(
     reschedule: "reschedule",
     cancel: "cancel",
   };
-  const outcome = await applyCentralThreadReply(supabaseAdmin, {
-    threadId: thread.id,
-    action: actionMap[parsedPayload.action],
-    resolvedByMessageId: inserted.id,
-  });
+  let outcome: Awaited<ReturnType<typeof applyCentralThreadReply>>;
+  try {
+    outcome = await applyCentralThreadReply(deps.supabaseAdmin, {
+      threadId: thread.id,
+      action: actionMap[parsedPayload.action],
+      resolvedByMessageId: inserted.id,
+    });
+  } catch (e) {
+    // DEFEITO CORRIGIDO (auditoria de testes desta etapa): a mensagem
+    // inbound (registro de idempotência) já foi gravada ACIMA, antes de
+    // chamar a RPC — se a RPC falhar agora (rede, timeout), sem esta
+    // compensação a reentrega da Meta deste MESMO evento encontraria a
+    // mensagem já gravada e pararia no "já processado" sem NUNCA tentar de
+    // novo, perdendo o toque da cliente pra sempre. Remove o registro
+    // antes de repropagar, pra a próxima tentativa (a Meta reenvia por
+    // causa do erro abaixo) começar do zero — mesmo padrão de compensação
+    // já usado em central-template-sender.server.ts (thread sem pergunta
+    // entregue também é removida, nunca fica pela metade).
+    await deps.supabaseAdmin.from("whatsapp_messages").delete().eq("id", inserted.id);
+    throw e;
+  }
 
   const notif = notificationForOutcome(outcome, thread.id);
   if (notif) {
-    const { data: appt } = await supabaseAdmin
+    const { data: appt } = await deps.supabaseAdmin
       .from("appointments")
       .select("professional_id")
       .eq("id", outboundMessage.appointment_id)
       .maybeSingle();
-    await createNotification(supabaseAdmin, {
+    await createNotification(deps, {
       ownerId: thread.owner_id,
       appointmentId: outboundMessage.appointment_id,
       professionalId: appt?.professional_id ?? null,
@@ -232,13 +277,13 @@ async function handleButtonEvent(
 }
 
 async function findOrphanCandidates(
-  supabaseAdmin: SupabaseAdmin,
+  deps: ResolvedDeps,
   fromPhone: string,
 ): Promise<{ ownerId: string; clientId: string | null; appointmentId: string | null }[]> {
   const windowStart = new Date(
-    Date.now() - ORPHAN_LOOKUP_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    deps.now().getTime() - ORPHAN_LOOKUP_WINDOW_DAYS * 24 * 60 * 60 * 1000,
   ).toISOString();
-  const { data } = await supabaseAdmin
+  const { data } = await deps.supabaseAdmin
     .from("whatsapp_messages")
     .select("owner_id, client_id, appointment_id")
     .eq("provider", PROVIDER)
@@ -264,7 +309,7 @@ async function findOrphanCandidates(
 }
 
 async function handleTextOrOtherEvent(
-  supabaseAdmin: SupabaseAdmin,
+  deps: ResolvedDeps,
   event: Extract<CentralInboundEvent, { kind: "text" | "other" }>,
 ): Promise<void> {
   const content = event.kind === "text" ? event.text : `[${event.mediaType}]`;
@@ -273,7 +318,7 @@ async function handleTextOrOtherEvent(
     null;
 
   if (event.contextId) {
-    const { data: outboundMessage } = await supabaseAdmin
+    const { data: outboundMessage } = await deps.supabaseAdmin
       .from("whatsapp_messages")
       .select("owner_id, client_id, appointment_id")
       .eq("provider", PROVIDER)
@@ -288,10 +333,27 @@ async function handleTextOrOtherEvent(
   }
 
   if (!resolved) {
-    const candidates = await findOrphanCandidates(supabaseAdmin, event.fromPhone);
+    const candidates = await findOrphanCandidates(deps, event.fromPhone);
     if (candidates.length === 1) resolved = candidates[0];
     else {
-      const { error } = await supabaseAdmin.from("whatsapp_central_orphan_messages").insert({
+      // Limite de volume POR TELEFONE (item M7/seção 5 da auditoria de
+      // testes): um número que manda muitas mensagens não-correlacionáveis
+      // nunca enche a tabela a ponto de custar storage — mas o limite é só
+      // daquele telefone específico, nunca global, então nunca impede o
+      // registro de mensagens órfãs de OUTROS telefones no mesmo instante.
+      const recentCount = await countRecentOrphanMessagesForPhone(
+        deps.supabaseAdmin,
+        event.fromPhone,
+        deps.now,
+      );
+      if (recentCount >= ORPHAN_MAX_PER_PHONE_PER_DAY) {
+        deps.logger.error(
+          `[whatsapp:central] Limite de mensagens órfãs por telefone atingido (${ORPHAN_MAX_PER_PHONE_PER_DAY}/24h) — mensagem descartada sem gravar.`,
+        );
+        return;
+      }
+
+      const { error } = await deps.supabaseAdmin.from("whatsapp_central_orphan_messages").insert({
         provider_message_id: event.messageId,
         from_phone: event.fromPhone,
         content,
@@ -300,13 +362,13 @@ async function handleTextOrOtherEvent(
         received_at: event.occurredAt,
       });
       if (error && error.code !== "23505") {
-        console.error("[whatsapp:central] Falha ao gravar mensagem órfã", error.message);
+        deps.logger.error("[whatsapp:central] Falha ao gravar mensagem órfã", error.message);
       }
       return;
     }
   }
 
-  const { error: insertErr } = await supabaseAdmin.from("whatsapp_messages").insert({
+  const { error: insertErr } = await deps.supabaseAdmin.from("whatsapp_messages").insert({
     owner_id: resolved.ownerId,
     client_id: resolved.clientId,
     appointment_id: resolved.appointmentId,
@@ -325,7 +387,7 @@ async function handleTextOrOtherEvent(
   }
 
   if (event.kind === "text" && looksLikeStopRequest(event.text)) {
-    await createNotification(supabaseAdmin, {
+    await createNotification(deps, {
       ownerId: resolved.ownerId,
       appointmentId: resolved.appointmentId,
       professionalId: null,
@@ -339,7 +401,7 @@ async function handleTextOrOtherEvent(
     return;
   }
 
-  await createNotification(supabaseAdmin, {
+  await createNotification(deps, {
     ownerId: resolved.ownerId,
     appointmentId: resolved.appointmentId,
     professionalId: null,
@@ -352,24 +414,32 @@ async function handleTextOrOtherEvent(
   });
 }
 
-export async function handleCentralWebhookEvents(events: CentralInboundEvent[]): Promise<void> {
+export async function handleCentralWebhookEvents(
+  events: CentralInboundEvent[],
+  deps: CentralWebhookDeps = {},
+): Promise<void> {
   const centralPhoneNumberId = process.env.META_WHATSAPP_CENTRAL_PHONE_NUMBER_ID;
   if (!centralPhoneNumberId) return;
 
   const centralEvents = events.filter((e) => e.phoneNumberId === centralPhoneNumberId);
   if (centralEvents.length === 0) return;
 
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const resolved: ResolvedDeps = {
+    supabaseAdmin:
+      deps.supabaseAdmin ?? (await import("@/integrations/supabase/client.server")).supabaseAdmin,
+    now: deps.now ?? (() => new Date()),
+    logger: deps.logger ?? console,
+  };
   const infraErrors: string[] = [];
 
   for (const event of centralEvents) {
     try {
-      if (event.kind === "status") await handleStatusEvent(supabaseAdmin, event);
-      else if (event.kind === "button") await handleButtonEvent(supabaseAdmin, event);
-      else await handleTextOrOtherEvent(supabaseAdmin, event);
+      if (event.kind === "status") await handleStatusEvent(resolved, event);
+      else if (event.kind === "button") await handleButtonEvent(resolved, event);
+      else await handleTextOrOtherEvent(resolved, event);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.error("[whatsapp:central] Falha ao processar evento", event.kind, msg);
+      resolved.logger.error("[whatsapp:central] Falha ao processar evento", event.kind, msg);
       infraErrors.push(msg);
     }
   }
