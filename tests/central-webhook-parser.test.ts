@@ -215,3 +215,37 @@ test("looksLikeStopRequest não dá falso positivo em texto comum", () => {
   assert.equal(looksLikeStopRequest("Posso remarcar para sexta?"), false);
   assert.equal(looksLikeStopRequest("Sim, confirmo"), false);
 });
+
+test("looksLikeStopRequest: variações de PARAR (caixa, pontuação, frase)", () => {
+  assert.equal(looksLikeStopRequest("PARAR"), true);
+  assert.equal(looksLikeStopRequest("parar"), true);
+  assert.equal(looksLikeStopRequest("Parar."), true);
+  assert.equal(looksLikeStopRequest("quero parar de receber"), true);
+});
+
+test("looksLikeStopRequest: variações de SAIR/STOP", () => {
+  assert.equal(looksLikeStopRequest("sair"), true);
+  assert.equal(looksLikeStopRequest("STOP"), true);
+  assert.equal(looksLikeStopRequest("  stop  "), true);
+});
+
+test("looksLikeStopRequest: com acento e sem, com espaços e pontuação", () => {
+  assert.equal(looksLikeStopRequest("não quero receber"), true);
+  assert.equal(looksLikeStopRequest("nao quero receber"), true);
+  assert.equal(looksLikeStopRequest("  PARAR,  por favor"), true);
+});
+
+test("DEFEITO CORRIGIDO: 'não vou parar de ir aí' não é pedido de parar (negação nas 2 palavras antes)", () => {
+  // Bug original: a checagem era por substring puro (`.includes("parar")`),
+  // então qualquer frase contendo a palavra "parar" disparava o aviso,
+  // mesmo quando a cliente está negando que vai parar de frequentar o
+  // salão — o oposto de um pedido de opt-out.
+  assert.equal(looksLikeStopRequest("não vou parar de ir aí"), false);
+  assert.equal(looksLikeStopRequest("nao vou parar de ir ai"), false);
+});
+
+test("looksLikeStopRequest: falsos positivos adicionais não disparam", () => {
+  assert.equal(looksLikeStopRequest("estou saindo agora"), false); // "saindo" ≠ "sair" (palavra inteira)
+  assert.equal(looksLikeStopRequest("paraíso"), false); // palavra totalmente diferente
+  assert.equal(looksLikeStopRequest("nunca vou parar de recomendar vocês"), false); // negação "nunca"
+});
