@@ -2035,6 +2035,8 @@ export type Database = {
           content: string | null
           created_at: string
           direction: string
+          error_class: string | null
+          error_code: number | null
           error_message: string | null
           id: string
           message_type: string
@@ -2044,6 +2046,8 @@ export type Database = {
           recipient_phone: string
           sent_at: string | null
           status: string
+          template_language: string | null
+          template_name: string | null
         }
         Insert: {
           appointment_id?: string | null
@@ -2051,6 +2055,8 @@ export type Database = {
           content?: string | null
           created_at?: string
           direction: string
+          error_class?: string | null
+          error_code?: number | null
           error_message?: string | null
           id?: string
           message_type: string
@@ -2060,6 +2066,8 @@ export type Database = {
           recipient_phone: string
           sent_at?: string | null
           status?: string
+          template_language?: string | null
+          template_name?: string | null
         }
         Update: {
           appointment_id?: string | null
@@ -2067,6 +2075,8 @@ export type Database = {
           content?: string | null
           created_at?: string
           direction?: string
+          error_class?: string | null
+          error_code?: number | null
           error_message?: string | null
           id?: string
           message_type?: string
@@ -2076,6 +2086,8 @@ export type Database = {
           recipient_phone?: string
           sent_at?: string | null
           status?: string
+          template_language?: string | null
+          template_name?: string | null
         }
         Relationships: [
           {
@@ -2164,6 +2176,188 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      whatsapp_status_reconciliation: {
+        Row: {
+          abandoned_at: string | null
+          attempts: number
+          created_at: string
+          error_code: number | null
+          expires_at: string
+          id: string
+          max_attempts: number
+          occurred_at: string
+          provider_message_id: string
+          resolved_at: string | null
+          status: string
+        }
+        Insert: {
+          abandoned_at?: string | null
+          attempts?: number
+          created_at?: string
+          error_code?: number | null
+          expires_at?: string
+          id?: string
+          max_attempts?: number
+          occurred_at: string
+          provider_message_id: string
+          resolved_at?: string | null
+          status: string
+        }
+        Update: {
+          abandoned_at?: string | null
+          attempts?: number
+          created_at?: string
+          error_code?: number | null
+          expires_at?: string
+          id?: string
+          max_attempts?: number
+          occurred_at?: string
+          provider_message_id?: string
+          resolved_at?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
+      whatsapp_central_incidents: {
+        Row: {
+          id: string
+          meta_error_code: number | null
+          notified_at: string | null
+          opened_at: string
+          reason: string
+          resolved_at: string | null
+          scope: string
+          template_key: string | null
+        }
+        Insert: {
+          id?: string
+          meta_error_code?: number | null
+          notified_at?: string | null
+          opened_at?: string
+          reason: string
+          resolved_at?: string | null
+          scope: string
+          template_key?: string | null
+        }
+        Update: {
+          id?: string
+          meta_error_code?: number | null
+          notified_at?: string | null
+          opened_at?: string
+          reason?: string
+          resolved_at?: string | null
+          scope?: string
+          template_key?: string | null
+        }
+        Relationships: []
+      }
+      whatsapp_central_threads: {
+        Row: {
+          appointment_id: string
+          appointment_starts_at_snapshot: string
+          client_id: string
+          created_at: string
+          id: string
+          outbound_message_id: string
+          owner_id: string
+          resolved_at: string | null
+          resolved_by_message_id: string | null
+          status: string
+          template_key: string
+          updated_at: string
+        }
+        Insert: {
+          appointment_id: string
+          appointment_starts_at_snapshot: string
+          client_id: string
+          created_at?: string
+          id?: string
+          outbound_message_id: string
+          owner_id: string
+          resolved_at?: string | null
+          resolved_by_message_id?: string | null
+          status?: string
+          template_key: string
+          updated_at?: string
+        }
+        Update: {
+          appointment_id?: string
+          appointment_starts_at_snapshot?: string
+          client_id?: string
+          created_at?: string
+          id?: string
+          outbound_message_id?: string
+          owner_id?: string
+          resolved_at?: string | null
+          resolved_by_message_id?: string | null
+          status?: string
+          template_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_central_threads_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_central_threads_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_central_threads_outbound_message_id_fkey"
+            columns: ["outbound_message_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_central_threads_resolved_by_message_id_fkey"
+            columns: ["resolved_by_message_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_central_orphan_messages: {
+        Row: {
+          candidate_count: number
+          content: string | null
+          created_at: string
+          from_phone: string
+          id: string
+          media_type: string
+          provider_message_id: string
+          received_at: string
+        }
+        Insert: {
+          candidate_count?: number
+          content?: string | null
+          created_at?: string
+          from_phone: string
+          id?: string
+          media_type?: string
+          provider_message_id: string
+          received_at: string
+        }
+        Update: {
+          candidate_count?: number
+          content?: string | null
+          created_at?: string
+          from_phone?: string
+          id?: string
+          media_type?: string
+          provider_message_id?: string
+          received_at?: string
+        }
+        Relationships: []
       }
       app_notifications: {
         Row: {
@@ -2339,6 +2533,15 @@ export type Database = {
       }
     }
     Functions: {
+      apply_whatsapp_central_reply: {
+        Args: {
+          p_thread_id: string
+          p_action: string
+          p_resolved_by_message_id: string
+          p_late_cancel_hours?: number
+        }
+        Returns: string
+      }
       claim_notification_jobs: {
         Args: { p_limit?: number }
         Returns: Database["public"]["Tables"]["notification_jobs"]["Row"][]
