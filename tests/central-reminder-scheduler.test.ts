@@ -338,3 +338,56 @@ test("4/7: freio de emergência por TEMPLATE (não global) só afeta o template_
   const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
   assert.equal(outcome, "held");
 });
+
+// ===== Envio "incerto" (timeout) nunca reenvia sozinho =====
+// Único cenário desta suíte que de fato alcança sendCentralTemplate sem
+// dryRun — por isso precisa de um dublê de fetch (nunca a rede real) e das
+// variáveis do remetente central configuradas só para este teste.
+test("4/8 (mutação M-i): resultado 'incerto' (timeout) marca o job como held, NUNCA volta para 'pending' sozinho (nunca reenvia)", async () => {
+  const prevFetch = globalThis.fetch;
+  const prevPhoneId = process.env.META_WHATSAPP_CENTRAL_PHONE_NUMBER_ID;
+  const prevToken = process.env.META_WHATSAPP_CENTRAL_ACCESS_TOKEN;
+  const prevTestMode = process.env.WHATSAPP_REMINDERS_TEST_MODE;
+  process.env.META_WHATSAPP_CENTRAL_PHONE_NUMBER_ID = "999000111";
+  process.env.META_WHATSAPP_CENTRAL_ACCESS_TOKEN = "zzfx-token-de-teste";
+  process.env.WHATSAPP_REMINDERS_TEST_MODE = "false"; // caminho até o envio de verdade, sem depender da lista de teste
+  // Dublê de fetch: SÓ aceita a chamada esperada (POST ao endpoint da
+  // Meta); qualquer outra chamada não prevista faz o teste falhar alto,
+  // em vez de silenciosamente acertar por acidente.
+  globalThis.fetch = (async (url: string) => {
+    if (typeof url !== "string" || !url.includes("/999000111/messages")) {
+      throw new Error(`fetch chamado com URL não prevista pelo teste: ${url}`);
+    }
+    const err = new Error("abortado (timeout simulado)");
+    err.name = "AbortError";
+    throw err;
+  }) as typeof fetch;
+
+  try {
+    const db = new FakeSupabaseAdmin({
+      tables: {
+        ...baseJobTables(),
+        whatsapp_messages: [],
+        whatsapp_central_threads: [],
+        whatsapp_central_incidents: [],
+      },
+    });
+    const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
+    assert.equal(outcome, "held");
+    // "uncertain" NUNCA toca o status (fica como "processing", o valor do
+    // seed) — diferente de hold_pending/defer/breaker_open, que
+    // explicitamente voltam pra "pending". Se isto virasse "pending", o
+    // job poderia ser reivindicado de novo por claim_notification_jobs e
+    // reenviado — exatamente o que nunca deve acontecer.
+    assert.equal(db.tables.notification_jobs[0].status, "processing");
+    assert.match(String(db.tables.notification_jobs[0].last_error ?? ""), /incerto/i);
+  } finally {
+    globalThis.fetch = prevFetch;
+    if (prevPhoneId === undefined) delete process.env.META_WHATSAPP_CENTRAL_PHONE_NUMBER_ID;
+    else process.env.META_WHATSAPP_CENTRAL_PHONE_NUMBER_ID = prevPhoneId;
+    if (prevToken === undefined) delete process.env.META_WHATSAPP_CENTRAL_ACCESS_TOKEN;
+    else process.env.META_WHATSAPP_CENTRAL_ACCESS_TOKEN = prevToken;
+    if (prevTestMode === undefined) delete process.env.WHATSAPP_REMINDERS_TEST_MODE;
+    else process.env.WHATSAPP_REMINDERS_TEST_MODE = prevTestMode;
+  }
+});

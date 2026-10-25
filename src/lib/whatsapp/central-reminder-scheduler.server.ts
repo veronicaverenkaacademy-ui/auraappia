@@ -239,6 +239,7 @@ export async function processCentralReminderJob(
     toPhoneE164: phone,
     variables: variablesResult.variables,
     appointmentStartsAtIso: appt.starts_at,
+    supabaseAdmin,
   });
 
   if (sendResult.kind === "sent") {

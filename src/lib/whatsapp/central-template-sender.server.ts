@@ -38,6 +38,8 @@ export type SendCentralTemplateInput = {
   variables: string[];
   appointmentStartsAtIso: string;
   dryRun?: boolean;
+  /** Só para testes (banco simulado) — produção nunca passa isto, resolve pelo import dinâmico de sempre. */
+  supabaseAdmin?: Awaited<typeof import("@/integrations/supabase/client.server")>["supabaseAdmin"];
 };
 
 export type SendCentralTemplateResult =
@@ -185,7 +187,8 @@ export async function sendCentralTemplate(
     return { kind: "dry_run", bodyPreview };
   }
 
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const supabaseAdmin =
+    input.supabaseAdmin ?? (await import("@/integrations/supabase/client.server")).supabaseAdmin;
 
   const openScope = await hasOpenIncident(supabaseAdmin, input.templateKey);
   if (openScope) return { kind: "breaker_open", scope: openScope };
