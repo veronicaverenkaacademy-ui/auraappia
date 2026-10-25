@@ -89,6 +89,14 @@ export class FakeSupabaseAdmin {
         filters.push((r) => String(r[col] ?? "") >= String(val));
         return builder;
       },
+      lte(col: string, val: unknown) {
+        filters.push((r) => String(r[col] ?? "") <= String(val));
+        return builder;
+      },
+      is(col: string, val: null) {
+        filters.push((r) => (r[col] ?? null) === val);
+        return builder;
+      },
       order(col: string, opts: { ascending: boolean }) {
         orderBy = { col, ascending: opts.ascending };
         return builder;
@@ -119,6 +127,26 @@ export class FakeSupabaseAdmin {
             const rows = db.tables[table].filter((r) => r[col] === val);
             for (const r of rows) Object.assign(r, obj);
             return { data: rows, error: null };
+          },
+        };
+      },
+      upsert(obj: Row, opts: { onConflict?: string; ignoreDuplicates?: boolean; count?: string } = {}) {
+        const conflictCols = (opts.onConflict ?? "id").split(",").map((c) => c.trim());
+        const existing = db.tables[table].find((r) => conflictCols.every((c) => r[c] === obj[c]));
+        let affected = 0;
+        if (existing) {
+          if (!opts.ignoreDuplicates) {
+            Object.assign(existing, obj);
+            affected = 1;
+          } // ignoreDuplicates: true + conflito = ON CONFLICT DO NOTHING, 0 linhas afetadas
+        } else {
+          const row = { id: db.nextId(table), ...obj };
+          db.tables[table].push(row);
+          affected = 1;
+        }
+        return {
+          then(resolve: (v: { data: null; error: null; count: number }) => unknown, reject?: (e: unknown) => unknown) {
+            return Promise.resolve({ data: null, error: null, count: affected }).then(resolve, reject);
           },
         };
       },
