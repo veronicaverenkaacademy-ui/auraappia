@@ -60,6 +60,30 @@ test("horário do agendamento já passou: skip_terminal", () => {
   assert.equal(r.action, "skip_terminal");
 });
 
+test("chave religada depois de ter ficado desligada: job de agendamento que já passou nunca é enviado em atraso (skip_terminal, não 'send')", () => {
+  // Simula o cenário pedido na auditoria: a chave ficou desligada por um
+  // tempo (nenhum job novo foi criado nesse período — scanAndEnqueueCentralReminders
+  // não roda com a chave off), e quando a dona liga de novo, qualquer job
+  // antigo que por algum motivo ainda esteja pendente (ex.: held por outro
+  // motivo antes de desligar) deve ser descartado se o agendamento já
+  // passou — nunca mandado em atraso, nunca em rajada.
+  const r = decideReminderJobAction(
+    baseInput({
+      remindersEnabled: true, // chave religada agora
+      appointmentStartsAt: new Date("2026-11-01T15:00:00.000Z"), // 9 dias no passado
+    }),
+  );
+  assert.equal(r.action, "skip_terminal");
+});
+
+test("chave religada: agendamento ainda válido (dentro da janela) É enviado normalmente, não é 'rajada'", () => {
+  // Contraste com o teste acima: um agendamento que CONTINUA no futuro e
+  // dentro da janela aceitável deve ser enviado normalmente quando a chave
+  // volta a ligar — isso não é "rajada", é o caminho feliz comum.
+  const r = decideReminderJobAction(baseInput({ remindersEnabled: true }));
+  assert.equal(r.action, "send");
+});
+
 test("automação inativa: hold_pending (recuperável)", () => {
   const r = decideReminderJobAction(baseInput({ automationActive: false }));
   assert.equal(r.action, "hold_pending");
