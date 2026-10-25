@@ -1,0 +1,55 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "0",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": { "display_phone_number": "15550001111", "phone_number_id": "CENTRAL_PNID" },
+            "contacts": [{ "profile": { "name": "Ana" }, "wa_id": "5547999990004" }],
+            "messages": [
+              {
+                "from": "5547999990004",
+                "id": "wamid.MEDIA_IMAGE_001",
+                "timestamp": "1700000710",
+                "type": "image",
+                "image": { "id": "MEDIA_ID_IMAGE_001", "mime_type": "image/jpeg" }
+              },
+              {
+                "from": "5547999990004",
+                "id": "wamid.MEDIA_STICKER_001",
+                "timestamp": "1700000720",
+                "type": "sticker",
+                "sticker": { "id": "MEDIA_ID_STICKER_001", "mime_type": "image/webp" }
+              },
+              {
+                "from": "5547999990004",
+                "id": "wamid.MEDIA_LOCATION_001",
+                "timestamp": "1700000730",
+                "type": "location",
+                "location": { "latitude": -27.5954, "longitude": -48.548 }
+              },
+              {
+                "from": "5547999990004",
+                "id": "wamid.MEDIA_REACTION_001",
+                "timestamp": "1700000740",
+                "type": "reaction",
+                "reaction": { "message_id": "wamid.TEST_OUTBOUND_001", "emoji": "👍" }
+              },
+              {
+                "from": "5547999990004",
+                "id": "wamid.MEDIA_DOCUMENT_001",
+                "timestamp": "1700000750",
+                "type": "document",
+                "document": { "id": "MEDIA_ID_DOCUMENT_001", "mime_type": "application/pdf", "filename": "comprovante.pdf" }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

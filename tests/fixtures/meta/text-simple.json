@@ -1,0 +1,27 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "0",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": { "display_phone_number": "15550001111", "phone_number_id": "CENTRAL_PNID" },
+            "contacts": [{ "profile": { "name": "Cliente Teste" }, "wa_id": "5547999990001" }],
+            "messages": [
+              {
+                "from": "5547999990001",
+                "id": "wamid.TEXT_SIMPLE_001",
+                "timestamp": "1700000000",
+                "type": "text",
+                "text": { "body": "Oi, ainda está de pé?" }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
