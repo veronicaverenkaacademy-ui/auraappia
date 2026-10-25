@@ -54,7 +54,7 @@ export const requestClientOtp = createServerFn({ method: "POST" })
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { generateOtpCode, hashOtpCode } = await import("./otp-crypto.server");
-    const { sendOtpWhatsapp } = await import("./send-otp-360dialog.server");
+    const { sendOtpWhatsapp } = await import("./send-otp-meta.server");
 
     const logAttempt = (action: string, details: Record<string, unknown> = {}) =>
       supabaseAdmin.from("audit_log").insert({
