@@ -1,11 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
+import { NotificationBellButton } from "@/components/notification-bell-button";
+import { listAttentionAppointmentIds } from "@/lib/notifications.functions";
 import {
   Ban,
-  Bell,
   Check,
   CheckCircle2,
   ChevronLeft,
@@ -147,6 +149,17 @@ function Agenda() {
   const { data: team = [] } = useQuery({ queryKey: ["team-members"], queryFn: listTeamMembers });
   const activeProfessionals = useMemo(() => team.filter((t) => t.status === "active"), [team]);
 
+  // Avisos (WhatsApp central, Etapa 1) — marcador nos cards de agendamento
+  // com pedido de reagendamento/mensagem sem resposta. O sino em si foi
+  // extraído para NotificationBellButton (compartilhado com a tela
+  // inicial) — mesmo comportamento de antes, só não vive mais aqui.
+  const fetchAttentionIds = useServerFn(listAttentionAppointmentIds);
+  const { data: attentionIdsList = [] } = useQuery({
+    queryKey: ["agenda-attention-ids"],
+    queryFn: () => fetchAttentionIds(),
+  });
+  const attentionIds = useMemo(() => new Set(attentionIdsList), [attentionIdsList]);
+
   const activeAppts = dayAppts.filter((a) => a.status !== "cancelled");
   const revenueToday = activeAppts.reduce((s, a) => s + Number(a.price), 0);
   const occupiedHours = activeAppts.reduce((s, a) => s + (new Date(a.ends_at).getTime() - new Date(a.starts_at).getTime()) / 3_600_000, 0);
@@ -167,10 +180,7 @@ function Agenda() {
           <Button variant="ghost" size="icon" className="rounded-full h-9 w-9">
             <Search className="w-4 h-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 relative">
-            <Bell className="w-4 h-4" />
-            <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-destructive" />
-          </Button>
+          <NotificationBellButton />
           <Button variant="ghost" size="icon" className="rounded-full h-9 w-9" onClick={() => setBlockFormOpen({})} title="Bloquear horário">
             <Ban className="w-4 h-4" />
           </Button>
@@ -244,6 +254,7 @@ function Agenda() {
             isToday={dayOffset === 0}
             loading={loadingDay}
             baseDate={dayDate}
+            attentionIds={attentionIds}
             onSelectAppt={(a) => setSelection({ type: "appointment", data: a })}
             onSelectBlock={(b) => setSelection({ type: "block", data: b })}
             onCreateAt={(d) => openCreate(d)}
@@ -306,7 +317,16 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
 
 // ---------- Day view ----------
 function DayView({
-  appts, blocks, now, isToday, loading, baseDate, onSelectAppt, onSelectBlock, onCreateAt,
+  appts,
+  blocks,
+  now,
+  isToday,
+  loading,
+  baseDate,
+  attentionIds,
+  onSelectAppt,
+  onSelectBlock,
+  onCreateAt,
 }: {
   appts: Appointment[];
   blocks: AgendaBlock[];
@@ -314,6 +334,7 @@ function DayView({
   isToday: boolean;
   loading: boolean;
   baseDate: Date;
+  attentionIds?: Set<string>;
   onSelectAppt: (a: Appointment) => void;
   onSelectBlock: (b: AgendaBlock) => void;
   onCreateAt: (d: Date) => void;
@@ -366,14 +387,29 @@ function DayView({
           )}
 
           {blocks.map((b) => <BlockBar key={b.id} b={b} onSelect={onSelectBlock} />)}
-          {appts.map((a) => <ApptCard key={a.id} a={a} onSelect={onSelectAppt} />)}
+          {appts.map((a) => (
+            <ApptCard
+              key={a.id}
+              a={a}
+              needsAttention={attentionIds?.has(a.id)}
+              onSelect={onSelectAppt}
+            />
+          ))}
         </div>
       </div>
     </div>
   );
 }
 
-function ApptCard({ a, onSelect }: { a: Appointment; onSelect: (a: Appointment) => void }) {
+function ApptCard({
+  a,
+  needsAttention,
+  onSelect,
+}: {
+  a: Appointment;
+  needsAttention?: boolean;
+  onSelect: (a: Appointment) => void;
+}) {
   const start = hourOf(a.starts_at);
   const end = hourOf(a.ends_at);
   const top = (start - HOURS[0]) * HOUR_H + 2;
@@ -390,6 +426,12 @@ function ApptCard({ a, onSelect }: { a: Appointment; onSelect: (a: Appointment) 
         s.bg,
       )}
     >
+      {needsAttention && (
+        <span
+          title="Pedido de reagendamento ou mensagem sem resposta"
+          className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-destructive"
+        />
+      )}
       <div className="flex items-center gap-2">
         <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", s.dot)} />
         <span className="text-[10px] font-medium tabular-nums text-muted-foreground">

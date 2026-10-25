@@ -2165,6 +2165,53 @@ export type Database = {
           },
         ]
       }
+      app_notifications: {
+        Row: {
+          appointment_id: string | null
+          body: string
+          created_at: string
+          dedupe_key: string | null
+          id: string
+          kind: string
+          owner_id: string
+          read_at: string | null
+          recipient_user_id: string | null
+          title: string
+        }
+        Insert: {
+          appointment_id?: string | null
+          body: string
+          created_at?: string
+          dedupe_key?: string | null
+          id?: string
+          kind: string
+          owner_id: string
+          read_at?: string | null
+          recipient_user_id?: string | null
+          title: string
+        }
+        Update: {
+          appointment_id?: string | null
+          body?: string
+          created_at?: string
+          dedupe_key?: string | null
+          id?: string
+          kind?: string
+          owner_id?: string
+          read_at?: string | null
+          recipient_user_id?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_notifications_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       public_company_profiles: {

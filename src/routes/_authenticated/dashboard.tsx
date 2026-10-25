@@ -1,15 +1,16 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
+import { NotificationBellButton } from "@/components/notification-bell-button";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useStaffPermissions } from "@/hooks/use-staff-permissions";
 import { listProducts, formatBRL } from "@/lib/catalog";
 import { useEffect, useMemo, useState } from "react";
 import {
-  Bell, Calendar, Users, DollarSign, CreditCard, UserPlus, CalendarPlus, ShoppingBag,
+  Calendar, Users, DollarSign, CreditCard, UserPlus, CalendarPlus, ShoppingBag,
   FileText, Megaphone, BarChart3, Package, Sparkles, ArrowRight, ArrowUpRight,
   Clock, TrendingUp, MessageCircle, UserMinus, AlertCircle, Search, Plus, Bot,
-  Zap, ChevronRight, CheckCircle2, CircleDollarSign,
+  Zap, ChevronRight, CheckCircle2, CircleDollarSign, Bell,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -123,6 +124,7 @@ function greeting() {
 }
 
 function Dashboard() {
+  const navigate = useNavigate();
   const now = new Date();
   const dayLabel = now.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
 
@@ -216,10 +218,7 @@ function Dashboard() {
           <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 hidden sm:inline-flex">
             <Search className="w-4 h-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="rounded-full h-9 w-9 relative">
-            <Bell className="w-4 h-4" />
-            <span className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-primary" />
-          </Button>
+          <NotificationBellButton />
         </>
       }
       className="px-4 md:px-10 py-6 md:py-10 max-w-6xl mx-auto pb-28 md:pb-14"
@@ -230,7 +229,10 @@ function Dashboard() {
         <h1 className="text-[26px] md:text-4xl font-display font-medium tracking-tight">
           {greeting()}, {name.split(" ")[0]}.
         </h1>
-        <button className="mt-4 w-full text-left group">
+        <button
+          className="mt-4 w-full text-left group"
+          onClick={() => navigate({ to: "/aura-ia" })}
+        >
           <div className="flex items-center gap-3 p-4 md:p-5 rounded-2xl bg-secondary/70 hover:bg-secondary transition border border-border/40">
             <div className="w-9 h-9 rounded-full bg-background flex items-center justify-center shrink-0 border border-border/60">
               <Sparkles className="w-4 h-4 text-primary" />
