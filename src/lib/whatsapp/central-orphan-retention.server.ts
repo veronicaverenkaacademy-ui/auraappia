@@ -26,7 +26,9 @@ export async function cleanupExpiredOrphanMessages(
   const supabaseAdmin =
     deps.supabaseAdmin ?? (await import("@/integrations/supabase/client.server")).supabaseAdmin;
   const now = deps.now ?? (() => new Date());
-  const cutoff = new Date(now().getTime() - ORPHAN_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const cutoff = new Date(
+    now().getTime() - ORPHAN_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
   const { error, count } = await supabaseAdmin
     .from("whatsapp_central_orphan_messages")
     .delete({ count: "exact" })

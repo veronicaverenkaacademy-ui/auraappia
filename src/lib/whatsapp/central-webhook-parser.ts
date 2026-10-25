@@ -226,11 +226,7 @@ const NEGATION_LOOKBACK = 2;
  *  ("não"/"nunca"/"jamais") nas 2 palavras imediatamente anteriores — ver
  *  "Decisões que dependem de você" no relatório para o raciocínio completo. */
 export function looksLikeStopRequest(text: string): boolean {
-  const normalized = text
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .trim();
+  const normalized = text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
   if (STOP_PHRASES.some((p) => normalized === p || normalized.includes(p))) return true;
   if (!normalized) return false;
 

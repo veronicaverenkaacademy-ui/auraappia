@@ -187,7 +187,9 @@ async function handleButtonEvent(
   const normalizedFrom = event.fromPhone.replace(/\D/g, "");
   const normalizedOnFile = (client?.phone ?? "").replace(/\D/g, "");
   if (!normalizedOnFile || !normalizedFrom.endsWith(normalizedOnFile.slice(-8))) {
-    deps.logger.error("[whatsapp:central] Telefone remetente diverge do cliente esperado — ignorado.");
+    deps.logger.error(
+      "[whatsapp:central] Telefone remetente diverge do cliente esperado — ignorado.",
+    );
     return;
   }
 
