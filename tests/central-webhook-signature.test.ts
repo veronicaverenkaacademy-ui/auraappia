@@ -56,3 +56,49 @@ test("comparação é insensível a maiúsculas/minúsculas no hex recebido", as
   const result = await verifyMetaWebhookSignature(BODY, `sha256=${sig.toUpperCase()}`, SECRET);
   assert.equal(result.ok, true);
 });
+
+test("corpo vazio: assina e verifica normalmente (string vazia é um corpo válido)", async () => {
+  const sig = await computeMetaWebhookSignature("", SECRET);
+  const result = await verifyMetaWebhookSignature("", `sha256=${sig}`, SECRET);
+  assert.equal(result.ok, true);
+});
+
+test("corpo com acentos e emoji: assina e verifica pelos BYTES reais (UTF-8), não por comparação de string ingênua", async () => {
+  const body = JSON.stringify({
+    entry: [{ changes: [{ value: { messages: [{ text: { body: "Olá! Tô indo às 15h 💅🏽" } }] } }] }],
+  });
+  const sig = await computeMetaWebhookSignature(body, SECRET);
+  const result = await verifyMetaWebhookSignature(body, `sha256=${sig}`, SECRET);
+  assert.equal(result.ok, true);
+});
+
+test("DEFEITO SERIA: verificar sobre o JSON reserializado (espaços/ordem de chaves) em vez do corpo cru — aqui provamos que isso FALHARIA, confirmando que o código nunca reserializa", async () => {
+  // O corpo que a Meta realmente envia (com uma formatação específica de
+  // espaços/ordem de chaves) é o que deve ser assinado — nunca
+  // `JSON.stringify(JSON.parse(corpoCru))`, que pode produzir bytes
+  // diferentes (ordem de chaves, espaçamento) mesmo representando o MESMO
+  // objeto. Este teste prova que a verificação é sensível a essa diferença
+  // — ou seja, ela está mesmo comparando bytes crus, não um JSON
+  // reconstituído (que teria passado por igual aqui, mascarando o bug).
+  const rawBodyFromMeta = '{"entry":[{"changes":[{"value":{"ok":   true, "b":1, "a":2}}]}]}'; // espaços extras de propósito
+  const reserialized = JSON.stringify(JSON.parse(rawBodyFromMeta)); // ordem de chaves normalizada, sem espaços extras
+  assert.notEqual(rawBodyFromMeta, reserialized, "pré-condição do teste: os bytes têm que ser diferentes");
+
+  const sig = await computeMetaWebhookSignature(rawBodyFromMeta, SECRET);
+  // Verificar contra o corpo CRU (como o código realmente faz, lendo
+  // request.text() antes de JSON.parse) — tem que bater.
+  const okWithRaw = await verifyMetaWebhookSignature(rawBodyFromMeta, `sha256=${sig}`, SECRET);
+  assert.equal(okWithRaw.ok, true);
+  // Verificar contra o JSON reserializado (o que aconteceria SE o código
+  // assinasse depois de parsear/reserializar) — tem que FALHAR, provando
+  // que depender disso quebraria a verificação com payloads reais da Meta.
+  const okWithReserialized = await verifyMetaWebhookSignature(reserialized, `sha256=${sig}`, SECRET);
+  assert.equal(okWithReserialized.ok, false);
+});
+
+// Comparação em tempo constante: CONFIRMADO NO CÓDIGO, não por teste (um
+// teste de tempo de execução seria instável/não determinístico em CI) —
+// ver timingSafeEqualHex em src/lib/whatsapp/central-webhook-signature.server.ts:20-25,
+// que percorre os DOIS hex por igual (XOR acumulado em `diff`, sem early
+// return) em vez de usar `===`/`.localeCompare` (que param no primeiro
+// byte diferente e vazam, por tempo, até onde os hex coincidem).

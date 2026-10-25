@@ -581,3 +581,23 @@ test("3i: horário do agendamento já passou -> late_response (toque tardio)", a
   const appt = db.tables.appointments.find((a) => a.id === "appt-1")!;
   assert.equal(appt.client_confirmation_status, "pending");
 });
+
+// ===== 3c — origem (filtro central x por-salão é no handler) =====
+
+test("3c: evento de OUTRO número da Meta (não o central) é ignorado pelo handler — nenhuma mutação, nenhuma tabela tocada", async () => {
+  const db = makeDb();
+  await run(db, [textEvent({ phoneNumberId: "SALAO_PNID_OUTRO", contextId: "wamid.OUTBOUND_001" })]);
+  assert.equal(db.tables.whatsapp_messages.some((m) => m.direction === "inbound"), false);
+  assert.equal(db.tables.app_notifications.length, 0);
+});
+
+test("3c: mistura de evento central + evento de outro número — só o central é processado", async () => {
+  const db = makeDb();
+  await run(db, [
+    textEvent({ messageId: "wamid.CENTRAL_1", contextId: "wamid.OUTBOUND_001" }),
+    textEvent({ messageId: "wamid.OUTRO_1", phoneNumberId: "SALAO_PNID_OUTRO", contextId: null }),
+  ]);
+  const inbound = db.tables.whatsapp_messages.filter((m) => m.direction === "inbound");
+  assert.equal(inbound.length, 1);
+  assert.equal(inbound[0].provider_message_id, "wamid.CENTRAL_1");
+});
