@@ -13,12 +13,15 @@ import type { ReminderTemplateKey } from "./central-template-variables.ts";
 
 export type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled" | "no_show";
 export type MetaStatus = "NOT_SUBMITTED" | "PENDING" | "APPROVED" | "REJECTED";
+/** Resposta da cliente ao botão do WhatsApp (central-reply-decision.ts) — lida de novo aqui pra decidir se AINDA vale mandar o lembrete. */
+export type ClientConfirmationStatus = "pending" | "confirmed" | "declined" | "reschedule_requested";
 
 export type ReminderPolicyInput = {
   templateKey: ReminderTemplateKey;
   now: Date;
   appointmentStartsAt: Date;
   appointmentStatus: AppointmentStatus;
+  clientConfirmationStatus: ClientConfirmationStatus;
   timezone: string;
   automationActive: boolean;
   automationMetaStatus: MetaStatus;
@@ -36,12 +39,36 @@ export type ReminderPolicyDecision =
   | { action: "defer"; reason: string; deferToIso: string }
   | { action: "skip_terminal"; reason: string };
 
-/** Quanto falta pro horário do agendamento é o mínimo aceitável pra esse template ainda fazer sentido. */
-export const MIN_LEAD_BEFORE_APPOINTMENT_MS: Record<ReminderTemplateKey, number> = {
-  lembrete_24h: 60 * 60 * 1000, // 1h — "amanhã" não faz sentido faltando menos que isso
-  lembrete_2h: 0, // só não pode já ter passado (checado separadamente)
+/**
+ * Atraso máximo aceitável, expresso como "quanto ainda precisa faltar pro
+ * atendimento" — serve tanto pro corte normal ("muito perto, não faz mais
+ * sentido") quanto pra decidir se um job atrasado (gatilho que passou horas
+ * sem rodar — ver Marco 0/3) ainda vale recuperar. Pedido explícito da dona:
+ * 24h = 12h de folga mínima. Valor único, documentado, não escondido num
+ * número solto no meio do código.
+ */
+export const MAX_LATE_24H_BEFORE_START_MS = 12 * 60 * 60 * 1000; // 12h
+/**
+ * Pro lembrete de 2h, "atraso curto, poucos minutos": o scheduled_for dele já
+ * é starts_at-2h, então tolerar só 15min de atraso sobre esse instante
+ * equivale a exigir que ainda faltem pelo menos 1h45 (105min) pro
+ * atendimento — nunca depois do horário em si (checado separadamente).
+ */
+export const MAX_LATE_2H_BEFORE_START_MS = 105 * 60 * 1000; // 1h45 (= 15min de atraso tolerado sobre start-2h)
+
+export const MAX_LATE_BEFORE_START_MS: Record<ReminderTemplateKey, number> = {
+  lembrete_24h: MAX_LATE_24H_BEFORE_START_MS,
+  lembrete_2h: MAX_LATE_2H_BEFORE_START_MS,
 };
 
+/**
+ * Decisão da dona (26/10/2026): lembrete sai em QUALQUER horário do dia ou
+ * da noite, sem horário de silêncio (há profissionais atendendo até as
+ * 22h). As constantes e a lógica de silêncio ficam no código, DESLIGADAS —
+ * documentadas, não usadas, pra não se perder caso a decisão mude no
+ * futuro. Nunca ativar sem reautorizar com a dona.
+ */
+export const QUIET_HOURS_ENABLED = false;
 export const QUIET_HOURS_START_LOCAL = 21; // 21:00
 export const QUIET_HOURS_END_LOCAL = 7; // 07:00
 
@@ -121,6 +148,17 @@ export function decideReminderJobAction(input: ReminderPolicyInput): ReminderPol
     };
   }
 
+  // Decisão da dona: se a cliente já tocou em "Confirmar presença" pelo
+  // WhatsApp, o lembrete já cumpriu seu papel — não insistir de novo (vale
+  // tanto pro 24h quanto pro 2h; um 2h ainda pendente quando ela já
+  // confirmou pelo 24h não precisa sair).
+  if (input.clientConfirmationStatus === "confirmed") {
+    return {
+      action: "skip_terminal",
+      reason: "Cliente já confirmou presença pelo WhatsApp — lembrete não é mais necessário.",
+    };
+  }
+
   const msUntilAppointment = input.appointmentStartsAt.getTime() - input.now.getTime();
   if (msUntilAppointment <= 0) {
     return { action: "skip_terminal", reason: "Horário do agendamento já passou." };
@@ -142,20 +180,23 @@ export function decideReminderJobAction(input: ReminderPolicyInput): ReminderPol
     return { action: "skip_terminal", reason: "Telefone inválido." };
   }
 
-  const minLead = MIN_LEAD_BEFORE_APPOINTMENT_MS[input.templateKey];
-  if (msUntilAppointment < minLead) {
+  const maxLate = MAX_LATE_BEFORE_START_MS[input.templateKey];
+  if (msUntilAppointment < maxLate) {
     return {
       action: "skip_terminal",
-      reason: `Atrasado demais: falta menos que o mínimo aceitável (${Math.round(minLead / 60000)} min) para o agendamento.`,
+      reason: `Pulado: atraso. Falta menos que o mínimo aceitável (${Math.round(maxLate / 60000)} min) para o agendamento — o gatilho deve ter ficado tempo demais sem rodar.`,
     };
   }
 
-  if (isInQuietHours(input.now, input.timezone)) {
+  // QUIET_HOURS_ENABLED é false por decisão da dona (26/10/2026) — este
+  // bloco nunca executa enquanto isso for true, mas fica pronto caso a
+  // decisão seja revista (nunca reativar sem reautorizar com ela).
+  if (QUIET_HOURS_ENABLED && isInQuietHours(input.now, input.timezone)) {
     const deferTo = nextQuietHoursEnd(input.now, input.timezone);
     const msUntilAppointmentAtDefer = input.appointmentStartsAt.getTime() - deferTo.getTime();
     if (
       deferTo.getTime() < input.appointmentStartsAt.getTime() &&
-      msUntilAppointmentAtDefer >= minLead
+      msUntilAppointmentAtDefer >= maxLate
     ) {
       return {
         action: "defer",

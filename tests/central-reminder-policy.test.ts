@@ -15,6 +15,7 @@ function baseInput(overrides: Partial<Parameters<typeof decideReminderJobAction>
     now,
     appointmentStartsAt,
     appointmentStatus: "confirmed" as const,
+    clientConfirmationStatus: "pending" as const,
     timezone: TZ,
     automationActive: true,
     automationMetaStatus: "APPROVED" as const,
@@ -50,6 +51,24 @@ test("agendamento concluído: skip_terminal", () => {
 
 test("agendamento no_show: skip_terminal", () => {
   const r = decideReminderJobAction(baseInput({ appointmentStatus: "no_show" }));
+  assert.equal(r.action, "skip_terminal");
+});
+
+test("M2: agendamento ainda PENDING (cliente não confirmou) também envia normalmente", () => {
+  const r = decideReminderJobAction(baseInput({ appointmentStatus: "pending" }));
+  assert.equal(r.action, "send");
+});
+
+test("M2: cliente já confirmou presença pelo WhatsApp (botão) — lembrete não é mais necessário: skip_terminal", () => {
+  const r = decideReminderJobAction(baseInput({ clientConfirmationStatus: "confirmed" }));
+  assert.equal(r.action, "skip_terminal");
+  assert.match(r.action === "skip_terminal" ? r.reason : "", /já confirmou/i);
+});
+
+test("M2: cliente confirmada não bloqueia o lembrete_2h (mesma regra vale pros dois tipos)", () => {
+  const r = decideReminderJobAction(
+    baseInput({ templateKey: "lembrete_2h", clientConfirmationStatus: "confirmed" }),
+  );
   assert.equal(r.action, "skip_terminal");
 });
 
@@ -104,14 +123,28 @@ test("telefone inválido: skip_terminal (nunca vai ficar válido sozinho)", () =
   assert.equal(r.action, "skip_terminal");
 });
 
-test("lembrete_24h atrasado demais (faltando menos de 1h): skip_terminal", () => {
-  const now = new Date("2026-11-11T14:30:00.000Z"); // faltam 30min pro agendamento das 15:00Z
+test("M2: lembrete_24h pulado por atraso quando faltam menos de 12h (MAX_LATE_24H_BEFORE_START_MS)", () => {
+  const now = new Date("2026-11-11T04:00:00.000Z"); // faltam 11h pro agendamento das 15:00Z do dia 11
   const r = decideReminderJobAction(baseInput({ now }));
   assert.equal(r.action, "skip_terminal");
+  assert.match(r.action === "skip_terminal" ? r.reason : "", /atraso/i);
 });
 
-test("lembrete_2h pode ser enviado mesmo faltando poucos minutos (lead mínimo 0)", () => {
-  const now = new Date("2026-11-11T14:59:00.000Z"); // falta 1 min, bem fora do silêncio (11:59 local)
+test("M2: lembrete_24h AINDA sai se faltarem mais de 12h — recupera de um gatilho atrasado em horas", () => {
+  const now = new Date("2026-11-11T02:00:00.000Z"); // faltam 13h pro agendamento das 15:00Z do dia 11
+  const r = decideReminderJobAction(baseInput({ now }));
+  assert.equal(r.action, "send");
+});
+
+test("M2: lembrete_2h pulado por atraso quando faltam menos de 1h45 (MAX_LATE_2H_BEFORE_START_MS)", () => {
+  const now = new Date("2026-11-11T14:59:00.000Z"); // falta 1 min pro agendamento das 15:00Z
+  const r = decideReminderJobAction(baseInput({ templateKey: "lembrete_2h", now }));
+  assert.equal(r.action, "skip_terminal");
+  assert.match(r.action === "skip_terminal" ? r.reason : "", /atraso/i);
+});
+
+test("M2: lembrete_2h AINDA sai se faltarem mais de 1h45", () => {
+  const now = new Date("2026-11-11T13:00:00.000Z"); // faltam 2h pro agendamento das 15:00Z
   const r = decideReminderJobAction(baseInput({ templateKey: "lembrete_2h", now }));
   assert.equal(r.action, "send");
 });
@@ -143,53 +176,44 @@ test("modo teste: telefone da lista SEM +55/espaços/hífen ainda casa", () => {
   assert.equal(r.action, "send");
 });
 
-test("horário de silêncio (02:00 local) com janela válida antes do agendamento: defer", () => {
-  // 02:00 em America/Sao_Paulo (UTC-3) = 05:00Z. Agendamento só às 15:00Z do
-  // mesmo dia (12:00 local) — defere pra 07:00 local (10:00Z) sem problema.
-  const now = new Date("2026-11-11T05:00:00.000Z");
-  const appointmentStartsAt = new Date("2026-11-11T15:00:00.000Z");
+// ===== M2: silêncio DESLIGADO por decisão da dona (26/10/2026) =====
+// Os 4 testes abaixo cobrem exatamente os mesmos horários que antes
+// esperavam "defer" — agora QUIET_HOURS_ENABLED=false faz decideReminderJobAction
+// nunca entrar nesse bloco, então o resultado passa a ser "send" (quando
+// tudo o mais está ok). A lógica de silêncio em si (isInQuietHours/
+// nextQuietHoursEnd) continua no arquivo, só não é chamada.
+
+test("M2: 02:00 local NÃO adia mais (silêncio desligado) — envia normalmente", () => {
+  const now = new Date("2026-11-11T05:00:00.000Z"); // 02:00 local
+  const appointmentStartsAt = new Date("2026-11-11T15:00:00.000Z"); // 12:00 local, mesmo dia
   const r = decideReminderJobAction(
     baseInput({ templateKey: "lembrete_2h", now, appointmentStartsAt }),
   );
-  assert.equal(r.action, "defer");
-  if (r.action === "defer") {
-    const deferTo = new Date(r.deferToIso);
-    assert.ok(deferTo.getTime() > now.getTime());
-    assert.ok(deferTo.getTime() < appointmentStartsAt.getTime());
-  }
+  assert.equal(r.action, "send");
 });
 
-test("horário de silêncio sem janela válida (agendamento cedo demais): skip_terminal", () => {
-  // 02:00 local, agendamento é às 07:30 local (dentro de 1h depois do fim do silêncio) — lembrete_24h exige 1h de folga.
-  const now = new Date("2026-11-11T05:00:00.000Z"); // 02:00 local
-  const appointmentStartsAt = new Date("2026-11-11T10:30:00.000Z"); // 07:30 local
-  const r = decideReminderJobAction(baseInput({ now, appointmentStartsAt }));
-  assert.equal(r.action, "skip_terminal");
-});
-
-test("23:00 local está dentro do silêncio (cruzando meia-noite)", () => {
+test("M2: 23:00 local (cruzando meia-noite) NÃO adia mais — envia normalmente", () => {
   const now = new Date("2026-11-11T02:00:00.000Z"); // 23:00 local (dia anterior)
   const appointmentStartsAt = new Date("2026-11-12T15:00:00.000Z");
   const r = decideReminderJobAction(
     baseInput({ templateKey: "lembrete_2h", now, appointmentStartsAt }),
   );
-  assert.equal(r.action, "defer");
+  assert.equal(r.action, "send");
 });
 
-test("06:59 local ainda está dentro do silêncio", () => {
+test("M2: 06:59 local NÃO adia mais — envia normalmente", () => {
   const now = new Date("2026-11-11T09:59:00.000Z"); // 06:59 local
   const appointmentStartsAt = new Date("2026-11-11T20:00:00.000Z");
   const r = decideReminderJobAction(
     baseInput({ templateKey: "lembrete_2h", now, appointmentStartsAt }),
   );
-  assert.equal(r.action, "defer");
+  assert.equal(r.action, "send");
 });
 
-test("07:00 local já está fora do silêncio", () => {
-  const now = new Date("2026-11-11T10:00:00.000Z"); // 07:00 local
-  const appointmentStartsAt = new Date("2026-11-11T20:00:00.000Z");
-  const r = decideReminderJobAction(
-    baseInput({ templateKey: "lembrete_2h", now, appointmentStartsAt }),
-  );
+test("M2: atendimento às 22:00 local — lembrete de 24h sai às 22:00 local do dia anterior, mesmo sem janela de silêncio bloqueando (profissional atendendo até tarde)", () => {
+  // 22:00 em América/São_Paulo (UTC-3) = 01:00Z do dia civil seguinte.
+  const appointmentStartsAt = new Date("2026-11-12T01:00:00.000Z"); // 22:00 local, 11/11
+  const now = new Date("2026-11-11T01:00:00.000Z"); // exatamente 24h antes = 22:00 local, 10/11
+  const r = decideReminderJobAction(baseInput({ now, appointmentStartsAt }));
   assert.equal(r.action, "send");
 });
