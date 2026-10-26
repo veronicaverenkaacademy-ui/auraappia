@@ -79,7 +79,7 @@ export async function scanAndEnqueueCentralReminders(
     const { data: due, error } = await supabaseAdmin
       .from("appointments")
       .select("id, owner_id, client_id")
-      .eq("status", "confirmed")
+      .in("status", ["pending", "confirmed"])
       .is(sentAtColumn, null)
       .gte("starts_at", windowStart)
       .lte("starts_at", windowEnd);

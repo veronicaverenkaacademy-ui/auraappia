@@ -88,7 +88,53 @@ test("4: duas execuções do cron 'ao mesmo tempo' (chamadas em sequência, mesm
   });
 });
 
-test("4: agendamento cancelado nunca é enfileirado", async () => {
+test("M1: agendamento PENDENTE (ainda não confirmado) dentro da janela de 24h TAMBÉM é enfileirado — profissional cria, lembrete sai, cliente confirma depois pelo WhatsApp", async () => {
+  await withEnabledReminders(async () => {
+    const db = new FakeSupabaseAdmin({
+      tables: {
+        appointments: [
+          {
+            id: "appt-1",
+            owner_id: "owner-1",
+            client_id: "client-1",
+            status: "pending",
+            starts_at: new Date(NOW.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+            reminder_24h_sent_at: null,
+            reminder_2h_sent_at: null,
+          },
+        ],
+        notification_jobs: [],
+      },
+    });
+    const result = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    assert.equal(result.enqueued, 1);
+  });
+});
+
+test("M1: agendamento que FALTOU (no_show) nunca é enfileirado", async () => {
+  await withEnabledReminders(async () => {
+    const db = new FakeSupabaseAdmin({
+      tables: {
+        appointments: [
+          {
+            id: "appt-1",
+            owner_id: "owner-1",
+            client_id: "client-1",
+            status: "no_show",
+            starts_at: new Date(NOW.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+            reminder_24h_sent_at: null,
+            reminder_2h_sent_at: null,
+          },
+        ],
+        notification_jobs: [],
+      },
+    });
+    const result = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    assert.equal(result.enqueued, 0);
+  });
+});
+
+test("M1: agendamento cancelado nunca é enfileirado", async () => {
   await withEnabledReminders(async () => {
     const db = new FakeSupabaseAdmin({
       tables: {
@@ -262,6 +308,41 @@ test("4: agendamento cancelado -> cancelled", async () => {
   });
   const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
   assert.equal(outcome, "cancelled");
+});
+
+test("M1: agendamento ainda PENDENTE (cliente não confirmou) é processado normalmente — não cancela por causa do status", async () => {
+  const db = new FakeSupabaseAdmin({
+    tables: baseJobTables({ appointments: [{ ...baseJobTables().appointments[0], status: "pending" }] }),
+  });
+  const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
+  assert.notEqual(outcome, "cancelled");
+});
+
+test("M1: troca de status pending -> confirmed ENTRE duas varreduras não duplica o job (mesma chave appointment_id+type)", async () => {
+  await withEnabledReminders(async () => {
+    const db = new FakeSupabaseAdmin({
+      tables: {
+        appointments: [
+          {
+            id: "appt-1",
+            owner_id: "owner-1",
+            client_id: "client-1",
+            status: "pending",
+            starts_at: new Date(NOW.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+            reminder_24h_sent_at: null,
+            reminder_2h_sent_at: null,
+          },
+        ],
+        notification_jobs: [],
+      },
+    });
+    const r1 = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    db.tables.appointments[0].status = "confirmed"; // profissional/cliente confirmou depois do 1º enfileiramento
+    const r2 = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    assert.equal(r1.enqueued, 1);
+    assert.equal(r2.enqueued, 0); // já existe job para este appointment_id+type — ON CONFLICT DO NOTHING
+    assert.equal(db.tables.notification_jobs.length, 1);
+  });
 });
 
 test("4: agendamento concluído -> cancelled", async () => {

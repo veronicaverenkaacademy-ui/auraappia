@@ -88,6 +88,10 @@ export class FakeSupabaseAdmin {
         filters.push((r) => r[col] === val);
         return builder;
       },
+      in(col: string, vals: unknown[]) {
+        filters.push((r) => vals.includes(r[col]));
+        return builder;
+      },
       gte(col: string, val: unknown) {
         filters.push((r) => String(r[col] ?? "") >= String(val));
         return builder;
