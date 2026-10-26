@@ -286,7 +286,8 @@ export async function sendCentralTemplate(
         .update({
           status: "uncertain",
           error_class: "uncertain",
-          error_message: "Resposta 200 da Meta sem messages[0].id — sem wamid para reconciliar status futuro.",
+          error_message:
+            "Resposta 200 da Meta sem messages[0].id — sem wamid para reconciliar status futuro.",
         })
         .eq("id", messageRowId);
       return { kind: "uncertain", messageRowId, threadId };

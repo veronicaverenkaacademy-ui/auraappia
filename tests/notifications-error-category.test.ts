@@ -5,7 +5,9 @@ import assert from "node:assert/strict";
 import { categorizeNotificationsError } from "../src/lib/notifications-error-category.ts";
 
 test("erro com .code=42501 é categorizado como avisos_sem_permissao", () => {
-  const err = Object.assign(new Error("permission denied for table app_notifications"), { code: "42501" });
+  const err = Object.assign(new Error("permission denied for table app_notifications"), {
+    code: "42501",
+  });
   assert.equal(categorizeNotificationsError(err), "avisos_sem_permissao");
 });
 

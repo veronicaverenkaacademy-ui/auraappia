@@ -35,7 +35,9 @@ const REAL_FETCH = globalThis.fetch;
 type CapturedCall = { url: string; init: RequestInit };
 
 /** Instala um dublê de fetch que só aceita a URL esperada; qualquer outra chamada lança (nunca silenciosa). */
-function stubFetch(responder: (call: CapturedCall) => Response | Promise<Response>): CapturedCall[] {
+function stubFetch(
+  responder: (call: CapturedCall) => Response | Promise<Response>,
+): CapturedCall[] {
   const calls: CapturedCall[] = [];
   globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
     const call = { url: String(url), init: init ?? {} };
@@ -49,7 +51,10 @@ function stubFetch(responder: (call: CapturedCall) => Response | Promise<Respons
 }
 
 function jsonResponse(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 function baseInput(overrides: Partial<Parameters<typeof sendCentralTemplate>[0]> = {}) {
@@ -111,7 +116,10 @@ test("requisição: URL tem a versão da API do ambiente + id do número central
     assert.equal(headers.authorization, "Bearer zzfx-token-de-teste-nunca-real");
 
     const serialized = JSON.stringify(errors);
-    assert.ok(!serialized.includes("zzfx-token-de-teste-nunca-real"), "o token nunca pode aparecer em log");
+    assert.ok(
+      !serialized.includes("zzfx-token-de-teste-nunca-real"),
+      "o token nunca pode aparecer em log",
+    );
   } finally {
     console.error = origError;
   }
@@ -134,7 +142,10 @@ test("corpo exato: nome do template, idioma pt_BR, variáveis na ordem, 3 botõe
   assert.equal(body.template.name, "lembrete_24h");
   assert.equal(body.template.language.code, "pt_BR");
 
-  const bodyComponent = body.template.components[0] as { type: string; parameters: Array<{ text: string }> };
+  const bodyComponent = body.template.components[0] as {
+    type: string;
+    parameters: Array<{ text: string }>;
+  };
   assert.deepEqual(
     bodyComponent.parameters.map((p) => p.text),
     ["Ana", "15:00", "Corte", "Salão X"],
@@ -187,7 +198,10 @@ test("DEFEITO CORRIGIDO: 200 OK com corpo que não é JSON vira 'incerto', nunca
     if (!String(url).includes(`/${PHONE_NUMBER_ID}/messages`)) {
       throw new Error(`fetch chamado com URL não prevista: ${url}`);
     }
-    return new Response("isto não é JSON", { status: 200, headers: { "content-type": "text/plain" } });
+    return new Response("isto não é JSON", {
+      status: 200,
+      headers: { "content-type": "text/plain" },
+    });
   }) as typeof fetch;
   const db = makeDb();
   const result = await sendCentralTemplate({ ...baseInput(), supabaseAdmin: db as never });
@@ -244,7 +258,10 @@ test("4xx: limite de taxa (130429) -> freio GLOBAL, classe transient", async () 
 test("4xx: template pausado (132015) -> freio POR TEMPLATE (só lembrete_24h, não afeta lembrete_2h)", async () => {
   stubFetch(() => jsonResponse(400, { error: { code: 132015, message: "x" } }));
   const db = makeDb();
-  await sendCentralTemplate({ ...baseInput({ templateKey: "lembrete_24h" }), supabaseAdmin: db as never });
+  await sendCentralTemplate({
+    ...baseInput({ templateKey: "lembrete_24h" }),
+    supabaseAdmin: db as never,
+  });
   assert.equal(db.tables.whatsapp_central_incidents[0].scope, "template");
   assert.equal(db.tables.whatsapp_central_incidents[0].template_key, "lembrete_24h");
 });
@@ -305,7 +322,13 @@ test("freio GLOBAL já aberto: breaker_open, fetch NUNCA é chamado", async () =
   const calls = stubFetch(() => jsonResponse(200, { messages: [{ id: "x" }] }));
   const db = makeDb({
     whatsapp_central_incidents: [
-      { id: "inc-1", scope: "global", template_key: null, reason: "token inválido", resolved_at: null },
+      {
+        id: "inc-1",
+        scope: "global",
+        template_key: null,
+        reason: "token inválido",
+        resolved_at: null,
+      },
     ],
   });
   const result = await sendCentralTemplate({ ...baseInput(), supabaseAdmin: db as never });
@@ -317,10 +340,19 @@ test("freio POR TEMPLATE já aberto: só intercepta o template afetado, outro te
   const calls = stubFetch(() => jsonResponse(200, { messages: [{ id: "wamid.X" }] }));
   const db = makeDb({
     whatsapp_central_incidents: [
-      { id: "inc-1", scope: "template", template_key: "lembrete_24h", reason: "pausado", resolved_at: null },
+      {
+        id: "inc-1",
+        scope: "template",
+        template_key: "lembrete_24h",
+        reason: "pausado",
+        resolved_at: null,
+      },
     ],
   });
-  const r24h = await sendCentralTemplate({ ...baseInput({ templateKey: "lembrete_24h" }), supabaseAdmin: db as never });
+  const r24h = await sendCentralTemplate({
+    ...baseInput({ templateKey: "lembrete_24h" }),
+    supabaseAdmin: db as never,
+  });
   assert.equal(r24h.kind, "breaker_open");
   assert.equal(calls.length, 0);
 
@@ -357,7 +389,10 @@ test("falha ao registrar a mensagem outbound (insert em whatsapp_messages) -> fa
 test("falha ao abrir a thread (insert em whatsapp_central_threads) -> failed/permanent, mensagem marcada failed, fetch NUNCA chamado", async () => {
   const calls = stubFetch(() => jsonResponse(200, { messages: [{ id: "x" }] }));
   const db = makeDb();
-  db.failNextInsertOn.whatsapp_central_threads = { code: "XXERR", message: "falha simulada ao abrir thread" };
+  db.failNextInsertOn.whatsapp_central_threads = {
+    code: "XXERR",
+    message: "falha simulada ao abrir thread",
+  };
   const result = await sendCentralTemplate({ ...baseInput(), supabaseAdmin: db as never });
   assert.equal(result.kind, "failed");
   assert.equal(calls.length, 0);
