@@ -28,7 +28,10 @@ function uniqueViolation(message = "duplicate key value violates unique constrai
 export class FakeSupabaseAdmin {
   tables: Record<string, Row[]> = {};
   private uniqueKeys: Record<string, string[][]>;
-  private rpcHandlers: Record<string, (params: Record<string, unknown>, db: FakeSupabaseAdmin) => unknown>;
+  private rpcHandlers: Record<
+    string,
+    (params: Record<string, unknown>, db: FakeSupabaseAdmin) => unknown
+  >;
   private idCounter = 0;
   /** Falhas injetadas para os testes de atomicidade/corpo — table -> erro a devolver na PRÓXIMA operação daquele tipo. */
   failNextInsertOn: Record<string, PgError> = {};
@@ -137,7 +140,10 @@ export class FakeSupabaseAdmin {
           },
         };
       },
-      upsert(obj: Row, opts: { onConflict?: string; ignoreDuplicates?: boolean; count?: string } = {}) {
+      upsert(
+        obj: Row,
+        opts: { onConflict?: string; ignoreDuplicates?: boolean; count?: string } = {},
+      ) {
         const conflictCols = (opts.onConflict ?? "id").split(",").map((c) => c.trim());
         const existing = db.tables[table].find((r) => conflictCols.every((c) => r[c] === obj[c]));
         let affected = 0;
@@ -152,8 +158,14 @@ export class FakeSupabaseAdmin {
           affected = 1;
         }
         return {
-          then(resolve: (v: { data: null; error: null; count: number }) => unknown, reject?: (e: unknown) => unknown) {
-            return Promise.resolve({ data: null, error: null, count: affected }).then(resolve, reject);
+          then(
+            resolve: (v: { data: null; error: null; count: number }) => unknown,
+            reject?: (e: unknown) => unknown,
+          ) {
+            return Promise.resolve({ data: null, error: null, count: affected }).then(
+              resolve,
+              reject,
+            );
           },
         };
       },
@@ -166,16 +178,25 @@ export class FakeSupabaseAdmin {
       // `.select(..., {count:'exact', head:true})` (count sempre
       // calculado, inofensivo pra quem não olha esse campo) e
       // `.delete(...).lt(...)` (apaga ao resolver, count = linhas apagadas).
-      then(resolve: (v: { data: Row[] | null; error: null; count: number }) => unknown, reject?: (e: unknown) => unknown) {
+      then(
+        resolve: (v: { data: Row[] | null; error: null; count: number }) => unknown,
+        reject?: (e: unknown) => unknown,
+      ) {
         if (pendingDelete) {
           const toDelete = new Set(applyFilters());
           const before = db.tables[table].length;
           db.tables[table] = db.tables[table].filter((r) => !toDelete.has(r));
           const deletedCount = before - db.tables[table].length;
-          return Promise.resolve({ data: null, error: null, count: deletedCount }).then(resolve, reject);
+          return Promise.resolve({ data: null, error: null, count: deletedCount }).then(
+            resolve,
+            reject,
+          );
         }
         const rows = applyFilters();
-        return Promise.resolve({ data: rows, error: null, count: rows.length }).then(resolve, reject);
+        return Promise.resolve({ data: rows, error: null, count: rows.length }).then(
+          resolve,
+          reject,
+        );
       },
     };
     let pendingDelete = false;
@@ -189,7 +210,10 @@ export class FakeSupabaseAdmin {
       const data = handler(params, this);
       return { data, error: null };
     } catch (e) {
-      return { data: null, error: { code: "P0001", message: e instanceof Error ? e.message : String(e) } };
+      return {
+        data: null,
+        error: { code: "P0001", message: e instanceof Error ? e.message : String(e) },
+      };
     }
   }
 }
@@ -202,9 +226,16 @@ function makeInsertResult(inserted: Row[] | null, error: PgError | null) {
           if (error) return { data: null, error };
           return { data: inserted?.[0] ?? null, error: null };
         },
+        async maybeSingle() {
+          if (error) return { data: null, error };
+          return { data: inserted?.[0] ?? null, error: null };
+        },
       };
     },
-    then(resolve: (v: { data: Row[] | null; error: PgError | null }) => unknown, reject?: (e: unknown) => unknown) {
+    then(
+      resolve: (v: { data: Row[] | null; error: PgError | null }) => unknown,
+      reject?: (e: unknown) => unknown,
+    ) {
       return Promise.resolve({ data: error ? null : inserted, error }).then(resolve, reject);
     },
   };

@@ -5,6 +5,7 @@ import { ChevronLeft, Bell, CheckCircle2 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { listNotifications, markNotificationRead } from "@/lib/notifications.functions";
+import { categorizeNotificationsError } from "@/lib/notifications-error-category";
 
 export const Route = createFileRoute("/_authenticated/avisos")({
   head: () => ({
@@ -35,16 +36,34 @@ function Avisos() {
   const fetchNotifications = useServerFn(listNotifications);
   const markReadFn = useServerFn(markNotificationRead);
 
-  const { data: notifications = [], isLoading } = useQuery({
+  const {
+    data: notifications = [],
+    isLoading,
+    isError,
+    error,
+  } = useQuery({
     queryKey: ["app-notifications"],
     queryFn: () => fetchNotifications(),
   });
 
+  if (isError) {
+    const categoria = categorizeNotificationsError(error);
+    console.error(`[notifications:${categoria}] Falha ao listar avisos`, error);
+  }
+
   const handleMarkRead = async (id: string) => {
-    await markReadFn({ data: { id } });
-    await qc.invalidateQueries({ queryKey: ["app-notifications"] });
-    await qc.invalidateQueries({ queryKey: ["app-notifications-unread-count"] });
-    await qc.invalidateQueries({ queryKey: ["agenda-attention-ids"] });
+    try {
+      await markReadFn({ data: { id } });
+      await qc.invalidateQueries({ queryKey: ["app-notifications"] });
+      await qc.invalidateQueries({ queryKey: ["app-notifications-unread-count"] });
+      await qc.invalidateQueries({ queryKey: ["agenda-attention-ids"] });
+    } catch (e) {
+      // Nunca quebra a tela por uma falha ao marcar como lida — o aviso
+      // só continua aparecendo como não lido, a usuária pode tentar de
+      // novo; nunca mostra texto técnico.
+      const categoria = categorizeNotificationsError(e);
+      console.error(`[notifications:${categoria}] Falha ao marcar aviso como lido`, e);
+    }
   };
 
   return (

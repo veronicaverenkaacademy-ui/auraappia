@@ -273,6 +273,25 @@ export async function sendCentralTemplate(
   if (outcome.kind === "http_ok") {
     const wamid =
       (outcome.body as { messages?: Array<{ id?: string }> })?.messages?.[0]?.id ?? null;
+    // DEFEITO CORRIGIDO (auditoria de testes desta rodada): um 200 sem
+    // messages[0].id (corpo inesperado, ou nem chegou a ser JSON — ver
+    // fetchMetaSend, parsedBody fica null) não é prova de entrega
+    // confiável — sem o wamid, nenhum status futuro (delivered/read/failed)
+    // vindo do webhook consegue casar com esta mensagem NUNCA MAIS (a
+    // reconciliação é por provider_message_id). Tratado como "incerto"
+    // (nunca reenviado sozinho, mesma regra do timeout), não como "sent".
+    if (!wamid) {
+      await supabaseAdmin
+        .from("whatsapp_messages")
+        .update({
+          status: "uncertain",
+          error_class: "uncertain",
+          error_message:
+            "Resposta 200 da Meta sem messages[0].id — sem wamid para reconciliar status futuro.",
+        })
+        .eq("id", messageRowId);
+      return { kind: "uncertain", messageRowId, threadId };
+    }
     await supabaseAdmin
       .from("whatsapp_messages")
       .update({ status: "sent", provider_message_id: wamid, sent_at: new Date().toISOString() })
