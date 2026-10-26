@@ -23,6 +23,7 @@ import {
 } from "./templates";
 import { WhatsAppMessageService } from "./message-service.server";
 import { processCentralReminderJob } from "./central-reminder-scheduler.server";
+import { tallyReminderSkipReasons, type ReminderSkipCategory } from "./central-reminder-skip-reason.ts";
 
 // tentativa 1 -> 1min, tentativa 2 -> 5min, tentativa 3 -> 15min, depois failed.
 const BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000];
@@ -170,8 +171,20 @@ async function processOneJob(
 
 export async function processNotificationJobs(
   limit = 20,
-): Promise<{ claimed: number; sent: number; failed: number; cancelled: number; held: number }> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  deps: { supabaseAdmin?: SupabaseAdmin } = {},
+): Promise<{
+  claimed: number;
+  sent: number;
+  failed: number;
+  cancelled: number;
+  held: number;
+  /** M4: só conta held/cancelled dos tipos de lembrete (24h/2h) — nunca telefone/nome, só a categoria da regra que bloqueou. */
+  reminderSkipReasons: Record<ReminderSkipCategory, number>;
+  /** M4: true quando esta execução reivindicou exatamente o limite — pode haver mais jobs esperando pra próxima. */
+  limitReached: boolean;
+}> {
+  const supabaseAdmin =
+    deps.supabaseAdmin ?? (await import("@/integrations/supabase/client.server")).supabaseAdmin;
 
   const { data: jobs, error } = await supabaseAdmin.rpc("claim_notification_jobs", {
     p_limit: limit,
@@ -182,6 +195,7 @@ export async function processNotificationJobs(
   let failed = 0;
   let cancelled = 0;
   let held = 0;
+  const skipEntries: Array<{ type: string; outcome: string; lastError: string | null }> = [];
 
   for (const job of (jobs ?? []) as ClaimedJob[]) {
     const outcome = await processOneJob(supabaseAdmin, job);
@@ -189,7 +203,24 @@ export async function processNotificationJobs(
     else if (outcome === "failed") failed++;
     else if (outcome === "held") held++;
     else cancelled++;
+
+    if (outcome === "held" || outcome === "cancelled") {
+      const { data: refreshed } = await supabaseAdmin
+        .from("notification_jobs")
+        .select("last_error")
+        .eq("id", job.id)
+        .maybeSingle();
+      skipEntries.push({ type: job.type, outcome, lastError: refreshed?.last_error ?? null });
+    }
   }
 
-  return { claimed: (jobs ?? []).length, sent, failed, cancelled, held };
+  return {
+    claimed: (jobs ?? []).length,
+    sent,
+    failed,
+    cancelled,
+    held,
+    reminderSkipReasons: tallyReminderSkipReasons(skipEntries),
+    limitReached: (jobs ?? []).length >= limit,
+  };
 }
