@@ -202,6 +202,10 @@ function makeInsertResult(inserted: Row[] | null, error: PgError | null) {
           if (error) return { data: null, error };
           return { data: inserted?.[0] ?? null, error: null };
         },
+        async maybeSingle() {
+          if (error) return { data: null, error };
+          return { data: inserted?.[0] ?? null, error: null };
+        },
       };
     },
     then(resolve: (v: { data: Row[] | null; error: PgError | null }) => unknown, reject?: (e: unknown) => unknown) {
