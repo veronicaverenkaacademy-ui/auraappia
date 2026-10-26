@@ -164,14 +164,22 @@ test("modo teste: telefone da lista SEM o 9º dígito ainda casa com o número C
   // 9) — tem que casar com recipientPhoneE164="+5547988887777" (do
   // cliente, com o 9).
   const r = decideReminderJobAction(
-    baseInput({ testMode: true, recipientPhoneE164: "+5547988887777", testPhones: ["554788887777"] }),
+    baseInput({
+      testMode: true,
+      recipientPhoneE164: "+5547988887777",
+      testPhones: ["554788887777"],
+    }),
   );
   assert.equal(r.action, "send");
 });
 
 test("modo teste: telefone da lista SEM +55/espaços/hífen ainda casa", () => {
   const r = decideReminderJobAction(
-    baseInput({ testMode: true, recipientPhoneE164: "+5547988887777", testPhones: ["(47) 98888-7777"] }),
+    baseInput({
+      testMode: true,
+      recipientPhoneE164: "+5547988887777",
+      testPhones: ["(47) 98888-7777"],
+    }),
   );
   assert.equal(r.action, "send");
 });

@@ -23,7 +23,10 @@ import {
 } from "./templates";
 import { WhatsAppMessageService } from "./message-service.server";
 import { processCentralReminderJob } from "./central-reminder-scheduler.server";
-import { tallyReminderSkipReasons, type ReminderSkipCategory } from "./central-reminder-skip-reason.ts";
+import {
+  tallyReminderSkipReasons,
+  type ReminderSkipCategory,
+} from "./central-reminder-skip-reason.ts";
 
 // tentativa 1 -> 1min, tentativa 2 -> 5min, tentativa 3 -> 15min, depois failed.
 const BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000];

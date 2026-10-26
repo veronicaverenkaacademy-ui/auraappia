@@ -26,7 +26,9 @@ const PATTERNS: ReadonlyArray<[RegExp, ReminderSkipCategory]> = [
   [/não está mais ativo|já passou/i, "status_inelegivel"],
 ];
 
-export function categorizeReminderSkipReason(lastError: string | null | undefined): ReminderSkipCategory | null {
+export function categorizeReminderSkipReason(
+  lastError: string | null | undefined,
+): ReminderSkipCategory | null {
   if (!lastError) return null;
   for (const [pattern, category] of PATTERNS) {
     if (pattern.test(lastError)) return category;

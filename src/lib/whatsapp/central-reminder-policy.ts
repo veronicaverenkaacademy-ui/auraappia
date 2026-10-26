@@ -14,7 +14,8 @@ import type { ReminderTemplateKey } from "./central-template-variables.ts";
 export type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled" | "no_show";
 export type MetaStatus = "NOT_SUBMITTED" | "PENDING" | "APPROVED" | "REJECTED";
 /** Resposta da cliente ao botão do WhatsApp (central-reply-decision.ts) — lida de novo aqui pra decidir se AINDA vale mandar o lembrete. */
-export type ClientConfirmationStatus = "pending" | "confirmed" | "declined" | "reschedule_requested";
+export type ClientConfirmationStatus =
+  "pending" | "confirmed" | "declined" | "reschedule_requested";
 
 export type ReminderPolicyInput = {
   templateKey: ReminderTemplateKey;

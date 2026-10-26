@@ -65,12 +65,17 @@ test("M2: agendamento confirmado, bem no futuro, gera os DOIS jobs (24h e 2h) nu
         notification_jobs: [],
       },
     });
-    const result = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    const result = await scanAndEnqueueCentralReminders({
+      supabaseAdmin: db as never,
+      now: () => NOW,
+    });
     assert.equal(result.enqueued, 2);
     assert.equal(jobsOfType(db, "appointment_reminder_24h").length, 1);
     assert.equal(jobsOfType(db, "appointment_reminder_2h").length, 1);
     const job24h = jobsOfType(db, "appointment_reminder_24h")[0];
-    const expected24h = new Date(NOW.getTime() + 24 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000).toISOString();
+    const expected24h = new Date(
+      NOW.getTime() + 24 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000,
+    ).toISOString();
     assert.equal(job24h.scheduled_for, expected24h);
     assert.equal(job24h.next_attempt_at, expected24h); // crítico: NÃO fica no default now() — senão seria claimável na hora
   });
@@ -124,7 +129,10 @@ test("M1/M2: agendamento PENDENTE (cliente não confirmou ainda) também é enfi
         notification_jobs: [],
       },
     });
-    const result = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    const result = await scanAndEnqueueCentralReminders({
+      supabaseAdmin: db as never,
+      now: () => NOW,
+    });
     assert.equal(result.enqueued, 2);
   });
 });
@@ -148,7 +156,10 @@ test("M1: agendamento que FALTOU (no_show) nunca é enfileirado", async () => {
         notification_jobs: [],
       },
     });
-    const result = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    const result = await scanAndEnqueueCentralReminders({
+      supabaseAdmin: db as never,
+      now: () => NOW,
+    });
     assert.equal(result.enqueued, 0);
   });
 });
@@ -172,7 +183,10 @@ test("M1: agendamento cancelado nunca é enfileirado", async () => {
         notification_jobs: [],
       },
     });
-    const result = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    const result = await scanAndEnqueueCentralReminders({
+      supabaseAdmin: db as never,
+      now: () => NOW,
+    });
     assert.equal(result.enqueued, 0);
   });
 });
@@ -197,7 +211,10 @@ test("M2: agendamento que JÁ teve o lembrete_24h enviado não gera um NOVO job 
         notification_jobs: [],
       },
     });
-    const result = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    const result = await scanAndEnqueueCentralReminders({
+      supabaseAdmin: db as never,
+      now: () => NOW,
+    });
     assert.equal(jobsOfType(db, "appointment_reminder_24h").length, 0);
     assert.equal(jobsOfType(db, "appointment_reminder_2h").length, 1);
     assert.equal(result.enqueued, 1);
@@ -227,7 +244,10 @@ test("M2: agendamento com MENOS de 12h de antecedência nunca gera o lembrete_24
         notification_jobs: [],
       },
     });
-    const result = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    const result = await scanAndEnqueueCentralReminders({
+      supabaseAdmin: db as never,
+      now: () => NOW,
+    });
     assert.equal(jobsOfType(db, "appointment_reminder_24h").length, 0);
     assert.equal(jobsOfType(db, "appointment_reminder_2h").length, 1);
     assert.equal(result.enqueued, 1);
@@ -255,7 +275,10 @@ test("M2: anti-lembrete-bobo — agendamento criado 3h antes do próprio atendim
         notification_jobs: [],
       },
     });
-    const result = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    const result = await scanAndEnqueueCentralReminders({
+      supabaseAdmin: db as never,
+      now: () => NOW,
+    });
     // 24h: vencimento = atendimento-24h = passado (antes até da criação) -> bobo, nunca cria.
     assert.equal(jobsOfType(db, "appointment_reminder_24h").length, 0);
     // 2h: vencimento = atendimento-2h = exatamente agora, mas falta só 2h pro
@@ -287,7 +310,10 @@ test("M2: anti-lembrete-bobo — criado 25h antes do atendimento (passa pouco do
         notification_jobs: [],
       },
     });
-    const result = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    const result = await scanAndEnqueueCentralReminders({
+      supabaseAdmin: db as never,
+      now: () => NOW,
+    });
     assert.equal(jobsOfType(db, "appointment_reminder_24h").length, 1);
     assert.ok(result.enqueued >= 1);
   });
@@ -317,7 +343,10 @@ test("M2: gatilho parado por 7h cobrindo a janela do 24h — job é criado mesmo
         notification_jobs: [],
       },
     });
-    const result = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    const result = await scanAndEnqueueCentralReminders({
+      supabaseAdmin: db as never,
+      now: () => NOW,
+    });
     assert.equal(jobsOfType(db, "appointment_reminder_24h").length, 1);
     assert.ok(result.enqueued >= 1);
   });
@@ -352,12 +381,18 @@ test("M2: remarcação — starts_at muda ANTES do envio: o job pendente é reca
     db.tables.appointments[0].starts_at = newStartsAt.toISOString();
     db.tables.appointments[0].updated_at = NOW.toISOString(); // trigger real do banco bumparia isto na remarcação
 
-    const result = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    const result = await scanAndEnqueueCentralReminders({
+      supabaseAdmin: db as never,
+      now: () => NOW,
+    });
 
     assert.equal(db.tables.notification_jobs.length, 2); // ainda só 2 linhas (24h+2h), nunca duplicou
     const recalculatedJob = jobsOfType(db, "appointment_reminder_24h")[0];
     assert.notEqual(recalculatedJob.scheduled_for, originalScheduledFor);
-    assert.equal(recalculatedJob.scheduled_for, new Date(newStartsAt.getTime() - 24 * 60 * 60 * 1000).toISOString());
+    assert.equal(
+      recalculatedJob.scheduled_for,
+      new Date(newStartsAt.getTime() - 24 * 60 * 60 * 1000).toISOString(),
+    );
     assert.equal(recalculatedJob.next_attempt_at, recalculatedJob.scheduled_for);
     assert.ok(result.recalculated >= 1);
   });
@@ -387,10 +422,15 @@ test("M2: remarcação PARA MUITO EM CIMA DA HORA — o job pendente vira cancel
     assert.equal(jobsOfType(db, "appointment_reminder_24h")[0].status, "pending");
 
     // Remarca pra dentro de 2h (muito em cima da hora pro lembrete de 24h).
-    db.tables.appointments[0].starts_at = new Date(NOW.getTime() + 2 * 60 * 60 * 1000).toISOString();
+    db.tables.appointments[0].starts_at = new Date(
+      NOW.getTime() + 2 * 60 * 60 * 1000,
+    ).toISOString();
     db.tables.appointments[0].updated_at = NOW.toISOString();
 
-    const result = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    const result = await scanAndEnqueueCentralReminders({
+      supabaseAdmin: db as never,
+      now: () => NOW,
+    });
     assert.equal(jobsOfType(db, "appointment_reminder_24h")[0].status, "cancelled");
     assert.ok(result.cancelledBobo >= 1);
   });
@@ -426,9 +466,13 @@ test("M2: job já 'sent' NÃO é recalculado automaticamente numa remarcação (
         ],
       },
     });
-    db.tables.appointments[0].reminder_24h_sent_at = new Date(NOW.getTime() - 60 * 60 * 1000).toISOString();
+    db.tables.appointments[0].reminder_24h_sent_at = new Date(
+      NOW.getTime() - 60 * 60 * 1000,
+    ).toISOString();
 
-    db.tables.appointments[0].starts_at = new Date(NOW.getTime() + 34 * 60 * 60 * 1000).toISOString();
+    db.tables.appointments[0].starts_at = new Date(
+      NOW.getTime() + 34 * 60 * 60 * 1000,
+    ).toISOString();
     db.tables.appointments[0].updated_at = NOW.toISOString();
 
     await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
@@ -455,11 +499,13 @@ test("M2: fila grande respeita MAX_REMINDER_CANDIDATES_PER_SCAN — nunca um la�
     }
     const db = new FakeSupabaseAdmin({ tables: { appointments, notification_jobs: [] } });
     // Reaproveita a mesma constante exportada pra provar que o teste acompanha o valor real do código.
-    const { MAX_REMINDER_CANDIDATES_PER_SCAN } = await import(
-      "../src/lib/whatsapp/central-reminder-scheduler.server.ts"
-    );
+    const { MAX_REMINDER_CANDIDATES_PER_SCAN } =
+      await import("../src/lib/whatsapp/central-reminder-scheduler.server.ts");
     assert.ok(MAX_REMINDER_CANDIDATES_PER_SCAN >= 20); // sanity: este teste não é o que prova o teto em si (20 < 500), só a mecânica do .limit()
-    const result = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    const result = await scanAndEnqueueCentralReminders({
+      supabaseAdmin: db as never,
+      now: () => NOW,
+    });
     assert.equal(result.enqueued, 40); // 20 agendamentos x 2 tipos — nenhum limite atingido aqui, só confirma que todos processam
   });
 });
@@ -485,16 +531,25 @@ test("M2: virada de ano — atendimento 01/01 00:30 gera lembrete_24h em 31/12 0
         notification_jobs: [],
       },
     });
-    const result = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => nowNewYear });
+    const result = await scanAndEnqueueCentralReminders({
+      supabaseAdmin: db as never,
+      now: () => nowNewYear,
+    });
     assert.equal(jobsOfType(db, "appointment_reminder_24h").length, 1);
-    assert.equal(jobsOfType(db, "appointment_reminder_24h")[0].scheduled_for, nowNewYear.toISOString());
+    assert.equal(
+      jobsOfType(db, "appointment_reminder_24h")[0].scheduled_for,
+      nowNewYear.toISOString(),
+    );
     assert.ok(result.enqueued >= 1);
   });
 });
 
 test("M2: chave desligada -> enqueued=0, recalculated=0, cancelledBobo=0, nenhuma consulta ao banco é feita", async () => {
   delete process.env.WHATSAPP_REMINDERS_ENABLED;
-  const result = await scanAndEnqueueCentralReminders({ supabaseAdmin: {} as never, now: () => NOW });
+  const result = await scanAndEnqueueCentralReminders({
+    supabaseAdmin: {} as never,
+    now: () => NOW,
+  });
   assert.deepEqual(result, { enqueued: 0, recalculated: 0, cancelledBobo: 0 });
 });
 
@@ -527,7 +582,9 @@ function baseJobTables(overrides: Partial<Record<string, Row[]>> = {}): Record<s
         meta_template_name: "lembrete_24h",
       },
     ],
-    company_profiles: [{ owner_id: "owner-1", display_name: "Salão X", timezone: "America/Sao_Paulo" }],
+    company_profiles: [
+      { owner_id: "owner-1", display_name: "Salão X", timezone: "America/Sao_Paulo" },
+    ],
     team_members: [{ id: "prof-1", full_name: "Profissional Ana" }],
     notification_jobs: [{ id: "job-1", status: "processing" }],
     ...overrides,
@@ -558,7 +615,9 @@ test("4: automação inativa -> held (hold_pending), job continua pendente pra t
 
 test("4: meta_status diferente de APPROVED -> held", async () => {
   const db = new FakeSupabaseAdmin({
-    tables: baseJobTables({ automations: [{ ...baseJobTables().automations[0], meta_status: "PENDING" }] }),
+    tables: baseJobTables({
+      automations: [{ ...baseJobTables().automations[0], meta_status: "PENDING" }],
+    }),
   });
   const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
   assert.equal(outcome, "held");
@@ -566,7 +625,9 @@ test("4: meta_status diferente de APPROVED -> held", async () => {
 
 test("4: meta_template_name vazio -> held", async () => {
   const db = new FakeSupabaseAdmin({
-    tables: baseJobTables({ automations: [{ ...baseJobTables().automations[0], meta_template_name: null }] }),
+    tables: baseJobTables({
+      automations: [{ ...baseJobTables().automations[0], meta_template_name: null }],
+    }),
   });
   const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
   assert.equal(outcome, "held");
@@ -575,7 +636,9 @@ test("4: meta_template_name vazio -> held", async () => {
 test("M2: cliente já confirmou presença pelo WhatsApp (client_confirmation_status='confirmed') -> cancelled, nunca chega a mandar o lembrete de novo", async () => {
   const db = new FakeSupabaseAdmin({
     tables: baseJobTables({
-      appointments: [{ ...baseJobTables().appointments[0], client_confirmation_status: "confirmed" }],
+      appointments: [
+        { ...baseJobTables().appointments[0], client_confirmation_status: "confirmed" },
+      ],
     }),
   });
   const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
@@ -601,7 +664,9 @@ test("4: telefone AUSENTE (null) -> cancelled", async () => {
 
 test("4: agendamento cancelado -> cancelled", async () => {
   const db = new FakeSupabaseAdmin({
-    tables: baseJobTables({ appointments: [{ ...baseJobTables().appointments[0], status: "cancelled" }] }),
+    tables: baseJobTables({
+      appointments: [{ ...baseJobTables().appointments[0], status: "cancelled" }],
+    }),
   });
   const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
   assert.equal(outcome, "cancelled");
@@ -609,7 +674,9 @@ test("4: agendamento cancelado -> cancelled", async () => {
 
 test("M1: agendamento ainda PENDENTE (cliente não confirmou) é processado normalmente — não cancela por causa do status", async () => {
   const db = new FakeSupabaseAdmin({
-    tables: baseJobTables({ appointments: [{ ...baseJobTables().appointments[0], status: "pending" }] }),
+    tables: baseJobTables({
+      appointments: [{ ...baseJobTables().appointments[0], status: "pending" }],
+    }),
   });
   const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
   assert.notEqual(outcome, "cancelled");
@@ -646,7 +713,9 @@ test("M1: troca de status pending -> confirmed ENTRE duas varreduras não duplic
 
 test("4: agendamento concluído -> cancelled", async () => {
   const db = new FakeSupabaseAdmin({
-    tables: baseJobTables({ appointments: [{ ...baseJobTables().appointments[0], status: "completed" }] }),
+    tables: baseJobTables({
+      appointments: [{ ...baseJobTables().appointments[0], status: "completed" }],
+    }),
   });
   const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
   assert.equal(outcome, "cancelled");
@@ -657,7 +726,12 @@ test("4: horário de silêncio exatamente às 21:00 local -> defer/held, não ca
   const nowAt21 = new Date("2026-11-12T00:00:00.000Z");
   const db = new FakeSupabaseAdmin({
     tables: baseJobTables({
-      appointments: [{ ...baseJobTables().appointments[0], starts_at: new Date(nowAt21.getTime() + 24 * 60 * 60 * 1000).toISOString() }],
+      appointments: [
+        {
+          ...baseJobTables().appointments[0],
+          starts_at: new Date(nowAt21.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+        },
+      ],
     }),
   });
   const outcome = await processCentralReminderJob(db as never, job(), () => nowAt21);
@@ -668,7 +742,12 @@ test("4: 20:59 local (1 minuto antes do silêncio) ainda está FORA do silêncio
   const nowAt2059 = new Date("2026-11-11T23:59:00.000Z"); // 20:59 em São Paulo
   const db = new FakeSupabaseAdmin({
     tables: baseJobTables({
-      appointments: [{ ...baseJobTables().appointments[0], starts_at: new Date(nowAt2059.getTime() + 24 * 60 * 60 * 1000).toISOString() }],
+      appointments: [
+        {
+          ...baseJobTables().appointments[0],
+          starts_at: new Date(nowAt2059.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+        },
+      ],
     }),
   });
   const outcome = await processCentralReminderJob(db as never, job(), () => nowAt2059);
@@ -695,7 +774,13 @@ test("4/7: freio de emergência (incidente global aberto) interrompe o envio -> 
   const db = new FakeSupabaseAdmin({
     tables: baseJobTables({
       whatsapp_central_incidents: [
-        { id: "inc-1", scope: "global", template_key: null, reason: "token inválido", resolved_at: null },
+        {
+          id: "inc-1",
+          scope: "global",
+          template_key: null,
+          reason: "token inválido",
+          resolved_at: null,
+        },
       ],
     }),
   });
@@ -711,7 +796,13 @@ test("4/7: freio de emergência por TEMPLATE (não global) só afeta o template_
   const db = new FakeSupabaseAdmin({
     tables: baseJobTables({
       whatsapp_central_incidents: [
-        { id: "inc-1", scope: "template", template_key: "lembrete_24h", reason: "template pausado", resolved_at: null },
+        {
+          id: "inc-1",
+          scope: "template",
+          template_key: "lembrete_24h",
+          reason: "template pausado",
+          resolved_at: null,
+        },
       ],
     }),
   });

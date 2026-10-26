@@ -138,9 +138,12 @@ export async function scanAndEnqueueCentralReminders(
     if (error) throw new Error(error.message);
 
     for (const appt of due ?? []) {
-      const targetSendAtIso = new Date(new Date(appt.starts_at).getTime() - kind.offsetMs).toISOString();
+      const targetSendAtIso = new Date(
+        new Date(appt.starts_at).getTime() - kind.offsetMs,
+      ).toISOString();
       const referenceIso = (appt.updated_at ?? appt.created_at) as string | null;
-      const isBobo = !!referenceIso && new Date(targetSendAtIso).getTime() <= new Date(referenceIso).getTime();
+      const isBobo =
+        !!referenceIso && new Date(targetSendAtIso).getTime() <= new Date(referenceIso).getTime();
       // Mesmo corte de MAX_LATE usado em decideReminderJobAction, aplicado
       // já na varredura: nunca vale criar (ou recalcular pra) um horário de
       // disparo que já nasceria tarde demais — evita um vaivém inútil de
@@ -242,7 +245,9 @@ export async function processCentralReminderJob(
   const [{ data: appt }, { data: client }, { data: automation }] = await Promise.all([
     supabaseAdmin
       .from("appointments")
-      .select("status, starts_at, service_name, professional_id, owner_id, client_confirmation_status")
+      .select(
+        "status, starts_at, service_name, professional_id, owner_id, client_confirmation_status",
+      )
       .eq("id", job.appointment_id)
       .maybeSingle(),
     supabaseAdmin.from("clients").select("full_name, phone").eq("id", job.client_id).maybeSingle(),
@@ -288,7 +293,8 @@ export async function processCentralReminderJob(
     now: now(),
     appointmentStartsAt: new Date(appt.starts_at),
     appointmentStatus: appt.status as AppointmentStatus,
-    clientConfirmationStatus: (appt.client_confirmation_status as ClientConfirmationStatus) ?? "pending",
+    clientConfirmationStatus:
+      (appt.client_confirmation_status as ClientConfirmationStatus) ?? "pending",
     timezone: company?.timezone || "America/Sao_Paulo",
     automationActive: automation?.active ?? false,
     automationMetaStatus: (automation?.meta_status as MetaStatus) ?? "NOT_SUBMITTED",
