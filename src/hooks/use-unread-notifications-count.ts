@@ -9,6 +9,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getUnreadNotificationsCount } from "@/lib/notifications.functions";
+import { categorizeNotificationsError } from "@/lib/notifications-error-category";
 import { shouldShowUnreadDot } from "./notification-dot-rule";
 
 export const UNREAD_NOTIFICATIONS_QUERY_KEY = ["app-notifications-unread-count"];
@@ -21,7 +22,8 @@ export function useUnreadNotificationsCount() {
   });
 
   if (isError) {
-    console.error("[notifications] Falha ao buscar contagem de não lidos", error);
+    const categoria = categorizeNotificationsError(error);
+    console.error(`[notifications:${categoria}] Falha ao buscar contagem de não lidos`, error);
   }
 
   const count = data ?? 0;
