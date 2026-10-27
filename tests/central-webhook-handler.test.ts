@@ -8,11 +8,17 @@ import type { CentralInboundEvent } from "../src/lib/whatsapp/central-webhook-pa
 import { FakeSupabaseAdmin, createCapturingLogger, type Row } from "./helpers/fake-supabase.ts";
 import { applyWhatsappCentralReplyFake } from "./helpers/fake-apply-reply-rpc.ts";
 
-function run(db: FakeSupabaseAdmin, events: CentralInboundEvent[], logger = createCapturingLogger().logger) {
+function run(
+  db: FakeSupabaseAdmin,
+  events: CentralInboundEvent[],
+  logger = createCapturingLogger().logger,
+) {
   return handleCentralWebhookEvents(events, { supabaseAdmin: db as never, now: () => NOW, logger });
 }
 
-function textEvent(overrides: Partial<Extract<CentralInboundEvent, { kind: "text" }>> = {}): CentralInboundEvent {
+function textEvent(
+  overrides: Partial<Extract<CentralInboundEvent, { kind: "text" }>> = {},
+): CentralInboundEvent {
   return {
     kind: "text",
     phoneNumberId: CENTRAL_PNID,
@@ -25,7 +31,9 @@ function textEvent(overrides: Partial<Extract<CentralInboundEvent, { kind: "text
   };
 }
 
-function otherEvent(overrides: Partial<Extract<CentralInboundEvent, { kind: "other" }>> = {}): CentralInboundEvent {
+function otherEvent(
+  overrides: Partial<Extract<CentralInboundEvent, { kind: "other" }>> = {},
+): CentralInboundEvent {
   return {
     kind: "other",
     phoneNumberId: CENTRAL_PNID,
@@ -38,7 +46,9 @@ function otherEvent(overrides: Partial<Extract<CentralInboundEvent, { kind: "oth
   };
 }
 
-function statusEvent(overrides: Partial<Extract<CentralInboundEvent, { kind: "status" }>> = {}): CentralInboundEvent {
+function statusEvent(
+  overrides: Partial<Extract<CentralInboundEvent, { kind: "status" }>> = {},
+): CentralInboundEvent {
   return {
     kind: "status",
     phoneNumberId: CENTRAL_PNID,
@@ -102,7 +112,8 @@ function makeDb(overrides: Partial<Record<string, Row[]>> = {}) {
       whatsapp_central_orphan_messages: [["provider_message_id"]],
     },
     rpcHandlers: {
-      apply_whatsapp_central_reply: (params, fakeDb) => applyWhatsappCentralReplyFake(params, fakeDb, NOW),
+      apply_whatsapp_central_reply: (params, fakeDb) =>
+        applyWhatsappCentralReplyFake(params, fakeDb, NOW),
     },
   });
 }
@@ -112,7 +123,9 @@ process.env.META_WHATSAPP_CENTRAL_PHONE_NUMBER_ID = CENTRAL_PNID;
 
 const NOW = new Date("2026-11-11T12:00:00.000Z");
 
-function buttonEvent(overrides: Partial<Extract<CentralInboundEvent, { kind: "button" }>> = {}): CentralInboundEvent {
+function buttonEvent(
+  overrides: Partial<Extract<CentralInboundEvent, { kind: "button" }>> = {},
+): CentralInboundEvent {
   return {
     kind: "button",
     phoneNumberId: CENTRAL_PNID,
@@ -120,7 +133,7 @@ function buttonEvent(overrides: Partial<Extract<CentralInboundEvent, { kind: "bu
     fromPhone: "5547999990001",
     contextId: "wamid.OUTBOUND_001",
     buttonPayload: "v1|c|thread-1",
-    buttonText: "Confirmar presença",
+    buttonText: "Confirmar",
     occurredAt: NOW.toISOString(),
     ...overrides,
   };
@@ -168,7 +181,8 @@ function seedConfirmScenario() {
       whatsapp_messages: [["provider", "provider_message_id"]],
     },
     rpcHandlers: {
-      apply_whatsapp_central_reply: (params, fakeDb) => applyWhatsappCentralReplyFake(params, fakeDb, NOW),
+      apply_whatsapp_central_reply: (params, fakeDb) =>
+        applyWhatsappCentralReplyFake(params, fakeDb, NOW),
     },
   });
   return db;
@@ -185,21 +199,32 @@ test("DEFEITO CORRIGIDO: se a RPC falhar depois do registro de idempotência, o 
   } as never;
   const { logger } = createCapturingLogger();
 
-  await assert.rejects(
-    () => handleCentralWebhookEvents([buttonEvent()], { supabaseAdmin: db as never, now: () => NOW, logger }),
+  await assert.rejects(() =>
+    handleCentralWebhookEvents([buttonEvent()], {
+      supabaseAdmin: db as never,
+      now: () => NOW,
+      logger,
+    }),
   );
 
   // A mensagem inbound (registro de idempotência) NÃO pode ter sobrevivido
   // à falha — se tivesse sobrevivido, a reentrega da Meta deste mesmo
   // evento pararia em "já processado" sem nunca tentar de novo.
-  const stillThere = db.tables.whatsapp_messages.some((m) => m.provider_message_id === "wamid.BTN_001");
-  assert.equal(stillThere, false, "a mensagem inbound deveria ter sido removida após a falha da RPC");
+  const stillThere = db.tables.whatsapp_messages.some(
+    (m) => m.provider_message_id === "wamid.BTN_001",
+  );
+  assert.equal(
+    stillThere,
+    false,
+    "a mensagem inbound deveria ter sido removida após a falha da RPC",
+  );
 });
 
 test("depois da compensação, uma reentrega do MESMO evento tenta de novo e aplica o efeito normalmente", async () => {
   const db = seedConfirmScenario();
   let callCount = 0;
-  const realRpc = (params: Record<string, unknown>) => applyWhatsappCentralReplyFake(params, db, NOW);
+  const realRpc = (params: Record<string, unknown>) =>
+    applyWhatsappCentralReplyFake(params, db, NOW);
   db["rpcHandlers" as never] = {
     apply_whatsapp_central_reply: (params: Record<string, unknown>) => {
       callCount++;
@@ -211,10 +236,18 @@ test("depois da compensação, uma reentrega do MESMO evento tenta de novo e apl
 
   // 1ª tentativa: falha, compensação remove a mensagem inbound.
   await assert.rejects(() =>
-    handleCentralWebhookEvents([buttonEvent()], { supabaseAdmin: db as never, now: () => NOW, logger }),
+    handleCentralWebhookEvents([buttonEvent()], {
+      supabaseAdmin: db as never,
+      now: () => NOW,
+      logger,
+    }),
   );
   // 2ª tentativa (reentrega real da Meta, mesmo messageId): deve funcionar.
-  await handleCentralWebhookEvents([buttonEvent()], { supabaseAdmin: db as never, now: () => NOW, logger });
+  await handleCentralWebhookEvents([buttonEvent()], {
+    supabaseAdmin: db as never,
+    now: () => NOW,
+    logger,
+  });
 
   const appt = db.tables.appointments.find((a) => a.id === "appt-1")!;
   assert.equal(appt.client_confirmation_status, "confirmed");
@@ -409,8 +442,17 @@ test("3e: a mesma cliente (mesmo telefone) em DOIS salões — cada contextId re
     ],
   });
   await run(db, [
-    buttonEvent({ messageId: "wamid.BTN_SALAO1", contextId: "wamid.OUTBOUND_001", buttonPayload: "v1|c|thread-1" }),
-    buttonEvent({ messageId: "wamid.BTN_SALAO2", fromPhone: "5547999990001", contextId: "wamid.OUTBOUND_002", buttonPayload: "v1|x|thread-2" }),
+    buttonEvent({
+      messageId: "wamid.BTN_SALAO1",
+      contextId: "wamid.OUTBOUND_001",
+      buttonPayload: "v1|c|thread-1",
+    }),
+    buttonEvent({
+      messageId: "wamid.BTN_SALAO2",
+      fromPhone: "5547999990001",
+      contextId: "wamid.OUTBOUND_002",
+      buttonPayload: "v1|x|thread-2",
+    }),
   ]);
   const appt1 = db.tables.appointments.find((a) => a.id === "appt-1")!;
   const appt2 = db.tables.appointments.find((a) => a.id === "appt-2")!;
@@ -422,8 +464,12 @@ test("3e: a mesma cliente (mesmo telefone) em DOIS salões — cada contextId re
 
 test("3f: texto COM contexto é associado direto ao agendamento/cliente da mensagem original", async () => {
   const db = makeDb();
-  await run(db, [textEvent({ contextId: "wamid.OUTBOUND_001", text: "Posso chegar 10 min depois?" })]);
-  const inbound = db.tables.whatsapp_messages.find((m) => m.provider_message_id === "wamid.TXT_001")!;
+  await run(db, [
+    textEvent({ contextId: "wamid.OUTBOUND_001", text: "Posso chegar 10 min depois?" }),
+  ]);
+  const inbound = db.tables.whatsapp_messages.find(
+    (m) => m.provider_message_id === "wamid.TXT_001",
+  )!;
   assert.equal(inbound.appointment_id, "appt-1");
   assert.equal(db.tables.app_notifications[0].kind, "unanswered_message");
 });
@@ -431,7 +477,9 @@ test("3f: texto COM contexto é associado direto ao agendamento/cliente da mensa
 test("3f: texto SEM contexto com UM candidato dentro da janela é resolvido pelo telefone", async () => {
   const db = makeDb();
   await run(db, [textEvent({ contextId: null })]);
-  const inbound = db.tables.whatsapp_messages.find((m) => m.provider_message_id === "wamid.TXT_001")!;
+  const inbound = db.tables.whatsapp_messages.find(
+    (m) => m.provider_message_id === "wamid.TXT_001",
+  )!;
   assert.equal(inbound.appointment_id, "appt-1");
 });
 
@@ -459,18 +507,24 @@ test("3f: texto SEM contexto com MAIS de um candidato vira mensagem órfã — n
   db.tables.whatsapp_messages[1].created_at = "2026-11-10T00:00:00.000Z";
 
   await run(db, [textEvent({ contextId: null })]);
-  const orphan = db.tables.whatsapp_central_orphan_messages.find((o) => o.provider_message_id === "wamid.TXT_001");
+  const orphan = db.tables.whatsapp_central_orphan_messages.find(
+    (o) => o.provider_message_id === "wamid.TXT_001",
+  );
   assert.ok(orphan, "deveria ter gravado mensagem órfã");
   assert.equal(orphan!.candidate_count, 2);
   assert.equal(db.tables.app_notifications.length, 0); // ninguém notificado — ambíguo
-  const inbound = db.tables.whatsapp_messages.find((m) => m.provider_message_id === "wamid.TXT_001");
+  const inbound = db.tables.whatsapp_messages.find(
+    (m) => m.provider_message_id === "wamid.TXT_001",
+  );
   assert.equal(inbound, undefined); // não inseriu como mensagem normal
 });
 
 test("3f: texto SEM contexto e SEM nenhum candidato também vira mensagem órfã", async () => {
   const db = makeDb();
   await run(db, [textEvent({ contextId: null, fromPhone: "5547900000000" })]); // telefone desconhecido
-  const orphan = db.tables.whatsapp_central_orphan_messages.find((o) => o.provider_message_id === "wamid.TXT_001");
+  const orphan = db.tables.whatsapp_central_orphan_messages.find(
+    (o) => o.provider_message_id === "wamid.TXT_001",
+  );
   assert.ok(orphan);
   assert.equal(orphan!.candidate_count, 0);
 });
@@ -478,7 +532,9 @@ test("3f: texto SEM contexto e SEM nenhum candidato também vira mensagem órfã
 test("3f: mídia (áudio) com contexto é gravada com texto padrão '[audio]', sem tentar baixar mídia", async () => {
   const db = makeDb();
   await run(db, [otherEvent({ contextId: "wamid.OUTBOUND_001", mediaType: "audio" })]);
-  const inbound = db.tables.whatsapp_messages.find((m) => m.provider_message_id === "wamid.MEDIA_001")!;
+  const inbound = db.tables.whatsapp_messages.find(
+    (m) => m.provider_message_id === "wamid.MEDIA_001",
+  )!;
   assert.equal(inbound.content, "[audio]");
   assert.equal(inbound.message_type, "media");
 });
@@ -501,7 +557,11 @@ test("3g: 'não vou parar de ir aí' NÃO dispara o aviso de opt-out (gera o avi
 test("3g: PARAR não lança excecão nem impede o processamento de outros eventos (nunca bloqueia envio — não existe nenhum código de bloqueio a jusante)", async () => {
   const db = makeDb();
   await run(db, [
-    textEvent({ messageId: "wamid.STOP1", contextId: "wamid.OUTBOUND_001", text: "quero parar de receber" }),
+    textEvent({
+      messageId: "wamid.STOP1",
+      contextId: "wamid.OUTBOUND_001",
+      text: "quero parar de receber",
+    }),
     textEvent({ messageId: "wamid.OUTRO", contextId: "wamid.OUTBOUND_001", text: "obrigada" }),
   ]);
   assert.equal(db.tables.whatsapp_messages.filter((m) => m.direction === "inbound").length, 2);
@@ -513,7 +573,10 @@ test("3h: status chega ANTES de sabermos o wamid (mensagem ainda não gravada) -
   const db = makeDb({ whatsapp_messages: [] }); // nenhuma mensagem outbound conhecida ainda
   await run(db, [statusEvent({ wamid: "wamid.DESCONHECIDO", status: "sent" })]);
   assert.equal(db.tables.whatsapp_status_reconciliation.length, 1);
-  assert.equal(db.tables.whatsapp_status_reconciliation[0].provider_message_id, "wamid.DESCONHECIDO");
+  assert.equal(
+    db.tables.whatsapp_status_reconciliation[0].provider_message_id,
+    "wamid.DESCONHECIDO",
+  );
 });
 
 test("3h: sent -> delivered -> read na ordem certa, cada um sobrescrevendo o anterior", async () => {
@@ -521,7 +584,9 @@ test("3h: sent -> delivered -> read na ordem certa, cada um sobrescrevendo o ant
   await run(db, [statusEvent({ status: "sent" })]);
   await run(db, [statusEvent({ status: "delivered" })]);
   await run(db, [statusEvent({ status: "read" })]);
-  const msg = db.tables.whatsapp_messages.find((m) => m.provider_message_id === "wamid.OUTBOUND_001")!;
+  const msg = db.tables.whatsapp_messages.find(
+    (m) => m.provider_message_id === "wamid.OUTBOUND_001",
+  )!;
   assert.equal(msg.status, "read");
 });
 
@@ -529,7 +594,9 @@ test("3h: status FORA de ordem nunca retrocede (read já gravado, chega 'sent' d
   const db = makeDb();
   db.tables.whatsapp_messages[0].status = "read";
   await run(db, [statusEvent({ status: "sent" })]);
-  const msg = db.tables.whatsapp_messages.find((m) => m.provider_message_id === "wamid.OUTBOUND_001")!;
+  const msg = db.tables.whatsapp_messages.find(
+    (m) => m.provider_message_id === "wamid.OUTBOUND_001",
+  )!;
   assert.equal(msg.status, "read"); // não retrocedeu
 });
 
@@ -545,7 +612,10 @@ test("3h: status 'failed' avisa a profissional UMA vez, mesmo que a Meta reenvie
 test("3i: lembrete desatualizado (horário mudou depois do envio) -> stale_reminder, nenhuma mutação no agendamento", async () => {
   const db = makeDb({
     whatsapp_central_threads: [
-      { ...baseTables().whatsapp_central_threads[0], appointment_starts_at_snapshot: "2026-11-12T09:00:00.000Z" },
+      {
+        ...baseTables().whatsapp_central_threads[0],
+        appointment_starts_at_snapshot: "2026-11-12T09:00:00.000Z",
+      },
     ],
   });
   await run(db, [buttonEvent()]);
@@ -586,8 +656,13 @@ test("3i: horário do agendamento já passou -> late_response (toque tardio)", a
 
 test("3c: evento de OUTRO número da Meta (não o central) é ignorado pelo handler — nenhuma mutação, nenhuma tabela tocada", async () => {
   const db = makeDb();
-  await run(db, [textEvent({ phoneNumberId: "SALAO_PNID_OUTRO", contextId: "wamid.OUTBOUND_001" })]);
-  assert.equal(db.tables.whatsapp_messages.some((m) => m.direction === "inbound"), false);
+  await run(db, [
+    textEvent({ phoneNumberId: "SALAO_PNID_OUTRO", contextId: "wamid.OUTBOUND_001" }),
+  ]);
+  assert.equal(
+    db.tables.whatsapp_messages.some((m) => m.direction === "inbound"),
+    false,
+  );
   assert.equal(db.tables.app_notifications.length, 0);
 });
 

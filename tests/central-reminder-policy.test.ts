@@ -200,9 +200,12 @@ test("M2: 02:00 local NÃO adia mais (silêncio desligado) — envia normalmente
   assert.equal(r.action, "send");
 });
 
-test("M2: 23:00 local (cruzando meia-noite) NÃO adia mais — envia normalmente", () => {
-  const now = new Date("2026-11-11T02:00:00.000Z"); // 23:00 local (dia anterior)
-  const appointmentStartsAt = new Date("2026-11-12T15:00:00.000Z");
+test("M2: 23:00 local NÃO adia mais por silêncio — envia normalmente (mesmo dia civil local, não cruza meia-noite)", () => {
+  // 20:00 local (dia 10) -> atendimento 22:00 local (mesmo dia 10, 2h
+  // depois) — evita acionar a guarda de data (M2.5) de propósito; o
+  // cruzamento de meia-noite tem teste dedicado logo abaixo.
+  const now = new Date("2026-11-10T23:00:00.000Z"); // 20:00 local
+  const appointmentStartsAt = new Date("2026-11-11T01:00:00.000Z"); // 22:00 local, mesmo dia civil
   const r = decideReminderJobAction(
     baseInput({ templateKey: "lembrete_2h", now, appointmentStartsAt }),
   );
@@ -223,5 +226,42 @@ test("M2: atendimento às 22:00 local — lembrete de 24h sai às 22:00 local do
   const appointmentStartsAt = new Date("2026-11-12T01:00:00.000Z"); // 22:00 local, 11/11
   const now = new Date("2026-11-11T01:00:00.000Z"); // exatamente 24h antes = 22:00 local, 10/11
   const r = decideReminderJobAction(baseInput({ now, appointmentStartsAt }));
+  assert.equal(r.action, "send");
+});
+
+// ===== M2.5: guarda de data (amanhã/hoje) =====
+
+test("M2.5: lembrete_24h atrasado que cruzou a meia-noite (atendimento já virou 'hoje', não 'amanhã') NÃO envia — data_nao_confere", () => {
+  // Gatilho só roda às 00:30 local do dia 11 — já é o MESMO dia civil do
+  // atendimento (20:00 do dia 11), não mais a véspera. Atendimento bem mais
+  // tarde no mesmo dia garante folga > 12h (passa no corte de atraso),
+  // isolando só a guarda de data.
+  const now = new Date("2026-11-11T03:30:00.000Z"); // 00:30 local, 11/11 (já virou o dia do atendimento)
+  const appointmentStartsAt = new Date("2026-11-11T23:00:00.000Z"); // 20:00 local, 11/11 — faltam ~19h30 (> 12h, passa no corte de atraso)
+  const r = decideReminderJobAction(
+    baseInput({ templateKey: "lembrete_24h", now, appointmentStartsAt }),
+  );
+  assert.equal(r.action, "skip_terminal");
+  if (r.action === "skip_terminal") assert.match(r.reason, /data não confere/i);
+});
+
+test("M2.5: lembrete_2h cujo atendimento já é 'amanhã' (não 'hoje') NÃO envia — data_nao_confere", () => {
+  const now = new Date("2026-11-10T23:00:00.000Z"); // 20:00 local, 10/11
+  const appointmentStartsAt = new Date("2026-11-12T01:50:00.000Z"); // 22:50 local, 11/11 — 2h50 depois, mas já é o dia seguinte
+  const r = decideReminderJobAction(
+    baseInput({ templateKey: "lembrete_2h", now, appointmentStartsAt }),
+  );
+  assert.equal(r.action, "skip_terminal");
+  if (r.action === "skip_terminal") assert.match(r.reason, /data não confere/i);
+});
+
+test("M2.5: lembrete_24h normal (atendimento exatamente amanhã local) continua enviando — guarda não quebra o caminho feliz", () => {
+  const r = decideReminderJobAction(baseInput({ templateKey: "lembrete_24h" })); // BASE já é exatamente 24h depois, mesmo horário local
+  assert.equal(r.action, "send");
+});
+
+test("M2.5: lembrete_2h normal (atendimento ainda hoje local) continua enviando — guarda não quebra o caminho feliz", () => {
+  const now = new Date("2026-11-11T13:00:00.000Z"); // faltam 2h pro agendamento das 15:00Z (BASE), mesmo dia civil local
+  const r = decideReminderJobAction(baseInput({ templateKey: "lembrete_2h", now }));
   assert.equal(r.action, "send");
 });
