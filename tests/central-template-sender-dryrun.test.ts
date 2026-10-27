@@ -29,7 +29,7 @@ test("dryRun de lembrete_24h: corpo exato com 3 botões quick_reply, nome mascar
   };
   assert.equal(body.messaging_product, "whatsapp");
   assert.equal(body.type, "template");
-  assert.equal(body.template.name, "lembrete_24h");
+  assert.equal(body.template.name, "lembrete_24hrs_antes");
   assert.equal(body.template.language.code, "pt_BR");
   assert.equal(body.template.components.length, 4); // 1 body + 3 botões
 
@@ -67,6 +67,6 @@ test("dryRun de lembrete_2h: SEM nenhum botão (só o template 24h tem botões, 
   assert.equal(result.kind, "dry_run");
   if (result.kind !== "dry_run") return;
   const body = result.bodyPreview as { template: { name: string; components: unknown[] } };
-  assert.equal(body.template.name, "lembrete_2h");
+  assert.equal(body.template.name, "lembrete_2hrs_antes");
   assert.equal(body.template.components.length, 1); // só o body, zero botões
 });

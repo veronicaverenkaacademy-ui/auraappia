@@ -176,12 +176,19 @@ export async function sendCentralTemplate(
       templateName: template.metaTemplateName,
       languageCode: template.language,
       bodyVariables: maskedVars,
+      // DEFEITO CORRIGIDO (27/10/2026): a ordem dos botões era fixa
+      // (confirm, reschedule, cancel), mas a ordem REAL aprovada na Meta é
+      // (Confirmar, Cancelar, Reagendar) — vinha colocando o payload de
+      // "cancel" no índice 2 (rótulo real "Reagendar") e o de "reschedule"
+      // no índice 1 (rótulo real "Cancelar"): tocar em "Cancelar" de
+      // verdade disparava um REAGENDAMENTO. Agora lê de
+      // template.buttonActions (fonte única, system-templates.ts),
+      // sempre na mesma ordem dos rótulos reais.
       buttons: hasButtons
-        ? [
-            { action: "confirm", payload: "v1|c|<dry-run>" },
-            { action: "reschedule", payload: "v1|r|<dry-run>" },
-            { action: "cancel", payload: "v1|x|<dry-run>" },
-          ]
+        ? template.buttonActions.map((action) => {
+            const built = buildButtonPayload(action, "<dry-run>");
+            return { action, payload: built.ok ? built.payload : `v1|?|<dry-run>` };
+          })
         : undefined,
     });
     return { kind: "dry_run", bodyPreview };
@@ -253,10 +260,23 @@ export async function sendCentralTemplate(
     threadId = threadRow.id as string;
   }
 
+  // DEFEITO CORRIGIDO (27/10/2026): ver comentário equivalente no bloco
+  // dryRun acima — ordem real da Meta é (Confirmar, Cancelar, Reagendar),
+  // lida de template.buttonActions (fonte única), nunca mais hardcoded
+  // aqui. O fallback também não usa mais action[0] como código (c/c
+  // colidiam entre "confirm" e "cancel" — o código real é c/r/x, só
+  // buildButtonPayload sabe disso).
   const buttons = threadId
-    ? (["confirm", "reschedule", "cancel"] as const).map((action) => {
+    ? template.buttonActions.map((action) => {
         const built = buildButtonPayload(action, threadId!);
-        return { action, payload: built.ok ? built.payload : `v1|${action[0]}|${threadId}` };
+        // built.ok só falha se o payload passar de 128 chars (threadId é um
+        // uuid curto — nunca acontece na prática); o fallback nunca usa
+        // action[0] como código (c/c colidiam entre "confirm" e "cancel" —
+        // o código real é c/r/x, só buildButtonPayload sabe disso), só
+        // marca o botão como inválido de um jeito nunca confundível com
+        // outro — nunca enviado de verdade (hasButtons/threadId garantem
+        // isso é só defensivo).
+        return { action, payload: built.ok ? built.payload : "v1|invalido|erro" };
       })
     : undefined;
 

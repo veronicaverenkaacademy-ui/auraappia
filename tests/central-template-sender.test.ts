@@ -139,7 +139,7 @@ test("corpo exato: nome do template, idioma pt_BR, variáveis na ordem, 3 botõe
   assert.equal(body.messaging_product, "whatsapp");
   assert.equal(body.to, "5547999990001");
   assert.equal(body.type, "template");
-  assert.equal(body.template.name, "lembrete_24h");
+  assert.equal(body.template.name, "lembrete_24hrs_antes");
   assert.equal(body.template.language.code, "pt_BR");
 
   const bodyComponent = body.template.components[0] as {
@@ -171,6 +171,19 @@ test("corpo exato: nome do template, idioma pt_BR, variáveis na ordem, 3 botõe
   assert.equal(db.tables.whatsapp_central_threads.length, 1);
   const threadId = db.tables.whatsapp_central_threads[0].id;
   buttons.forEach((b) => assert.ok(b.parameters[0].payload.includes(String(threadId))));
+});
+
+test("DEFEITO CORRIGIDO: ordem real dos botões é índice 0=Confirmar(confirm/'c'), 1=Cancelar(cancel/'x'), 2=Reagendar(reschedule/'r') — não mais confirm,reschedule,cancel", async () => {
+  const calls = stubFetch(() => jsonResponse(200, { messages: [{ id: "wamid.X" }] }));
+  const db = makeDb();
+  await sendCentralTemplate({ ...baseInput(), supabaseAdmin: db as never });
+
+  const body = JSON.parse(String(calls[0].init.body)) as {
+    template: { components: Array<{ index?: string; parameters: Array<{ payload?: string }> }> };
+  };
+  const buttons = body.template.components.slice(1);
+  const codes = buttons.map((b) => b.parameters[0].payload!.split("|")[1]);
+  assert.deepEqual(codes, ["c", "x", "r"], "índice 0 deve ser 'c' (confirm), 1 'x' (cancel), 2 'r' (reschedule)");
 });
 
 test("lembrete_2h: corpo sem nenhum botão, nenhuma thread aberta", async () => {
