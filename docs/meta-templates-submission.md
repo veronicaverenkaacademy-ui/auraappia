@@ -8,10 +8,28 @@ documento era o material de SUBMISSÃO (antes de qualquer aprovação),
 usando a chave interna (`lembrete_24h` etc.) também como nome do
 template na Meta — nunca foi conferido contra o que a Meta de fato
 aprovou. Isso causou o erro 132001 ("Template inexistente") em
-produção. Os nomes/textos/botões abaixo foram corrigidos pros REAIS,
-tirados dos prints do Gerenciador do WhatsApp da conta "AURA agendaia
-WABA" (status: Ativo, idioma pt_BR) — não é mais material de submissão,
-é o retrato do que já está aprovado.
+produção. Os nomes/textos/botões foram corrigidos pros REAIS, tirados
+dos prints do Gerenciador do WhatsApp da conta "AURA agendaia WABA".
+
+**MODELOS _v2 (27/10/2026, mesmo dia):** depois do fix acima, a Meta
+passou a responder com erro 132000 (quantidade de variáveis não bate).
+A tela "Editar modelo" (não a de preview) revelou a causa:
+`lembrete_24hrs_antes`/`lembrete_2hrs_antes` têm "Tipo de variável:
+Nome" com `{{}}` literalmente vazio — nunca receberam nome de variável
+na criação — enquanto o app sempre mandou parâmetro POSICIONAL
+(`{{1}}`, `{{2}}`...). **O tipo de variável não pode ser alterado num
+template já aprovado** — a única saída é criar um template novo. A dona
+criou `lembrete_24h_v2`/`lembrete_2h_v2` com "Tipo de variável: Número"
+(posicional real, igual ao que o app sempre mandou) e submeteu à Meta
+em 27/10/2026 (pt_BR, categoria Utilidade). Os nomes/textos abaixo já
+são os dos modelos `_v2` — **pendentes de aprovação no momento desta
+mudança**.
+
+**⚠️ GATILHO DE MERGE: o PR que troca o código para os nomes `_v2` só
+deve ser mesclado DEPOIS que a Meta aprovar os dois (a dona avisa
+quando acontecer). Mesclar antes da aprovação traz de volta o erro
+132001 (nome inexistente) — pior que o 132000 atual, que pelo menos
+prova que o nome é encontrado.**
 
 O **nome interno** (`template_key`, entre parênteses em cada título
 abaixo) nunca muda — é o que vive em `automations.template_key` e
@@ -28,43 +46,57 @@ de migration futura no relatório desta tarefa).
 
 ## 1. lembrete_24h
 
-- **Nome do template (Meta):** `lembrete_24hrs_antes`
+- **Nome do template (Meta):** `lembrete_24h_v2` — pendente de aprovação (submetido 27/10/2026)
 - **Idioma:** pt_BR
-- **Categoria:** UTILITY
-- **Cabeçalho (cadastrado na Meta, texto fixo, SEM variável):** "Olá" — nunca enviado como componente separado (um cabeçalho sem variável não precisa de componente no envio)
+- **Categoria:** Utilidade (UTILITY)
+- **Tipo de variável:** Número (posicional) — diferente do modelo antigo (`lembrete_24hrs_antes`, "Nome", nunca usado de verdade)
+- **Cabeçalho:** nenhum
+- **Rodapé:** nenhum
 - **Gatilho (não submetido à Meta, só uso interno):** 24 horas antes do horário marcado
 
-**Corpo do texto (começa direto na variável 1 — sem "Olá," no corpo, que já está no cabeçalho):**
+**Corpo do texto (literal, exatamente como submetido):**
 ```
-{{1}}Passando para lembrar que amanhã, às {{2}}, você tem um horário reservado para {{3}} no {{4}}. Estamos te esperando! Por favor, confirme sua presença abaixo.
+Olá, {{1}}! 💛 Passando para lembrar que amanhã você tem um horário reservado para {{2}}, às {{3}}, no {{4}}. Estamos te esperando! Por favor, confirme sua presença abaixo.
 ```
 
-**Ordem das variáveis:** 1=nome da cliente (com "! " no final, pra ler como frase — o corpo não tem separador antes de "Passando"), 2=horário, 3=serviço, 4=nome do salão
+**Ordem das variáveis:** 1=nome da cliente, 2=serviço, 3=horário, 4=nome do salão — nenhuma decoração extra no valor (o "Olá, " já é texto fixo do corpo).
 
-**Exemplo:** "Marina! ", 14:00, Cílios Volume Russo, Studio Bella
+**Exemplo:** Maria, Cílios fio a fio, 14:30, Studio Aura
 
 **Botões (resposta rápida, nesta ORDEM — cada um com a ação/payload correspondente):** Confirmar (confirm) | Cancelar (cancel) | Reagendar (reschedule)
+
+**Mensagem final (dados fictícios, como a cliente lê):**
+```
+Olá, Maria! 💛 Passando para lembrar que amanhã você tem um horário reservado para Cílios fio a fio, às 14:30, no Studio Aura. Estamos te esperando! Por favor, confirme sua presença abaixo.
+```
 
 ---
 
 ## 2. lembrete_2h
 
-- **Nome do template (Meta):** `lembrete_2hrs_antes`
+- **Nome do template (Meta):** `lembrete_2h_v2` — pendente de aprovação (submetido 27/10/2026)
 - **Idioma:** pt_BR
-- **Categoria:** UTILITY
-- **Cabeçalho (cadastrado na Meta, texto fixo, SEM variável):** "Ola" (sem acento) — mesma observação do lembrete_24h, nunca enviado como componente
+- **Categoria:** Utilidade (UTILITY)
+- **Tipo de variável:** Número (posicional) — mesma observação do lembrete_24h_v2
+- **Cabeçalho:** nenhum
+- **Rodapé:** nenhum
 - **Gatilho (não submetido à Meta, só uso interno):** 2 horas antes do horário marcado
 
-**Corpo do texto (o corpo já tem "Olá," fixo, com vírgula, antes da variável 1):**
+**Corpo do texto (literal, exatamente como submetido):**
 ```
-Olá,{{1}}!💛 Seu horário de {{2}} é hoje, às {{3}} , no {{4}}. Estamos te esperando! Se tiver algum imprevisto, é só nos avisar por aqui.
+Olá, {{1}}! 💛 Seu horário de {{2}} é hoje, às {{3}}, no {{4}}. Estamos te esperando! Se tiver algum imprevisto, é só nos avisar por aqui.
 ```
 
-**Ordem das variáveis (DIFERENTE do lembrete_24h de propósito):** 1=nome (com espaço ANTES, pra separar de "Olá,"), 2=serviço, 3=horário, 4=salão
+**Ordem das variáveis (MESMA do lembrete_24h_v2 agora — unificado de propósito, diferente da rodada anterior):** 1=nome, 2=serviço, 3=horário, 4=salão
 
-**Exemplo:** " Marina", Cílios Volume Russo, 14:00, Studio Bella
+**Exemplo:** Maria, Cílios fio a fio, 14:30, Studio Aura
 
 **Botões:** nenhum
+
+**Mensagem final (dados fictícios, como a cliente lê):**
+```
+Olá, Maria! 💛 Seu horário de Cílios fio a fio é hoje, às 14:30, no Studio Aura. Estamos te esperando! Se tiver algum imprevisto, é só nos avisar por aqui.
+```
 
 ---
 
@@ -124,14 +156,17 @@ vem sempre de `system-templates.ts` (ver acima). Mas a coluna no banco
 hoje **não reflete a realidade** e pode confundir quem for direto na
 tabela sem saber disso.
 
-## Status atual (banco de produção)
+## Status atual (banco de produção, confirmado por query somente-leitura em 27/10/2026)
 
-| Template | meta_status | Observação |
-|---|---|---|
-| lembrete_24h | PENDING | Era a automação "Lembrete 24h antes" já instalada; convertida em mensagem de sistema pela migration 3, mantendo o estado de ativação que já tinha. |
-| lembrete_2h | APPROVED | Nasce pausada (`active=false`) — ativação do envio automático é etapa futura, fora de escopo. |
-| pos_avaliacao_google | PENDING | Nasce pausada. Precisa do link do Google cadastrado antes de poder ser ativada no futuro. |
-| retorno_30_dias | PENDING | Nasce pausada. |
+| Template | meta_template_name (banco) | meta_status (banco) | active | Observação |
+|---|---|---|---|---|
+| lembrete_24h | `lembrete_24h` (igual ao template_key — desatualizado, nunca foi `lembrete_24hrs_antes` nem será `lembrete_24h_v2` automaticamente) | APPROVED | true | `meta_status=APPROVED` é só o valor padrão do seed, **não** reflete uma aprovação real verificada — nada no código lê essas 2 colunas para decidir o nome enviado ou o status exibido. |
+| lembrete_2h | `lembrete_2h` (mesma observação) | APPROVED | true | idem |
+| pos_avaliacao_google | não enviado pelo código ainda (Etapa 2) | — | — | não verificado nesta rodada |
+| retorno_30_dias | não enviado pelo código ainda (Etapa 2) | — | — | não verificado nesta rodada |
+
+Ver proposta de migration (não aplicada) para alinhar essas 2 colunas aos
+nomes `_v2` no relatório/diário desta tarefa.
 
 ## Comando para atualizar o status quando a Meta decidir (item 3.5)
 
@@ -152,3 +187,47 @@ Esse UPDATE roda como conexão privilegiada (`postgres`/`service_role`),
 que é o único caminho que passa pela trava `trg_23_automations_protect_meta_fields`
 (UR010) — é exatamente a mesma trava que impede qualquer outra pessoa de
 mudar esse campo pela API.
+
+---
+
+## Guia para criar modelos na Meta (evitar o erro 132000/132001 de novo)
+
+Checklist antes de clicar em "Enviar para análise" no Gerenciador do
+WhatsApp, baseado no que já deu errado 2 vezes (nome errado → 132001;
+tipo de variável errado → 132000):
+
+1. **Tipo de variável: sempre "Número"**, nunca "Nome". O app manda
+   parâmetros posicionais (`{{1}}`, `{{2}}`...) — se o template for
+   criado com "Nome", a Meta espera variáveis nomeadas de verdade
+   (`{{saudacao}}`) e o parâmetro posicional não bate, mesmo que a
+   contagem esteja certa.
+2. **Variáveis sequenciais a partir de `{{1}}`**, sem pular número
+   (`{{1}}`, `{{2}}`, `{{3}}`...) — nunca `{{2}}`, `{{4}}` sem `{{1}}`/`{{3}}`.
+3. **O corpo nunca pode começar nem terminar com uma variável** — a Meta
+   rejeita a submissão; sempre precisa de texto fixo nas duas pontas
+   (ex.: "Olá, " antes de `{{1}}`, "." ou "!" depois da última).
+4. **Nunca criar um cabeçalho com variável** — se o cabeçalho tiver
+   `{{1}}`, ele passa a exigir um componente `header` no envio; os
+   templates do AURA são sempre sem cabeçalho (texto fixo opcional ou
+   nenhum), pra não precisar desse componente extra.
+5. **Preencher os valores de exemplo** de cada variável antes de
+   submeter — a Meta não aceita análise sem isso.
+6. **Botões na ordem exata do contrato** (`system-templates.ts` →
+   `buttons`/`buttonActions`) — a ordem que aparece no Gerenciador é a
+   ordem que a Meta usa no `index` do envio; se a dona reordenar na
+   Meta, o código do AURA também precisa ser atualizado (`buttonActions`
+   na mesma ordem).
+7. **Nome do template:** só `[a-z0-9_]`, sem espaço, sem acento, sem
+   maiúscula. Conferir sempre no campo exato do Gerenciador antes de
+   colar em `metaTemplateName` — um caractere errado só aparece como erro
+   132001 depois de uma tentativa real de envio.
+8. **Nunca editar um template já aprovado para mudar o tipo de
+   variável** (nem outro atributo estrutural, como contagem de
+   variáveis ou cabeçalho) — a Meta não permite essa edição depois da
+   aprovação. A única saída é criar um template NOVO com nome
+   versionado (`_v2`, `_v3`...) e trocar `metaTemplateName` no código
+   para o novo nome, só depois da aprovação do novo.
+9. **Antes de submeter, confirmar na tela de EDIÇÃO (não a de preview)**
+   que o corpo mostra `{{1}}`, `{{2}}`... com os números certos — a tela
+   de preview pode mostrar o texto renderizado com os exemplos e
+   escondia, nas 2 vezes anteriores, que o corpo real tinha `{{}}` vazio.
