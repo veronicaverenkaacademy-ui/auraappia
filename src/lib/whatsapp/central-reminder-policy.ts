@@ -127,6 +127,38 @@ function isInQuietHours(now: Date, timezone: string): boolean {
  * (auditoria de testes desta etapa): antes comparava com `.includes()`
  * exato, que falhava silenciosamente pra qualquer diferença de formato.
  */
+/** "YYYY-MM-DD" no fuso dado — comparar duas datas por este formato equivale a comparar o DIA CIVIL local, nunca o instante UTC. */
+function localDateKey(date: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+/** Diferença em dias civis locais (b - a), sempre inteiro — nunca afetada por fuso/DST porque compara chaves "YYYY-MM-DD", não instantes. */
+function localCalendarDaysBetween(a: Date, b: Date, timezone: string): number {
+  const aUtcMidnight = new Date(`${localDateKey(a, timezone)}T00:00:00Z`).getTime();
+  const bUtcMidnight = new Date(`${localDateKey(b, timezone)}T00:00:00Z`).getTime();
+  return Math.round((bUtcMidnight - aUtcMidnight) / 86_400_000);
+}
+
+/**
+ * M2.5 (27/10/2026): o texto do lembrete_24h diz "amanhã", o do lembrete_2h
+ * diz "hoje" — isso só é verdade se a data civil LOCAL do atendimento
+ * (fuso do salão) for exatamente amanhã (24h) ou hoje (2h) em relação à
+ * data civil local de agora. Guarda INDEPENDENTE do corte de atraso
+ * (MAX_LATE_*): um gatilho que ficou horas parado e cruzou a meia-noite
+ * pode continuar "recuperável" pelo atraso (faltam >12h) e MESMO ASSIM não
+ * fazer mais sentido textualmente — por isso esta checagem nunca mistura
+ * as duas constantes.
+ */
+const EXPECTED_DAYS_UNTIL_APPOINTMENT: Record<ReminderTemplateKey, number> = {
+  lembrete_24h: 1, // "amanhã"
+  lembrete_2h: 0, // "hoje"
+};
+
 function isPhoneInTestList(recipientPhoneE164: string, testPhones: readonly string[]): boolean {
   const recipientDigits = recipientPhoneE164.replace(/\D/g, "");
   if (!recipientDigits) return false;
@@ -186,6 +218,15 @@ export function decideReminderJobAction(input: ReminderPolicyInput): ReminderPol
     return {
       action: "skip_terminal",
       reason: `Pulado: atraso. Falta menos que o mínimo aceitável (${Math.round(maxLate / 60000)} min) para o agendamento — o gatilho deve ter ficado tempo demais sem rodar.`,
+    };
+  }
+
+  const daysUntilAppointment = localCalendarDaysBetween(input.now, input.appointmentStartsAt, input.timezone);
+  const expectedDays = EXPECTED_DAYS_UNTIL_APPOINTMENT[input.templateKey];
+  if (daysUntilAppointment !== expectedDays) {
+    return {
+      action: "skip_terminal",
+      reason: `Pulado: data não confere. O texto do ${input.templateKey === "lembrete_24h" ? "lembrete de 24h diz 'amanhã'" : "lembrete de 2h diz 'hoje'"}, mas a data civil local do atendimento está a ${daysUntilAppointment} dia(s) de hoje, não ${expectedDays} — provavelmente um gatilho atrasado que cruzou a meia-noite.`,
     };
   }
 
