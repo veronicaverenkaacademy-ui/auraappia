@@ -33,7 +33,10 @@ test("dryRun de lembrete_24h: corpo exato com 3 botões quick_reply, nome mascar
   assert.equal(body.template.language.code, "pt_BR");
   assert.equal(body.template.components.length, 4); // 1 body + 3 botões
 
-  const bodyComponent = body.template.components[0] as { type: string; parameters: Array<{ text: string }> };
+  const bodyComponent = body.template.components[0] as {
+    type: string;
+    parameters: Array<{ text: string }>;
+  };
   assert.equal(bodyComponent.type, "body");
   assert.equal(bodyComponent.parameters[0].text, "A**"); // nome mascarado (só o primeiro nome)
   assert.equal(bodyComponent.parameters[1].text, "15:00"); // hora não mascarada

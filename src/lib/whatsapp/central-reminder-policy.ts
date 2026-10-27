@@ -221,7 +221,11 @@ export function decideReminderJobAction(input: ReminderPolicyInput): ReminderPol
     };
   }
 
-  const daysUntilAppointment = localCalendarDaysBetween(input.now, input.appointmentStartsAt, input.timezone);
+  const daysUntilAppointment = localCalendarDaysBetween(
+    input.now,
+    input.appointmentStartsAt,
+    input.timezone,
+  );
   const expectedDays = EXPECTED_DAYS_UNTIL_APPOINTMENT[input.templateKey];
   if (daysUntilAppointment !== expectedDays) {
     return {

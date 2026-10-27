@@ -46,7 +46,10 @@ function renderFinalMessage(key: "lembrete_24h" | "lembrete_2h"): string {
 // pos_avaliacao_google/retorno_30_dias ainda não têm builder de variáveis
 // (Etapa 2, ainda não enviado) — substitui direto com os MESMOS dados
 // fictícios dos outros dois, pra comparação justa no relatório.
-function renderFinalMessageDirect(key: "pos_avaliacao_google" | "retorno_30_dias", link: string): string {
+function renderFinalMessageDirect(
+  key: "pos_avaliacao_google" | "retorno_30_dias",
+  link: string,
+): string {
   const t = getSystemTemplate(key);
   return substitutePositional(t.text, [FICTICIOUS.clientFullName, link]);
 }
@@ -73,14 +76,20 @@ test("as 4 mensagens finais são impressas (evidência pro relatório)", () => {
 
 test("lembrete_24h renderizado: 'Olá' (cabeçalho) seguido de 'Maria! Passando...' — sem colar 'Olá' com o corpo, sem '{{' sobrando", () => {
   const msg = RENDERED.lembrete_24h;
-  assert.ok(msg.startsWith("Olá\nMaria! Passando"), `início inesperado: ${JSON.stringify(msg.slice(0, 40))}`);
+  assert.ok(
+    msg.startsWith("Olá\nMaria! Passando"),
+    `início inesperado: ${JSON.stringify(msg.slice(0, 40))}`,
+  );
   assert.ok(!msg.includes("{{"), "sobrou placeholder {{n}} sem substituir");
   assert.ok(msg.includes("Estamos te esperando! Por favor, confirme sua presença abaixo."));
 });
 
 test("lembrete_2h renderizado: 'Ola' (cabeçalho) seguido de 'Olá, Maria!💛...' — sem '{{' sobrando", () => {
   const msg = RENDERED.lembrete_2h;
-  assert.ok(msg.startsWith("Ola\nOlá, Maria!💛"), `início inesperado: ${JSON.stringify(msg.slice(0, 40))}`);
+  assert.ok(
+    msg.startsWith("Ola\nOlá, Maria!💛"),
+    `início inesperado: ${JSON.stringify(msg.slice(0, 40))}`,
+  );
   assert.ok(!msg.includes("{{"), "sobrou placeholder {{n}} sem substituir");
 });
 

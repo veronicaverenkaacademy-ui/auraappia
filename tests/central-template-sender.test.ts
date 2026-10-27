@@ -183,7 +183,11 @@ test("DEFEITO CORRIGIDO: ordem real dos botões é índice 0=Confirmar(confirm/'
   };
   const buttons = body.template.components.slice(1);
   const codes = buttons.map((b) => b.parameters[0].payload!.split("|")[1]);
-  assert.deepEqual(codes, ["c", "x", "r"], "índice 0 deve ser 'c' (confirm), 1 'x' (cancel), 2 'r' (reschedule)");
+  assert.deepEqual(
+    codes,
+    ["c", "x", "r"],
+    "índice 0 deve ser 'c' (confirm), 1 'x' (cancel), 2 'r' (reschedule)",
+  );
 });
 
 test("lembrete_2h: corpo sem nenhum botão, nenhuma thread aberta", async () => {

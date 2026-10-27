@@ -69,7 +69,10 @@ for (const t of SYSTEM_TEMPLATES) {
     // (nunca foi atualizada) — por isso aparece 2x; a fonte única não usa
     // mais meta_template_name=key, mas a migration congelada ainda sim.
     const occurrences = migrationSql.split(`'${t.key}'`).length - 1;
-    assert.ok(occurrences >= 2, `esperado pelo menos 2 ocorrências de '${t.key}' na migration (template_key + meta_template_name antigo), achei ${occurrences}`);
+    assert.ok(
+      occurrences >= 2,
+      `esperado pelo menos 2 ocorrências de '${t.key}' na migration (template_key + meta_template_name antigo), achei ${occurrences}`,
+    );
   });
 
   if (FROZEN_MIGRATION_BUTTONS[t.key]) {
@@ -144,7 +147,11 @@ test("todo metaTemplateName usa só [a-z0-9_] — é o alfabeto que a Meta aceit
 
 test("pos_avaliacao_google: nome real na Meta tem exatamente 18 caracteres (fácil de digitar errado)", () => {
   const t = SYSTEM_TEMPLATES.find((t) => t.key === "pos_avaliacao_google")!;
-  assert.equal(t.metaTemplateName.length, 18, `esperava 18 caracteres, "${t.metaTemplateName}" tem ${t.metaTemplateName.length}`);
+  assert.equal(
+    t.metaTemplateName.length,
+    18,
+    `esperava 18 caracteres, "${t.metaTemplateName}" tem ${t.metaTemplateName.length}`,
+  );
   assert.ok(t.metaTemplateName.endsWith("_"), "esperava terminar com '_'");
   assert.ok(!/[çã]/.test(t.metaTemplateName), "esperava sem 'ç' nem 'ã'");
 });
@@ -178,7 +185,11 @@ test("buttonActions tem o mesmo tamanho de buttons só pra lembrete_24h (único 
   assert.equal(t.buttons.length, t.buttonActions.length);
   const semBotaoDeAcao = SYSTEM_TEMPLATES.filter((t) => t.key !== "lembrete_24h");
   for (const outro of semBotaoDeAcao) {
-    assert.equal(outro.buttonActions.length, 0, `${outro.key}: só lembrete_24h deveria ter buttonActions`);
+    assert.equal(
+      outro.buttonActions.length,
+      0,
+      `${outro.key}: só lembrete_24h deveria ter buttonActions`,
+    );
   }
 });
 

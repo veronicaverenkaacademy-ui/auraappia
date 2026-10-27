@@ -16,7 +16,12 @@ test("lembrete_24h: ordem nome, hora, serviço, local — nome vem com '! ' (dec
   const result = buildReminderTemplateVariables({ ...BASE, templateKey: "lembrete_24h" });
   assert.equal(result.ok, true);
   if (result.ok) {
-    assert.deepEqual(result.variables, ["Marina! ", "14:00", "Cílios Volume Russo", "Studio Bella"]);
+    assert.deepEqual(result.variables, [
+      "Marina! ",
+      "14:00",
+      "Cílios Volume Russo",
+      "Studio Bella",
+    ]);
   }
 });
 
@@ -157,10 +162,25 @@ function mulberry32(seed: number) {
 }
 
 const WEIRD_CHUNKS = [
-  "", " ", "   ", "\n", "\t", "\n\n\t  \n", "👩🏽💅", "José", "María José",
-  "a".repeat(5), "a".repeat(80), "a".repeat(300),
-  "nome   com    muitos      espaços", "nome\ncom\nquebras", "nome\tcom\ttabs",
-  "ção", "日本語", "😀😀😀😀😀😀😀😀😀😀", "   só espaços   ",
+  "",
+  " ",
+  "   ",
+  "\n",
+  "\t",
+  "\n\n\t  \n",
+  "👩🏽💅",
+  "José",
+  "María José",
+  "a".repeat(5),
+  "a".repeat(80),
+  "a".repeat(300),
+  "nome   com    muitos      espaços",
+  "nome\ncom\nquebras",
+  "nome\tcom\ttabs",
+  "ção",
+  "日本語",
+  "😀😀😀😀😀😀😀😀😀😀",
+  "   só espaços   ",
 ];
 
 function randomWeirdString(rand: () => number): string {
@@ -184,30 +204,42 @@ test("propriedade (1000 entradas aleatórias, semente fixa): resultado nunca vaz
     const templateKey = templates[Math.floor(rand() * 2)];
 
     let result: ReturnType<typeof buildReminderTemplateVariables>;
-    assert.doesNotThrow(() => {
-      result = buildReminderTemplateVariables({
-        templateKey,
-        clientFullName,
-        serviceName,
-        startsAtIso: "2026-11-11T15:00:00.000Z",
-        timezone: "America/Sao_Paulo",
-        venueName,
-      });
-    }, `lançou exceção para entrada #${i}: ${JSON.stringify({ clientFullName, serviceName, venueName })}`);
+    assert.doesNotThrow(
+      () => {
+        result = buildReminderTemplateVariables({
+          templateKey,
+          clientFullName,
+          serviceName,
+          startsAtIso: "2026-11-11T15:00:00.000Z",
+          timezone: "America/Sao_Paulo",
+          venueName,
+        });
+      },
+      `lançou exceção para entrada #${i}: ${JSON.stringify({ clientFullName, serviceName, venueName })}`,
+    );
 
     if (result!.ok) {
       checked++;
       for (const v of result.variables) {
         assert.ok(v.length > 0, `variável vazia na entrada #${i}`);
-        assert.ok(!/[\n\t]/.test(v), `variável com quebra/tab na entrada #${i}: ${JSON.stringify(v)}`);
+        assert.ok(
+          !/[\n\t]/.test(v),
+          `variável com quebra/tab na entrada #${i}: ${JSON.stringify(v)}`,
+        );
         // variables[0] (nome) pode ter até 2 chars a mais que o limite —
         // decoração de frase natural ("! "/" ") aplicada DEPOIS do corte.
-        assert.ok(v.length <= 62, `variável excede o limite (com folga da decoração) na entrada #${i}: ${v.length}`);
+        assert.ok(
+          v.length <= 62,
+          `variável excede o limite (com folga da decoração) na entrada #${i}: ${v.length}`,
+        );
       }
       assert.equal(result.variables.length, 4);
     }
   }
-  assert.ok(checked > 900, `esperava a maioria das 1000 entradas dando 'ok:true', só ${checked} deram`);
+  assert.ok(
+    checked > 900,
+    `esperava a maioria das 1000 entradas dando 'ok:true', só ${checked} deram`,
+  );
 });
 
 // ===== fuso horário diferente de São Paulo / horário de virada =====
