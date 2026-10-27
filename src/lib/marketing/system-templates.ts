@@ -18,6 +18,31 @@
 // palavra-por-palavra com a migration foi ajustado (deixou de ser um
 // espelho exato, documentado em tests/system-templates.test.ts).
 //
+// MODELOS _v2 (27/10/2026, mesmo dia): depois do fix acima, a Meta passou a
+// responder com erro 132000 (quantidade de variáveis não bate) em vez de
+// 132001 — a tela "Editar modelo" (não a de preview) revelou que
+// `lembrete_24hrs_antes`/`lembrete_2hrs_antes` têm "Tipo de variável: Nome"
+// com `{{}}` literalmente vazio (nunca receberam nome de variável na
+// criação), enquanto o app sempre mandou parâmetro POSICIONAL. O tipo de
+// variável NÃO PODE ser alterado num template já aprovado — a única saída é
+// criar um template novo. A dona criou `lembrete_24h_v2`/`lembrete_2h_v2`
+// com "Tipo de variável: Número" (posicional real) e submeteu à Meta em
+// 27/10/2026 (pt_BR, categoria Utilidade) — ainda PENDENTE DE APROVAÇÃO no
+// momento desta mudança. Diferente da rodada anterior: os 2 corpos novos já
+// têm "Olá, " literal (com vírgula e espaço) antes de `{{1}}`, então a
+// decoração de nome (`CLIENT_NAME_DECORATION`, que colava "! "/" " ao lado
+// do nome pra compensar a falta de separador) deixou de ser necessária e
+// foi REMOVIDA — `central-template-variables.ts` agora manda o nome puro
+// sanitizado. Também unificou-se `variableOrder`: lembrete_24h e
+// lembrete_2h agora usam a MESMA ordem (nome, serviço, horário, salão) —
+// antes eram ordens diferentes de propósito; a dona pediu "defina em UM
+// lugar e reutilize" desta vez. `pos_avaliacao_google`/`retorno_30_dias`
+// NÃO foram tocados nesta rodada.
+//
+// GATILHO DE MERGE: só mesclar o PR que faz esta troca DEPOIS que a Meta
+// aprovar os dois templates `_v2` (a dona avisa) — mesclar antes traz de
+// volta o erro 132001 (nome inexistente), pior que o 132000 atual.
+//
 // Textos salvos no banco já em formato posicional ({{1}}, {{2}}...), igual
 // ao formato exigido pela Meta — não é o mesmo formato nomeado ({{nome}},
 // {{hora}}) usado nas automações comuns criadas pela própria dona.
@@ -69,18 +94,22 @@ export const SYSTEM_TEMPLATES: readonly SystemTemplate[] = [
   {
     key: "lembrete_24h",
     displayName: "Lembrete 24h antes",
-    metaTemplateName: "lembrete_24hrs_antes",
+    // _v2: modelo NOVO, com "Tipo de variável: Número" (posicional real),
+    // submetido à Meta em 27/10/2026 — PENDENTE DE APROVAÇÃO. Ver nota de
+    // cabeçalho do arquivo ("MODELOS _v2"). Nunca mesclar o PR desta troca
+    // antes da dona confirmar a aprovação.
+    metaTemplateName: "lembrete_24h_v2",
     language: "pt_BR",
     category: "UTILITY",
     appCategory: "agenda",
     channel: "whatsapp",
-    // Cabeçalho de texto fixo "Olá" (sem variável) é cadastrado na Meta à
-    // parte — nunca faz parte deste `text` nem é enviado como componente
-    // (ver central-meta-payload.ts: cabeçalho sem variável não precisa de
-    // componente no envio). O corpo em si começa direto na variável 1.
-    text: "{{1}}Passando para lembrar que amanhã, às {{2}}, você tem um horário reservado para {{3}} no {{4}}. Estamos te esperando! Por favor, confirme sua presença abaixo.",
-    variableOrder: ["client_name", "time", "service", "salon"],
-    examples: ["Marina! ", "14:00", "Cílios Volume Russo", "Studio Bella"],
+    // Sem cabeçalho (nenhum componente de header é enviado — ver
+    // central-meta-payload.ts). "Olá, " já é texto fixo do corpo, antes de
+    // {{1}} — nenhuma decoração de nome é necessária (ver
+    // central-template-variables.ts).
+    text: "Olá, {{1}}! 💛 Passando para lembrar que amanhã você tem um horário reservado para {{2}}, às {{3}}, no {{4}}. Estamos te esperando! Por favor, confirme sua presença abaixo.",
+    variableOrder: ["client_name", "service", "time", "salon"],
+    examples: ["Maria", "Cílios fio a fio", "14:30", "Studio Aura"],
     buttons: ["Confirmar", "Cancelar", "Reagendar"],
     buttonActions: ["confirm", "cancel", "reschedule"],
     triggerDescription: "24 horas antes do horário marcado",
@@ -88,16 +117,18 @@ export const SYSTEM_TEMPLATES: readonly SystemTemplate[] = [
   {
     key: "lembrete_2h",
     displayName: "Lembrete 2h antes",
-    metaTemplateName: "lembrete_2hrs_antes",
+    // _v2: mesma situação do lembrete_24h_v2 acima — PENDENTE DE APROVAÇÃO.
+    metaTemplateName: "lembrete_2h_v2",
     language: "pt_BR",
     category: "UTILITY",
     appCategory: "agenda",
     channel: "whatsapp",
-    // Cabeçalho de texto fixo "Ola" (sem acento, sem variável) — mesma
-    // observação do lembrete_24h acima: nunca enviado como componente.
-    text: "Olá,{{1}}!💛 Seu horário de {{2}} é hoje, às {{3}} , no {{4}}. Estamos te esperando! Se tiver algum imprevisto, é só nos avisar por aqui.",
+    // Sem cabeçalho, sem botões. Mesma ordem de variáveis do lembrete_24h_v2
+    // de propósito nesta rodada ("defina em UM lugar e reutilize" — antes as
+    // ordens eram deliberadamente diferentes, isso mudou).
+    text: "Olá, {{1}}! 💛 Seu horário de {{2}} é hoje, às {{3}}, no {{4}}. Estamos te esperando! Se tiver algum imprevisto, é só nos avisar por aqui.",
     variableOrder: ["client_name", "service", "time", "salon"],
-    examples: [" Marina", "Cílios Volume Russo", "14:00", "Studio Bella"],
+    examples: ["Maria", "Cílios fio a fio", "14:30", "Studio Aura"],
     buttons: [],
     buttonActions: [],
     triggerDescription: "2 horas antes do horário marcado",

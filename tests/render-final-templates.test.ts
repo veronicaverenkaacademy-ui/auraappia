@@ -16,9 +16,11 @@ const FICTICIOUS = {
   startsAtIso: "2026-11-11T17:30:00.000Z", // 14:30 em America/Sao_Paulo
 };
 
+// Modelos _v2 (27/10/2026) não têm cabeçalho nenhum — "Olá, " já é texto
+// fixo do próprio corpo, antes de {{1}}.
 const HEADERS: Record<string, string | null> = {
-  lembrete_24h: "Olá",
-  lembrete_2h: "Ola",
+  lembrete_24h: null,
+  lembrete_2h: null,
   pos_avaliacao_google: null,
   retorno_30_dias: null,
 };
@@ -74,23 +76,31 @@ test("as 4 mensagens finais são impressas (evidência pro relatório)", () => {
   assert.equal(Object.keys(RENDERED).length, 4);
 });
 
-test("lembrete_24h renderizado: 'Olá' (cabeçalho) seguido de 'Maria! Passando...' — sem colar 'Olá' com o corpo, sem '{{' sobrando", () => {
+test("lembrete_24h_v2 renderizado: sem cabeçalho, começa direto em 'Olá, Maria! 💛 Passando...' — sem '{{' sobrando", () => {
   const msg = RENDERED.lembrete_24h;
   assert.ok(
-    msg.startsWith("Olá\nMaria! Passando"),
+    msg.startsWith("Olá, Maria! 💛 Passando"),
     `início inesperado: ${JSON.stringify(msg.slice(0, 40))}`,
   );
   assert.ok(!msg.includes("{{"), "sobrou placeholder {{n}} sem substituir");
   assert.ok(msg.includes("Estamos te esperando! Por favor, confirme sua presença abaixo."));
+  assert.equal(
+    msg,
+    "Olá, Maria! 💛 Passando para lembrar que amanhã você tem um horário reservado para Cílios fio a fio, às 14:30, no Studio Aura. Estamos te esperando! Por favor, confirme sua presença abaixo.",
+  );
 });
 
-test("lembrete_2h renderizado: 'Ola' (cabeçalho) seguido de 'Olá, Maria!💛...' — sem '{{' sobrando", () => {
+test("lembrete_2h_v2 renderizado: sem cabeçalho, começa direto em 'Olá, Maria! 💛 Seu horário...' — sem '{{' sobrando", () => {
   const msg = RENDERED.lembrete_2h;
   assert.ok(
-    msg.startsWith("Ola\nOlá, Maria!💛"),
+    msg.startsWith("Olá, Maria! 💛 Seu horário"),
     `início inesperado: ${JSON.stringify(msg.slice(0, 40))}`,
   );
   assert.ok(!msg.includes("{{"), "sobrou placeholder {{n}} sem substituir");
+  assert.equal(
+    msg,
+    "Olá, Maria! 💛 Seu horário de Cílios fio a fio é hoje, às 14:30, no Studio Aura. Estamos te esperando! Se tiver algum imprevisto, é só nos avisar por aqui.",
+  );
 });
 
 test("pos_avaliacao_google e retorno_30_dias renderizados: sem '{{' sobrando, nome aparece", () => {

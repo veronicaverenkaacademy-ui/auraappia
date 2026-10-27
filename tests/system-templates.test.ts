@@ -115,8 +115,8 @@ test("as 4 chaves internas (template_key) são exatamente as esperadas — NUNCA
 // contrato: se alguém mudar metaTemplateName sem querer, ele quebra aqui,
 // não só silenciosamente na Meta com erro 132001 em produção.
 const EXPECTED_META_TEMPLATE_NAME: Record<string, string> = {
-  lembrete_24h: "lembrete_24hrs_antes",
-  lembrete_2h: "lembrete_2hrs_antes",
+  lembrete_24h: "lembrete_24h_v2",
+  lembrete_2h: "lembrete_2h_v2",
   pos_avaliacao_google: "pedido_de_avaliao_",
   retorno_30_dias: "retorno_30_dias",
 };
@@ -156,11 +156,11 @@ test("pos_avaliacao_google: nome real na Meta tem exatamente 18 caracteres (fác
   assert.ok(!/[çã]/.test(t.metaTemplateName), "esperava sem 'ç' nem 'ã'");
 });
 
-test("variableOrder: lembrete_24h e lembrete_2h têm as 4 mesmas 4 chaves de variável, em ordens DIFERENTES", () => {
+test("variableOrder: lembrete_24h e lembrete_2h têm as 4 mesmas 4 chaves de variável, na MESMA ordem (unificado nos modelos _v2, 27/10/2026 — antes eram ordens diferentes de propósito)", () => {
   const t24h = SYSTEM_TEMPLATES.find((t) => t.key === "lembrete_24h")!;
   const t2h = SYSTEM_TEMPLATES.find((t) => t.key === "lembrete_2h")!;
   assert.deepEqual([...t24h.variableOrder].sort(), [...t2h.variableOrder].sort());
-  assert.notDeepEqual(t24h.variableOrder, t2h.variableOrder);
+  assert.deepEqual(t24h.variableOrder, t2h.variableOrder);
 });
 
 test("quantidade de variáveis em variableOrder bate com a quantidade de {{n}} no texto (contado do próprio corpo)", () => {

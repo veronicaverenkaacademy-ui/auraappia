@@ -139,7 +139,7 @@ test("corpo exato: nome do template, idioma pt_BR, variáveis na ordem, 3 botõe
   assert.equal(body.messaging_product, "whatsapp");
   assert.equal(body.to, "5547999990001");
   assert.equal(body.type, "template");
-  assert.equal(body.template.name, "lembrete_24hrs_antes");
+  assert.equal(body.template.name, "lembrete_24h_v2");
   assert.equal(body.template.language.code, "pt_BR");
 
   const bodyComponent = body.template.components[0] as {

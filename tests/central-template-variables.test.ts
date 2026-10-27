@@ -12,24 +12,19 @@ const BASE = {
   venueName: "Studio Bella",
 };
 
-test("lembrete_24h: ordem nome, hora, serviço, local — nome vem com '! ' (decoração pra frase natural, corpo real começa direto em {{1}})", () => {
+test("lembrete_24h: ordem nome, serviço, hora, local — nome puro, sem decoração (corpo _v2 já tem 'Olá, ' literal antes de {{1}})", () => {
   const result = buildReminderTemplateVariables({ ...BASE, templateKey: "lembrete_24h" });
   assert.equal(result.ok, true);
   if (result.ok) {
-    assert.deepEqual(result.variables, [
-      "Marina! ",
-      "14:00",
-      "Cílios Volume Russo",
-      "Studio Bella",
-    ]);
+    assert.deepEqual(result.variables, ["Marina", "Cílios Volume Russo", "14:00", "Studio Bella"]);
   }
 });
 
-test("lembrete_2h: ordem nome, serviço, hora, local (diferente do 24h) — nome vem com ' ' na frente (corpo real: 'Olá,{{1}}!')", () => {
+test("lembrete_2h: MESMA ordem do 24h (nome, serviço, hora, local) — unificado nos modelos _v2, nome puro sem decoração", () => {
   const result = buildReminderTemplateVariables({ ...BASE, templateKey: "lembrete_2h" });
   assert.equal(result.ok, true);
   if (result.ok) {
-    assert.deepEqual(result.variables, [" Marina", "Cílios Volume Russo", "14:00", "Studio Bella"]);
+    assert.deepEqual(result.variables, ["Marina", "Cílios Volume Russo", "14:00", "Studio Bella"]);
   }
 });
 
@@ -40,7 +35,7 @@ test("usa só o primeiro nome da cliente", () => {
     templateKey: "lembrete_24h",
   });
   assert.equal(result.ok, true);
-  if (result.ok) assert.equal(result.variables[0], "Ana! ");
+  if (result.ok) assert.equal(result.variables[0], "Ana");
 });
 
 test("nome vazio cai no fallback 'cliente'", () => {
@@ -50,7 +45,7 @@ test("nome vazio cai no fallback 'cliente'", () => {
     templateKey: "lembrete_24h",
   });
   assert.equal(result.ok, true);
-  if (result.ok) assert.equal(result.variables[0], "cliente! ");
+  if (result.ok) assert.equal(result.variables[0], "cliente");
 });
 
 test("nome nulo cai no fallback 'cliente'", () => {
@@ -60,7 +55,7 @@ test("nome nulo cai no fallback 'cliente'", () => {
     templateKey: "lembrete_24h",
   });
   assert.equal(result.ok, true);
-  if (result.ok) assert.equal(result.variables[0], "cliente! ");
+  if (result.ok) assert.equal(result.variables[0], "cliente");
 });
 
 test("serviço vazio/nulo cai no fallback 'seu atendimento'", () => {
@@ -226,12 +221,7 @@ test("propriedade (1000 entradas aleatórias, semente fixa): resultado nunca vaz
           !/[\n\t]/.test(v),
           `variável com quebra/tab na entrada #${i}: ${JSON.stringify(v)}`,
         );
-        // variables[0] (nome) pode ter até 2 chars a mais que o limite —
-        // decoração de frase natural ("! "/" ") aplicada DEPOIS do corte.
-        assert.ok(
-          v.length <= 62,
-          `variável excede o limite (com folga da decoração) na entrada #${i}: ${v.length}`,
-        );
+        assert.ok(v.length <= 60, `variável excede MAX_PARAM_LENGTH na entrada #${i}: ${v.length}`);
       }
       assert.equal(result.variables.length, 4);
     }
@@ -276,7 +266,7 @@ test("agendamento às 23:30 no fuso de São Paulo mostra 23:30, não a hora UTC 
     venueName: "Salão X",
   });
   assert.ok(r.ok);
-  if (r.ok) assert.equal(r.variables[1], "23:30");
+  if (r.ok) assert.equal(r.variables[2], "23:30");
 });
 
 test("salão em fuso diferente (Manaus, UTC-4): hora mostrada é a local de Manaus, não a de São Paulo", () => {
@@ -302,9 +292,9 @@ test("salão em fuso diferente (Manaus, UTC-4): hora mostrada é a local de Mana
   });
   assert.ok(rManaus.ok && rSaoPaulo.ok);
   if (rManaus.ok && rSaoPaulo.ok) {
-    assert.equal(rManaus.variables[1], "15:00");
-    assert.equal(rSaoPaulo.variables[1], "16:00");
-    assert.notEqual(rManaus.variables[1], rSaoPaulo.variables[1]);
+    assert.equal(rManaus.variables[2], "15:00");
+    assert.equal(rSaoPaulo.variables[2], "16:00");
+    assert.notEqual(rManaus.variables[2], rSaoPaulo.variables[2]);
   }
 });
 
