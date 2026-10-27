@@ -240,6 +240,35 @@ test("4xx: parâmetro inválido do template (132000) -> failed/permanent, sem fr
   assert.equal(db.tables.whatsapp_central_threads.length, 0);
 });
 
+test("M3 (erro da Meta visível): error_message/result.error trazem a tag '[Meta 132000: x]' — detalhe real da Meta, antes 100% descartado", async () => {
+  stubFetch(() => jsonResponse(400, { error: { code: 132000, message: "x" } }));
+  const db = makeDb();
+  const result = await sendCentralTemplate({ ...baseInput(), supabaseAdmin: db as never });
+  assert.equal(result.kind, "failed");
+  if (result.kind === "failed") assert.match(result.error, /\[Meta 132000: x\]$/);
+  assert.match(db.tables.whatsapp_messages[0].error_message, /\[Meta 132000: x\]$/);
+});
+
+test("M3: error_data.details (quando presente) é preferido sobre message, e sai sanitizado dentro da tag", async () => {
+  stubFetch(() =>
+    jsonResponse(400, {
+      error: {
+        code: 132000,
+        message: "fallback genérico",
+        error_data: { details: "faltou o parâmetro 554799998888" },
+      },
+    }),
+  );
+  const db = makeDb();
+  const result = await sendCentralTemplate({ ...baseInput(), supabaseAdmin: db as never });
+  assert.equal(result.kind, "failed");
+  if (result.kind === "failed") {
+    assert.ok(result.error.includes("faltou o parâmetro"));
+    assert.ok(!result.error.includes("554799998888"), "telefone não deveria vazar no texto");
+    assert.ok(!result.error.includes("fallback genérico"), "details tem prioridade sobre message");
+  }
+});
+
 test("4xx: template inexistente (132001) -> permanent, sem freio", async () => {
   stubFetch(() => jsonResponse(400, { error: { code: 132001, message: "x" } }));
   const db = makeDb();
