@@ -17,7 +17,7 @@
                 "timestamp": "1700000800",
                 "type": "button",
                 "context": { "from": "15550001111", "id": "wamid.TEST_OUTBOUND_001" },
-                "button": { "payload": "v1|c|THREAD_PLACEHOLDER_A", "text": "Confirmar presença" }
+                "button": { "payload": "v1|c|THREAD_PLACEHOLDER_A", "text": "Confirmar" }
               }
             ]
           }

@@ -120,7 +120,7 @@ function buttonEvent(overrides: Partial<Extract<CentralInboundEvent, { kind: "bu
     fromPhone: "5547999990001",
     contextId: "wamid.OUTBOUND_001",
     buttonPayload: "v1|c|thread-1",
-    buttonText: "Confirmar presença",
+    buttonText: "Confirmar",
     occurredAt: NOW.toISOString(),
     ...overrides,
   };

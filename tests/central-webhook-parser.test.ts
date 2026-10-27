@@ -28,7 +28,7 @@ test("mensagem de botão (quick_reply) é reconhecida", () => {
         timestamp: "1700000000",
         type: "button",
         context: { id: "wamid.OUT1" },
-        button: { payload: "v1|c|thread-1", text: "Confirmar presença" },
+        button: { payload: "v1|c|thread-1", text: "Confirmar" },
       },
     ],
   });
