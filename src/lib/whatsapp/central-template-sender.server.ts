@@ -18,7 +18,10 @@ import {
   type SendAttemptOutcome,
 } from "./central-send-error-classifier.ts";
 import type { ReminderTemplateKey } from "./central-template-variables.ts";
-import { getSystemTemplate } from "../marketing/system-templates.ts";
+import {
+  getSystemTemplate,
+  validateSystemTemplateContract,
+} from "../marketing/system-templates.ts";
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const DEFAULT_GRAPH_API_VERSION = "v26.0";
@@ -168,6 +171,24 @@ export async function sendCentralTemplate(
 ): Promise<SendCentralTemplateResult> {
   const template = getSystemTemplate(input.templateKey);
   const hasButtons = template.buttons.length > 0; // só lembrete_24h, confirmado em system-templates.ts
+
+  // TRAVA DE FORMATO: nunca chega a montar o JSON nem a chamar a Meta se o
+  // template declarado em system-templates.ts não bater com o próprio
+  // contrato (nome [a-z0-9_], {{n}} sequenciais, contagem de variáveis,
+  // buttons/buttonActions do mesmo tamanho) — falha localmente, com erro
+  // claro, antes de qualquer I/O.
+  const contractCheck = validateSystemTemplateContract(input.templateKey, input.variables);
+  if (!contractCheck.ok) {
+    if (input.dryRun) {
+      return { kind: "dry_run", bodyPreview: { ok: false, error: contractCheck.error } };
+    }
+    return {
+      kind: "failed",
+      messageRowId: "",
+      errorClass: "permanent",
+      error: contractCheck.error,
+    };
+  }
 
   if (input.dryRun) {
     const maskedVars = maskReminderVariablesForAudit(input.variables);

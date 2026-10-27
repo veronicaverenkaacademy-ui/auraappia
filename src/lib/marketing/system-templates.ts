@@ -178,6 +178,70 @@ export function getSystemTemplate(key: SystemTemplateKey): SystemTemplate {
   return t;
 }
 
+/**
+ * TRAVA DE FORMATO (27/10/2026): o contrato de cada template é o próprio
+ * `SystemTemplate` acima (nome real, idioma, corpo com {{n}} sequenciais,
+ * variableOrder, buttons/buttonActions) — "sem cabeçalho" é estrutural, não
+ * um campo (SystemTemplate nunca teve `header`, e `buildMetaTemplateBody`
+ * nunca tem uma variante "header" no tipo de `components`). Esta função
+ * verifica, ANTES de montar o JSON de envio, se o template declarado e os
+ * valores recebidos de fato batem com esse contrato — se não baterem, quem
+ * chama (central-template-sender.server.ts) falha LOCALMENTE (nunca chama a
+ * Meta) com um erro claro, em vez de deixar a Meta devolver um 132000/132012
+ * só depois de uma tentativa real.
+ */
+export function validateSystemTemplateContract(
+  key: SystemTemplateKey,
+  variables: string[],
+): { ok: true } | { ok: false; error: string } {
+  const t = getSystemTemplate(key);
+  const violations: string[] = [];
+
+  if (!/^[a-z0-9_]+$/.test(t.metaTemplateName)) {
+    violations.push(
+      `metaTemplateName "${t.metaTemplateName}" tem caractere fora de [a-z0-9_] (a Meta não aceita)`,
+    );
+  }
+
+  const placeholders = new Set(t.text.match(/\{\{\d+\}\}/g) ?? []);
+  if (placeholders.size !== t.variableOrder.length) {
+    violations.push(
+      `corpo declara ${placeholders.size} variável(is) {{n}}, mas variableOrder tem ${t.variableOrder.length}`,
+    );
+  }
+  for (let i = 1; i <= t.variableOrder.length; i++) {
+    if (!placeholders.has(`{{${i}}}`)) {
+      violations.push(
+        `corpo não contém {{${i}}} — variáveis precisam ser sequenciais a partir de 1`,
+      );
+    }
+  }
+  if (/\{\{\d+\}\}/.test(t.text.slice(0, 2)) || t.text.trimEnd().endsWith("}}")) {
+    violations.push("corpo não pode começar nem terminar com uma variável");
+  }
+
+  if (variables.length !== t.variableOrder.length) {
+    violations.push(
+      `recebidas ${variables.length} variável(is) para enviar, mas o contrato de "${key}" declara ${t.variableOrder.length}`,
+    );
+  }
+
+  // Só templates que de fato usam o mecanismo de buttonActions (hoje só
+  // lembrete_24h) precisam da contagem igual — retorno_30_dias tem um botão
+  // próprio ("Parar de receber mensagens") fora deste mecanismo, ainda não
+  // enviado pelo código (ver tests/system-templates.test.ts), então
+  // buttons.length > 0 com buttonActions.length === 0 é esperado nesse caso.
+  if (t.buttonActions.length > 0 && t.buttons.length !== t.buttonActions.length) {
+    violations.push(
+      `buttons (${t.buttons.length}) não bate com buttonActions (${t.buttonActions.length})`,
+    );
+  }
+
+  return violations.length === 0
+    ? { ok: true }
+    : { ok: false, error: `Contrato do template "${key}" inválido: ${violations.join("; ")}.` };
+}
+
 export const SYSTEM_TEMPLATE_KEYS: readonly SystemTemplateKey[] = SYSTEM_TEMPLATES.map(
   (t) => t.key,
 );
