@@ -1,13 +1,13 @@
 // Função pura que monta as variáveis posicionais ({{1}}..{{4}}) dos templates
-// lembrete_24h/lembrete_2h, na ORDEM EXATA aprovada pela Meta — confirmada
-// contra o texto-fonte único (src/lib/marketing/system-templates.ts):
-//   lembrete_24h: {{1}}=nome, {{2}}=hora,    {{3}}=serviço, {{4}}=local
-//   lembrete_2h:  {{1}}=nome, {{2}}=serviço, {{3}}=hora,    {{4}}=local
-// As duas ordens são DIFERENTES entre si — nunca assumir que são iguais.
+// lembrete_24h/lembrete_2h — a ORDEM vem de SYSTEM_TEMPLATES[key].variableOrder
+// (fonte única, src/lib/marketing/system-templates.ts), nunca hardcoded aqui.
+// lembrete_24h e lembrete_2h têm ordens DIFERENTES entre si de propósito —
+// nunca assumir que são iguais.
 //
 // Sem I/O (nenhuma chamada a banco/rede) — quem chama (M4) já resolve
 // clientFullName/serviceName/venueName/timezone antes de invocar isto.
 import { formatTimeBR } from "./templates.ts";
+import { getSystemTemplate } from "../marketing/system-templates.ts";
 
 export type ReminderTemplateKey = "lembrete_24h" | "lembrete_2h";
 
@@ -34,8 +34,8 @@ export type BuildReminderVariablesResult =
 
 const MAX_PARAM_LENGTH = 60;
 const FALLBACK_CLIENT_NAME = "cliente";
-const FALLBACK_SERVICE_NAME = "seu horário";
-const FALLBACK_VENUE_NAME = "seu salão";
+const FALLBACK_SERVICE_NAME = "seu atendimento";
+const FALLBACK_VENUE_NAME = "nosso estúdio";
 
 /**
  * Nenhum parâmetro de template da Meta pode ter quebra de linha, tabulação
@@ -58,6 +58,24 @@ function firstNameOf(fullName: string | null): string {
   if (!trimmed) return FALLBACK_CLIENT_NAME;
   return trimmed.split(/\s+/)[0];
 }
+
+/**
+ * O corpo real aprovado na Meta não tem separador entre a variável 1 e o
+ * texto fixo seguinte (lembrete_24h: "{{1}}Passando..."; lembrete_2h:
+ * "Olá,{{1}}!💛..." — já com vírgula fixa antes da variável) — por isso o
+ * PRÓPRIO VALOR da variável 1 precisa carregar o espaço/pontuação que falta,
+ * pra ler como frase natural ("Maria! Passando..."/"Olá, Maria!💛...").
+ * NÃO VERIFICADO: não há como confirmar neste ambiente (proibido chamar a
+ * API da Meta) se a Meta apara espaços nas pontas do valor do parâmetro —
+ * se aparar, o espaço de "{{1}}" some e o texto fica colado ("Maria!Passando"/
+ * "Olá,Maria!💛"); ainda assim legível, só menos natural. Aplicado DEPOIS da
+ * sanitização do nome puro (nunca antes — sanitizeParam apararia a borda
+ * que estamos adicionando de propósito).
+ */
+const CLIENT_NAME_DECORATION: Record<ReminderTemplateKey, (name: string) => string> = {
+  lembrete_24h: (name) => `${name}! `,
+  lembrete_2h: (name) => ` ${name}`,
+};
 
 export function buildReminderTemplateVariables(
   input: BuildReminderVariablesInput,
@@ -89,8 +107,29 @@ export function buildReminderTemplateVariables(
     return { ok: false, error: "Não foi possível montar uma variável obrigatória do template." };
   }
 
-  if (input.templateKey === "lembrete_24h") {
-    return { ok: true, variables: [clientName, sanitizedTime, serviceName, venueName] };
-  }
-  return { ok: true, variables: [clientName, serviceName, sanitizedTime, venueName] };
+  // A decoração soma até 2 caracteres ao nome já sanitizado/truncado — corta
+  // de novo se isso ultrapassar o limite (só afeta nomes já no limite
+  // máximo, caso raríssimo; garante o invariante "nenhum parâmetro passa de
+  // MAX_PARAM_LENGTH" mesmo depois da decoração).
+  const decoratedClientName = CLIENT_NAME_DECORATION[input.templateKey](clientName).slice(
+    0,
+    MAX_PARAM_LENGTH,
+  );
+  const values: Record<string, string> = {
+    client_name: decoratedClientName,
+    time: sanitizedTime,
+    service: serviceName,
+    salon: venueName,
+  };
+
+  const template = getSystemTemplate(input.templateKey);
+  const variables = template.variableOrder.map((slot) => {
+    const value = values[slot];
+    if (value === undefined) {
+      throw new Error(`variableOrder de ${input.templateKey} pede um slot desconhecido: "${slot}"`);
+    }
+    return value;
+  });
+
+  return { ok: true, variables };
 }

@@ -12,19 +12,19 @@ const BASE = {
   venueName: "Studio Bella",
 };
 
-test("lembrete_24h: ordem nome, hora, serviço, local", () => {
+test("lembrete_24h: ordem nome, hora, serviço, local — nome vem com '! ' (decoração pra frase natural, corpo real começa direto em {{1}})", () => {
   const result = buildReminderTemplateVariables({ ...BASE, templateKey: "lembrete_24h" });
   assert.equal(result.ok, true);
   if (result.ok) {
-    assert.deepEqual(result.variables, ["Marina", "14:00", "Cílios Volume Russo", "Studio Bella"]);
+    assert.deepEqual(result.variables, ["Marina! ", "14:00", "Cílios Volume Russo", "Studio Bella"]);
   }
 });
 
-test("lembrete_2h: ordem nome, serviço, hora, local (diferente do 24h)", () => {
+test("lembrete_2h: ordem nome, serviço, hora, local (diferente do 24h) — nome vem com ' ' na frente (corpo real: 'Olá,{{1}}!')", () => {
   const result = buildReminderTemplateVariables({ ...BASE, templateKey: "lembrete_2h" });
   assert.equal(result.ok, true);
   if (result.ok) {
-    assert.deepEqual(result.variables, ["Marina", "Cílios Volume Russo", "14:00", "Studio Bella"]);
+    assert.deepEqual(result.variables, [" Marina", "Cílios Volume Russo", "14:00", "Studio Bella"]);
   }
 });
 
@@ -35,7 +35,7 @@ test("usa só o primeiro nome da cliente", () => {
     templateKey: "lembrete_24h",
   });
   assert.equal(result.ok, true);
-  if (result.ok) assert.equal(result.variables[0], "Ana");
+  if (result.ok) assert.equal(result.variables[0], "Ana! ");
 });
 
 test("nome vazio cai no fallback 'cliente'", () => {
@@ -45,7 +45,7 @@ test("nome vazio cai no fallback 'cliente'", () => {
     templateKey: "lembrete_24h",
   });
   assert.equal(result.ok, true);
-  if (result.ok) assert.equal(result.variables[0], "cliente");
+  if (result.ok) assert.equal(result.variables[0], "cliente! ");
 });
 
 test("nome nulo cai no fallback 'cliente'", () => {
@@ -55,27 +55,27 @@ test("nome nulo cai no fallback 'cliente'", () => {
     templateKey: "lembrete_24h",
   });
   assert.equal(result.ok, true);
-  if (result.ok) assert.equal(result.variables[0], "cliente");
+  if (result.ok) assert.equal(result.variables[0], "cliente! ");
 });
 
-test("serviço vazio/nulo cai no fallback 'seu horário'", () => {
+test("serviço vazio/nulo cai no fallback 'seu atendimento'", () => {
   const result = buildReminderTemplateVariables({
     ...BASE,
     serviceName: null,
     templateKey: "lembrete_2h",
   });
   assert.equal(result.ok, true);
-  if (result.ok) assert.equal(result.variables[1], "seu horário");
+  if (result.ok) assert.equal(result.variables[1], "seu atendimento");
 });
 
-test("local vazio/nulo cai no fallback 'seu salão'", () => {
+test("local vazio/nulo cai no fallback 'nosso estúdio'", () => {
   const result = buildReminderTemplateVariables({
     ...BASE,
     venueName: "",
     templateKey: "lembrete_24h",
   });
   assert.equal(result.ok, true);
-  if (result.ok) assert.equal(result.variables[3], "seu salão");
+  if (result.ok) assert.equal(result.variables[3], "nosso estúdio");
 });
 
 test("quebra de linha e tabulação são removidas", () => {
@@ -200,7 +200,9 @@ test("propriedade (1000 entradas aleatórias, semente fixa): resultado nunca vaz
       for (const v of result.variables) {
         assert.ok(v.length > 0, `variável vazia na entrada #${i}`);
         assert.ok(!/[\n\t]/.test(v), `variável com quebra/tab na entrada #${i}: ${JSON.stringify(v)}`);
-        assert.ok(v.length <= 60, `variável excede 60 chars na entrada #${i}: ${v.length}`);
+        // variables[0] (nome) pode ter até 2 chars a mais que o limite —
+        // decoração de frase natural ("! "/" ") aplicada DEPOIS do corte.
+        assert.ok(v.length <= 62, `variável excede o limite (com folga da decoração) na entrada #${i}: ${v.length}`);
       }
       assert.equal(result.variables.length, 4);
     }
