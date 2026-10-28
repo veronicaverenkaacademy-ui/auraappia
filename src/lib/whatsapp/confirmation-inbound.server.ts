@@ -26,6 +26,7 @@ import { phoneVariantsForLookup } from "./phone-identity";
 import { classifyReply } from "./reply-interpreter";
 import { resolveThread } from "./confirmation-threads.server";
 import type { SupabaseAdmin } from "./confirmation-threads.server";
+import { sameInstant } from "./time-instant.ts";
 import {
   renderAlreadyConfirmedReply,
   renderConfirmationReply,
@@ -155,7 +156,13 @@ export async function processInboundConfirmationReply(
 
   // Decisão 3: reagendado depois que a pergunta foi enviada — o horário que a
   // cliente está respondendo não é mais o horário real. Exige nova pergunta.
-  if (appt.starts_at !== thread.appointment_starts_at_snapshot) {
+  //
+  // Usa sameInstant (28/10/2026) em vez de comparar texto direto — os dois
+  // lados vêm de leituras via PostgREST (mesma engine de serialização), sem
+  // reconstrução por `toISOString()`, então não reproduz o bug encontrado em
+  // central-reminder-scheduler.server.ts, mas remove a suposição implícita
+  // de que as duas leituras sempre serializam igual.
+  if (!sameInstant(appt.starts_at, thread.appointment_starts_at_snapshot)) {
     await resolveThread(supabaseAdmin, thread.id, "stale", input.inboundMessageId);
     return;
   }
