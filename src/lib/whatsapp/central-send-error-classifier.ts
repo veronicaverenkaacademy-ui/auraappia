@@ -41,7 +41,13 @@ export type ClassifiedSendError = {
 export type SendAttemptOutcome =
   | { kind: "network_error" } // fetch rejeitou antes de qualquer resposta (ex.: DNS, conexão recusada) — nunca chegou a saber se a Meta recebeu.
   | { kind: "timeout" } // abortado por timeout DEPOIS de enviar o POST — pode ou não ter chegado na Meta.
-  | { kind: "http_error"; status: number; metaCode?: number }
+  | {
+      kind: "http_error";
+      status: number;
+      metaCode?: number;
+      /** `error.message`/`error.error_data.details` crus da Meta — M3: nunca grave sem passar por sanitizeMetaErrorDetail (central-meta-error-detail.ts). */
+      rawDetail?: string;
+    }
   | { kind: "http_ok" };
 
 /** SUPOSIÇÃO (fonte secundária, ver cabeçalho do arquivo) para todos os `code` abaixo. */

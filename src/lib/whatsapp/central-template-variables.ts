@@ -1,8 +1,9 @@
 // Função pura que monta as variáveis posicionais ({{1}}..{{4}}) dos templates
 // lembrete_24h/lembrete_2h — a ORDEM vem de SYSTEM_TEMPLATES[key].variableOrder
 // (fonte única, src/lib/marketing/system-templates.ts), nunca hardcoded aqui.
-// lembrete_24h e lembrete_2h têm ordens DIFERENTES entre si de propósito —
-// nunca assumir que são iguais.
+// Desde os modelos _v2 (27/10/2026) lembrete_24h e lembrete_2h usam a MESMA
+// ordem de propósito — ainda assim lida de variableOrder, nunca hardcoded,
+// caso isso mude de novo no futuro.
 //
 // Sem I/O (nenhuma chamada a banco/rede) — quem chama (M4) já resolve
 // clientFullName/serviceName/venueName/timezone antes de invocar isto.
@@ -59,24 +60,6 @@ function firstNameOf(fullName: string | null): string {
   return trimmed.split(/\s+/)[0];
 }
 
-/**
- * O corpo real aprovado na Meta não tem separador entre a variável 1 e o
- * texto fixo seguinte (lembrete_24h: "{{1}}Passando..."; lembrete_2h:
- * "Olá,{{1}}!💛..." — já com vírgula fixa antes da variável) — por isso o
- * PRÓPRIO VALOR da variável 1 precisa carregar o espaço/pontuação que falta,
- * pra ler como frase natural ("Maria! Passando..."/"Olá, Maria!💛...").
- * NÃO VERIFICADO: não há como confirmar neste ambiente (proibido chamar a
- * API da Meta) se a Meta apara espaços nas pontas do valor do parâmetro —
- * se aparar, o espaço de "{{1}}" some e o texto fica colado ("Maria!Passando"/
- * "Olá,Maria!💛"); ainda assim legível, só menos natural. Aplicado DEPOIS da
- * sanitização do nome puro (nunca antes — sanitizeParam apararia a borda
- * que estamos adicionando de propósito).
- */
-const CLIENT_NAME_DECORATION: Record<ReminderTemplateKey, (name: string) => string> = {
-  lembrete_24h: (name) => `${name}! `,
-  lembrete_2h: (name) => ` ${name}`,
-};
-
 export function buildReminderTemplateVariables(
   input: BuildReminderVariablesInput,
 ): BuildReminderVariablesResult {
@@ -107,16 +90,11 @@ export function buildReminderTemplateVariables(
     return { ok: false, error: "Não foi possível montar uma variável obrigatória do template." };
   }
 
-  // A decoração soma até 2 caracteres ao nome já sanitizado/truncado — corta
-  // de novo se isso ultrapassar o limite (só afeta nomes já no limite
-  // máximo, caso raríssimo; garante o invariante "nenhum parâmetro passa de
-  // MAX_PARAM_LENGTH" mesmo depois da decoração).
-  const decoratedClientName = CLIENT_NAME_DECORATION[input.templateKey](clientName).slice(
-    0,
-    MAX_PARAM_LENGTH,
-  );
+  // Os 2 corpos _v2 já têm "Olá, " literal (com vírgula e espaço) antes de
+  // {{1}} — nenhuma decoração de nome é necessária aqui (diferente da
+  // rodada anterior, onde a variável 1 colava direto no texto fixo).
   const values: Record<string, string> = {
-    client_name: decoratedClientName,
+    client_name: clientName,
     time: sanitizedTime,
     service: serviceName,
     salon: venueName,

@@ -27,6 +27,7 @@ import {
   tallyReminderSkipReasons,
   type ReminderSkipCategory,
 } from "./central-reminder-skip-reason.ts";
+import { extractMetaErrorCode } from "./central-meta-error-detail.ts";
 
 // tentativa 1 -> 1min, tentativa 2 -> 5min, tentativa 3 -> 15min, depois failed.
 const BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000];
@@ -183,6 +184,8 @@ export async function processNotificationJobs(
   held: number;
   /** M4: só conta held/cancelled dos tipos de lembrete (24h/2h) — nunca telefone/nome, só a categoria da regra que bloqueou. */
   reminderSkipReasons: Record<ReminderSkipCategory, number>;
+  /** M3 ("erro da Meta visível"): contagem de falhas por código numérico da Meta (ex.: {"132000":1}) — só números, nunca telefone/texto/parâmetro. Chaves são os códigos vistos nesta execução; nenhum catálogo fixo. */
+  failedByMetaCode: Record<string, number>;
   /** M4: true quando esta execução reivindicou exatamente o limite — pode haver mais jobs esperando pra próxima. */
   limitReached: boolean;
 }> {
@@ -199,6 +202,7 @@ export async function processNotificationJobs(
   let cancelled = 0;
   let held = 0;
   const skipEntries: Array<{ type: string; outcome: string; lastError: string | null }> = [];
+  const failedByMetaCode: Record<string, number> = {};
 
   for (const job of (jobs ?? []) as ClaimedJob[]) {
     const outcome = await processOneJob(supabaseAdmin, job);
@@ -207,13 +211,30 @@ export async function processNotificationJobs(
     else if (outcome === "held") held++;
     else cancelled++;
 
-    if (outcome === "held" || outcome === "cancelled") {
+    if (outcome === "held" || outcome === "cancelled" || outcome === "failed") {
       const { data: refreshed } = await supabaseAdmin
         .from("notification_jobs")
         .select("last_error")
         .eq("id", job.id)
         .maybeSingle();
-      skipEntries.push({ type: job.type, outcome, lastError: refreshed?.last_error ?? null });
+      const lastError = refreshed?.last_error ?? null;
+
+      if (outcome === "held" || outcome === "cancelled") {
+        skipEntries.push({ type: job.type, outcome, lastError });
+      }
+
+      // M3: last_error de um envio de template já vem com a tag
+      // "[Meta <código>: ...]" (ver formatMetaErrorForHuman) quando a falha
+      // veio de um erro classificado da Meta — jobs do caminho legado
+      // (appointment_confirmation/appointment_created) nunca têm essa tag,
+      // extractMetaErrorCode devolve null pra eles, e não entram na contagem.
+      if (outcome === "failed") {
+        const metaCode = extractMetaErrorCode(lastError);
+        if (metaCode !== null) {
+          const key = String(metaCode);
+          failedByMetaCode[key] = (failedByMetaCode[key] ?? 0) + 1;
+        }
+      }
     }
   }
 
@@ -224,6 +245,7 @@ export async function processNotificationJobs(
     cancelled,
     held,
     reminderSkipReasons: tallyReminderSkipReasons(skipEntries),
+    failedByMetaCode,
     limitReached: (jobs ?? []).length >= limit,
   };
 }

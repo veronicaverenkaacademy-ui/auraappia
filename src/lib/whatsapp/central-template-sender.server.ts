@@ -17,8 +17,12 @@ import {
   type CircuitBreakerScope,
   type SendAttemptOutcome,
 } from "./central-send-error-classifier.ts";
+import { formatMetaErrorForHuman } from "./central-meta-error-detail.ts";
 import type { ReminderTemplateKey } from "./central-template-variables.ts";
-import { getSystemTemplate } from "../marketing/system-templates.ts";
+import {
+  getSystemTemplate,
+  validateSystemTemplateContract,
+} from "../marketing/system-templates.ts";
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const DEFAULT_GRAPH_API_VERSION = "v26.0";
@@ -151,8 +155,26 @@ async function fetchMetaSend(
     if (res.status >= 200 && res.status < 300) {
       return { kind: "http_ok", body: parsedBody };
     }
-    const errObj = (parsedBody as { error?: { code?: number } })?.error;
-    return { kind: "http_error", status: res.status, metaCode: errObj?.code, body: parsedBody };
+    const errObj = (
+      parsedBody as {
+        error?: {
+          code?: number;
+          message?: string;
+          error_data?: { details?: string };
+        };
+      }
+    )?.error;
+    // M3: `error_data.details` é o detalhe mais específico quando presente
+    // (ex.: qual parâmetro/variável deu problema); `message` é o fallback
+    // genérico. Ambos sanitizados antes de guardar (ver formatMetaErrorForHuman).
+    const rawDetail = errObj?.error_data?.details ?? errObj?.message;
+    return {
+      kind: "http_error",
+      status: res.status,
+      metaCode: errObj?.code,
+      rawDetail,
+      body: parsedBody,
+    };
   } catch (e) {
     if (e instanceof Error && e.name === "AbortError") {
       return { kind: "timeout" };
@@ -168,6 +190,24 @@ export async function sendCentralTemplate(
 ): Promise<SendCentralTemplateResult> {
   const template = getSystemTemplate(input.templateKey);
   const hasButtons = template.buttons.length > 0; // só lembrete_24h, confirmado em system-templates.ts
+
+  // TRAVA DE FORMATO: nunca chega a montar o JSON nem a chamar a Meta se o
+  // template declarado em system-templates.ts não bater com o próprio
+  // contrato (nome [a-z0-9_], {{n}} sequenciais, contagem de variáveis,
+  // buttons/buttonActions do mesmo tamanho) — falha localmente, com erro
+  // claro, antes de qualquer I/O.
+  const contractCheck = validateSystemTemplateContract(input.templateKey, input.variables);
+  if (!contractCheck.ok) {
+    if (input.dryRun) {
+      return { kind: "dry_run", bodyPreview: { ok: false, error: contractCheck.error } };
+    }
+    return {
+      kind: "failed",
+      messageRowId: "",
+      errorClass: "permanent",
+      error: contractCheck.error,
+    };
+  }
 
   if (input.dryRun) {
     const maskedVars = maskReminderVariablesForAudit(input.variables);
@@ -320,6 +360,18 @@ export async function sendCentralTemplate(
   }
 
   const classified = classifySendError(outcome, input.templateKey);
+  // M3 ("erro da Meta visível"): até aqui, error_message só guardava o texto
+  // fixo interno (classified.reason) — o código numérico já ia pra
+  // error_code (coluna separada), mas o DETALHE real que a Meta mandou
+  // (error.message/error_data.details) era 100% descartado (confirmado no
+  // M1f do diário desta tarefa). humanReason acrescenta `[Meta <código>:
+  // <detalhe sanitizado>]` no final do texto em português já existente —
+  // sem coluna nova, sem mudar o que decide retry/circuito (só o TEXTO).
+  const humanReason = formatMetaErrorForHuman(
+    classified.reason,
+    outcome.kind === "http_error" ? outcome.metaCode : undefined,
+    outcome.kind === "http_error" ? outcome.rawDetail : undefined,
+  );
 
   if (classified.circuitBreaker.kind !== "none") {
     await openIncident(
@@ -332,7 +384,7 @@ export async function sendCentralTemplate(
   if (classified.class === "uncertain") {
     await supabaseAdmin
       .from("whatsapp_messages")
-      .update({ status: "uncertain", error_class: "uncertain", error_message: classified.reason })
+      .update({ status: "uncertain", error_class: "uncertain", error_message: humanReason })
       .eq("id", messageRowId);
     return { kind: "uncertain", messageRowId, threadId };
   }
@@ -350,7 +402,7 @@ export async function sendCentralTemplate(
       status: "failed",
       error_class: classified.class,
       error_code: outcome.kind === "http_error" ? (outcome.metaCode ?? null) : null,
-      error_message: classified.reason,
+      error_message: humanReason,
     })
     .eq("id", messageRowId);
 
@@ -358,6 +410,6 @@ export async function sendCentralTemplate(
     kind: "failed",
     messageRowId,
     errorClass: classified.class === "transient" ? "transient" : "permanent",
-    error: classified.reason,
+    error: humanReason,
   };
 }
