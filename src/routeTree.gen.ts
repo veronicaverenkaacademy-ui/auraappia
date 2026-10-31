@@ -72,7 +72,6 @@ import { Route as AuthenticatedMarketingJornadasRouteImport } from './routes/_au
 import { Route as AuthenticatedServicosIndexRouteImport } from './routes/_authenticated/servicos.index'
 import { Route as AuthenticatedServicosIdRouteImport } from './routes/_authenticated/servicos.$id'
 import { Route as AuthenticatedWhatsappIndexRouteImport } from './routes/_authenticated/whatsapp.index'
-import { Route as AuthenticatedWhatsappIdRouteImport } from './routes/_authenticated/whatsapp.$id'
 import { Route as AuthenticatedWhatsappConfigRouteImport } from './routes/_authenticated/whatsapp.config'
 
 const IndexRoute = IndexRouteImport.update({
@@ -412,11 +411,6 @@ const AuthenticatedWhatsappIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedWhatsappRoute,
   } as any)
-const AuthenticatedWhatsappIdRoute = AuthenticatedWhatsappIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AuthenticatedWhatsappRoute,
-} as any)
 const AuthenticatedWhatsappConfigRoute =
   AuthenticatedWhatsappConfigRouteImport.update({
     id: '/config',
@@ -478,7 +472,6 @@ export interface FileRoutesByFullPath {
   '/marketing/ia': typeof AuthenticatedMarketingIaRoute
   '/marketing/jornadas': typeof AuthenticatedMarketingJornadasRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
-  '/whatsapp/$id': typeof AuthenticatedWhatsappIdRoute
   '/whatsapp/config': typeof AuthenticatedWhatsappConfigRoute
   '/aura-ia/': typeof AuthenticatedAuraIaIndexRoute
   '/bi/': typeof AuthenticatedBiIndexRoute
@@ -535,7 +528,6 @@ export interface FileRoutesByTo {
   '/marketing/ia': typeof AuthenticatedMarketingIaRoute
   '/marketing/jornadas': typeof AuthenticatedMarketingJornadasRoute
   '/servicos/$id': typeof AuthenticatedServicosIdRoute
-  '/whatsapp/$id': typeof AuthenticatedWhatsappIdRoute
   '/whatsapp/config': typeof AuthenticatedWhatsappConfigRoute
   '/aura-ia': typeof AuthenticatedAuraIaIndexRoute
   '/bi': typeof AuthenticatedBiIndexRoute
@@ -603,7 +595,6 @@ export interface FileRoutesById {
   '/_authenticated/marketing/ia': typeof AuthenticatedMarketingIaRoute
   '/_authenticated/marketing/jornadas': typeof AuthenticatedMarketingJornadasRoute
   '/_authenticated/servicos/$id': typeof AuthenticatedServicosIdRoute
-  '/_authenticated/whatsapp/$id': typeof AuthenticatedWhatsappIdRoute
   '/_authenticated/whatsapp/config': typeof AuthenticatedWhatsappConfigRoute
   '/_authenticated/aura-ia/': typeof AuthenticatedAuraIaIndexRoute
   '/_authenticated/bi/': typeof AuthenticatedBiIndexRoute
@@ -671,7 +662,6 @@ export interface FileRouteTypes {
     | '/marketing/ia'
     | '/marketing/jornadas'
     | '/servicos/$id'
-    | '/whatsapp/$id'
     | '/whatsapp/config'
     | '/aura-ia/'
     | '/bi/'
@@ -728,7 +718,6 @@ export interface FileRouteTypes {
     | '/marketing/ia'
     | '/marketing/jornadas'
     | '/servicos/$id'
-    | '/whatsapp/$id'
     | '/whatsapp/config'
     | '/aura-ia'
     | '/bi'
@@ -795,7 +784,6 @@ export interface FileRouteTypes {
     | '/_authenticated/marketing/ia'
     | '/_authenticated/marketing/jornadas'
     | '/_authenticated/servicos/$id'
-    | '/_authenticated/whatsapp/$id'
     | '/_authenticated/whatsapp/config'
     | '/_authenticated/aura-ia/'
     | '/_authenticated/bi/'
@@ -1264,13 +1252,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWhatsappIndexRouteImport
       parentRoute: typeof AuthenticatedWhatsappRoute
     }
-    '/_authenticated/whatsapp/$id': {
-      id: '/_authenticated/whatsapp/$id'
-      path: '/$id'
-      fullPath: '/whatsapp/$id'
-      preLoaderRoute: typeof AuthenticatedWhatsappIdRouteImport
-      parentRoute: typeof AuthenticatedWhatsappRoute
-    }
     '/_authenticated/whatsapp/config': {
       id: '/_authenticated/whatsapp/config'
       path: '/config'
@@ -1416,13 +1397,11 @@ const AuthenticatedServicosRouteWithChildren =
   )
 
 interface AuthenticatedWhatsappRouteChildren {
-  AuthenticatedWhatsappIdRoute: typeof AuthenticatedWhatsappIdRoute
   AuthenticatedWhatsappConfigRoute: typeof AuthenticatedWhatsappConfigRoute
   AuthenticatedWhatsappIndexRoute: typeof AuthenticatedWhatsappIndexRoute
 }
 
 const AuthenticatedWhatsappRouteChildren: AuthenticatedWhatsappRouteChildren = {
-  AuthenticatedWhatsappIdRoute: AuthenticatedWhatsappIdRoute,
   AuthenticatedWhatsappConfigRoute: AuthenticatedWhatsappConfigRoute,
   AuthenticatedWhatsappIndexRoute: AuthenticatedWhatsappIndexRoute,
 }
