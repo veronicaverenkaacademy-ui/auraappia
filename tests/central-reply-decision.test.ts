@@ -163,6 +163,17 @@ test("lembrete desatualizado: horário do agendamento mudou desde o envio", () =
   assert.equal(r.kind, "stale_reminder");
 });
 
+test("M3 (28/10/2026): MESMO instante em formatos de texto diferentes (Postgres vs JS) NUNCA deveria disparar stale_reminder — usa sameInstant, não comparação de texto", () => {
+  const r = decideThreadReply(
+    base({
+      action: "confirm",
+      threadAppointmentStartsAtSnapshotIso: "2026-11-11 15:00:00+00", // formato Postgres
+      appointmentStartsAtIso: SNAPSHOT, // "2026-11-11T15:00:00.000Z" — mesmo instante, formato JS
+    }),
+  );
+  assert.equal(r.kind, "apply_confirm", "mesmo instante, texto diferente — nunca é stale_reminder");
+});
+
 test("horário já passou: late_response, qualquer ação", () => {
   const r = decideThreadReply(
     base({ action: "confirm", now: new Date("2026-11-12T00:00:00.000Z") }),

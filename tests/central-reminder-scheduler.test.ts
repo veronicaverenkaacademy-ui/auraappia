@@ -862,3 +862,218 @@ test("4/8 (mutação M-i): resultado 'incerto' (timeout) marca o job como held, 
     else process.env.WHATSAPP_REMINDERS_TEST_MODE = prevTestMode;
   }
 });
+
+// ===== M3 (corrige recálculo indevido, 28/10/2026) =====
+// A suíte acima (ex.: "M2: duas varreduras...") nunca pegou o bug porque o
+// banco simulado guarda `scheduled_for` EXATAMENTE como foi inserido (string
+// JS `toISOString()`) — igual ao que a segunda varredura recalcula, então a
+// comparação `!==` ingênua "por sorte" dava igual nos testes, mesmo com o
+// bug presente. O Postgres real NUNCA devolve nesse formato (confirmado por
+// query real, ver diário) — por isso os testes abaixo gravam `scheduled_for`
+// no formato REAL do Postgres (espaço, offset "+00", sem o "T"/"Z" do JS) de
+// propósito, pra reproduzir o cenário onde o bug de fato se manifestava.
+
+test("M3 DEFEITO REPRODUZIDO (agora corrigido): scheduled_for gravado no formato REAL do Postgres (não o do JS) e NADA mudou -> recalculated=0 em duas varreduras seguidas, next_attempt_at/attempts/last_error preservados", async () => {
+  await withEnabledReminders(async () => {
+    const startsAt = new Date(NOW.getTime() + 24 * 60 * 60 * 1000);
+    const targetSendAt = new Date(startsAt.getTime() - 24 * 60 * 60 * 1000); // offset do lembrete_24h
+    // Formato Postgres real (confirmado por query nesta sessão): espaço,
+    // "+00", sem fração quando o segundo é exato — DELIBERADAMENTE
+    // diferente do texto que `new Date(...).toISOString()` geraria pro
+    // MESMO instante (teria "T"..."Z", "2026-...T...:00.000Z").
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const postgresFormat = (d: Date) =>
+      `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}+00`;
+    const scheduledForPg = postgresFormat(targetSendAt);
+    assert.notEqual(
+      scheduledForPg,
+      targetSendAt.toISOString(),
+      "pré-condição: os textos têm que ser diferentes pro teste valer algo",
+    );
+
+    const db = new FakeSupabaseAdmin({
+      tables: {
+        appointments: [
+          {
+            id: "appt-1",
+            owner_id: "owner-1",
+            client_id: "client-1",
+            status: "confirmed",
+            starts_at: startsAt.toISOString(),
+            created_at: CREATED_FAR_IN_THE_PAST,
+            updated_at: CREATED_FAR_IN_THE_PAST,
+            reminder_24h_sent_at: null,
+            reminder_2h_sent_at: null,
+          },
+        ],
+        notification_jobs: [
+          {
+            id: "job-24h-1",
+            owner_id: "owner-1",
+            appointment_id: "appt-1",
+            client_id: "client-1",
+            type: "appointment_reminder_24h",
+            status: "pending",
+            scheduled_for: scheduledForPg,
+            next_attempt_at: scheduledForPg,
+            attempts: 2, // já tentou antes — simula backoff em andamento
+            last_error: "Falha anterior real — nunca pode ser apagada por um recálculo bobo.",
+          },
+        ],
+      },
+    });
+
+    const r1 = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    const r2 = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    assert.equal(r1.recalculated, 0, "1ª varredura: nada mudou de verdade, não deveria recalcular");
+    assert.equal(
+      r2.recalculated,
+      0,
+      "2ª varredura: idem — o bug fazia isto dar 1 em TODA varredura",
+    );
+
+    const job = db.tables.notification_jobs[0];
+    assert.equal(job.attempts, 2, "attempts nunca deveria ser tocado por este bloco");
+    assert.equal(
+      job.last_error,
+      "Falha anterior real — nunca pode ser apagada por um recálculo bobo.",
+      "last_error de uma falha real não pode ser apagado por uma varredura que não mudou nada",
+    );
+    assert.equal(
+      job.next_attempt_at,
+      scheduledForPg,
+      "next_attempt_at (backoff em andamento) preservado",
+    );
+  });
+});
+
+test("M3: remarcação REAL do agendamento (starts_at muda de verdade) -> recalculated=1, novo scheduled_for reflete o novo horário, continua 1 única linha (lembrete antigo não é reenviado em duplicidade)", async () => {
+  await withEnabledReminders(async () => {
+    const originalStartsAt = new Date(NOW.getTime() + 24 * 60 * 60 * 1000);
+    const db = new FakeSupabaseAdmin({
+      tables: {
+        appointments: [
+          {
+            id: "appt-1",
+            owner_id: "owner-1",
+            client_id: "client-1",
+            status: "confirmed",
+            starts_at: originalStartsAt.toISOString(),
+            created_at: CREATED_FAR_IN_THE_PAST,
+            updated_at: CREATED_FAR_IN_THE_PAST,
+            reminder_24h_sent_at: null,
+            reminder_2h_sent_at: null,
+          },
+        ],
+        notification_jobs: [],
+      },
+    });
+
+    const r1 = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    assert.equal(r1.enqueued, 2);
+
+    // Agendamento é remarcado de verdade pra 10h mais tarde.
+    const newStartsAt = new Date(originalStartsAt.getTime() + 10 * 60 * 60 * 1000);
+    db.tables.appointments[0].starts_at = newStartsAt.toISOString();
+    db.tables.appointments[0].updated_at = NOW.toISOString();
+
+    const r2 = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    assert.equal(
+      r2.recalculated,
+      2,
+      "os 2 jobs (24h e 2h) precisam recalcular — o horário mudou de verdade",
+    );
+    assert.equal(
+      db.tables.notification_jobs.length,
+      2,
+      "continua só 1 linha por tipo — nunca duplica",
+    );
+
+    const job24h = jobsOfType(db, "appointment_reminder_24h")[0];
+    const expectedNewTarget = new Date(newStartsAt.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    assert.equal(job24h.scheduled_for, expectedNewTarget);
+    assert.equal(job24h.next_attempt_at, expectedNewTarget);
+  });
+});
+
+test("M3: timestamp inválido/corrompido em scheduled_for nunca lança exceção — trata como 'mudou' (recalcula em segurança) em vez de travar a varredura inteira", async () => {
+  await withEnabledReminders(async () => {
+    const startsAt = new Date(NOW.getTime() + 24 * 60 * 60 * 1000);
+    const db = new FakeSupabaseAdmin({
+      tables: {
+        appointments: [
+          {
+            id: "appt-1",
+            owner_id: "owner-1",
+            client_id: "client-1",
+            status: "confirmed",
+            starts_at: startsAt.toISOString(),
+            created_at: CREATED_FAR_IN_THE_PAST,
+            updated_at: CREATED_FAR_IN_THE_PAST,
+            reminder_24h_sent_at: null,
+            reminder_2h_sent_at: null,
+          },
+        ],
+        notification_jobs: [
+          {
+            id: "job-24h-1",
+            owner_id: "owner-1",
+            appointment_id: "appt-1",
+            client_id: "client-1",
+            type: "appointment_reminder_24h",
+            status: "pending",
+            scheduled_for: "dado-corrompido-não-é-uma-data",
+            next_attempt_at: "dado-corrompido-não-é-uma-data",
+          },
+        ],
+      },
+    });
+
+    await assert.doesNotReject(
+      scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW }),
+    );
+    const job = jobsOfType(db, "appointment_reminder_24h")[0];
+    assert.notEqual(job.scheduled_for, "dado-corrompido-não-é-uma-data"); // foi recalculado pro horário real
+  });
+});
+
+test("M3: job que já não está 'pending' (ex.: 'processing') nunca é tocado pela recalculação, independente de scheduled_for bater ou não", async () => {
+  await withEnabledReminders(async () => {
+    const startsAt = new Date(NOW.getTime() + 24 * 60 * 60 * 1000);
+    const db = new FakeSupabaseAdmin({
+      tables: {
+        appointments: [
+          {
+            id: "appt-1",
+            owner_id: "owner-1",
+            client_id: "client-1",
+            status: "confirmed",
+            starts_at: startsAt.toISOString(),
+            created_at: CREATED_FAR_IN_THE_PAST,
+            updated_at: CREATED_FAR_IN_THE_PAST,
+            reminder_24h_sent_at: null,
+            reminder_2h_sent_at: null,
+          },
+        ],
+        notification_jobs: [
+          {
+            id: "job-24h-1",
+            owner_id: "owner-1",
+            appointment_id: "appt-1",
+            client_id: "client-1",
+            type: "appointment_reminder_24h",
+            status: "processing", // sendo processado agora por outra execução
+            scheduled_for: "2020-01-01 00:00:00+00", // bem diferente do real, de propósito
+            next_attempt_at: "2020-01-01 00:00:00+00",
+          },
+        ],
+      },
+    });
+
+    const r = await scanAndEnqueueCentralReminders({ supabaseAdmin: db as never, now: () => NOW });
+    assert.equal(r.recalculated, 0);
+    const job = jobsOfType(db, "appointment_reminder_24h")[0];
+    assert.equal(job.status, "processing");
+    assert.equal(job.scheduled_for, "2020-01-01 00:00:00+00"); // nunca tocado
+  });
+});

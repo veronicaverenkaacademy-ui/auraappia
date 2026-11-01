@@ -21,6 +21,7 @@ import {
   type MetaStatus,
 } from "./central-reminder-policy.ts";
 import { isValidPhoneBR } from "../phone.ts";
+import { sameInstant } from "./time-instant.ts";
 
 const REMINDER_24H_MS = 24 * 60 * 60 * 1000;
 const REMINDER_2H_MS = 2 * 60 * 60 * 1000;
@@ -163,7 +164,20 @@ export async function scanAndEnqueueCentralReminders(
         // Só mexe em job que ainda está pendente, e só quando o horário de
         // disparo realmente mudou (agendamento foi remarcado depois de já
         // ter sido enfileirado) — nunca toca processing/sent/cancelled/failed.
-        if (existing.status === "pending" && existing.scheduled_for !== targetSendAtIso) {
+        //
+        // DEFEITO CORRIGIDO (28/10/2026): `existing.scheduled_for` vem do
+        // Postgres via PostgREST ("2026-10-27 10:37:00+00"); `targetSendAtIso`
+        // vem de `new Date(...).toISOString()` ("2026-10-27T10:37:00.000Z") —
+        // formatos de serialização diferentes NUNCA batem como texto pro
+        // mesmo instante, então `!==` dava sempre verdadeiro — TODO job
+        // pendente era "recalculado" em TODA varredura, mesmo sem nenhuma
+        // remarcação real, resetando next_attempt_at (ignorando o backoff de
+        // uma tentativa anterior) e apagando last_error. Agora compara o
+        // INSTANTE (sameInstant), nunca o texto.
+        if (
+          existing.status === "pending" &&
+          !sameInstant(existing.scheduled_for, targetSendAtIso)
+        ) {
           if (skipCreation) {
             await supabaseAdmin
               .from("notification_jobs")

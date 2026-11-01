@@ -13,6 +13,8 @@
 // foi marcada resolvida. Só client_confirmation_status='pending' (nenhuma
 // resposta definitiva ainda) depende de a THREAD específica ainda estar em
 // aberto e não estar desatualizada.
+import { sameInstant } from "./time-instant.ts";
+
 export type ReplyAction = "confirm" | "reschedule" | "cancel";
 export type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled" | "no_show";
 export type ClientConfirmationStatus =
@@ -93,7 +95,12 @@ export function decideThreadReply(input: ThreadReplyDecisionInput): ThreadReplyD
   // clientConfirmationStatus === "pending": nenhuma resposta definitiva
   // ainda — só aqui a freschura DESTA thread específica importa.
   if (input.threadStatus !== "awaiting_reply") return { kind: "late_response" };
-  if (input.threadAppointmentStartsAtSnapshotIso !== input.appointmentStartsAtIso) {
+  // sameInstant (28/10/2026), não comparação de texto — esta função é só a
+  // especificação pura (nunca chamada em produção; quem de fato aplica é a
+  // função SQL apply_whatsapp_central_reply, que já compara timestamptz
+  // nativo, nunca texto) — troca aqui mantém a especificação fiel à MESMA
+  // semântica (comparar o instante) que o SQL real já usa.
+  if (!sameInstant(input.threadAppointmentStartsAtSnapshotIso, input.appointmentStartsAtIso)) {
     return { kind: "stale_reminder" };
   }
   if (!stillSalvageable || input.appointmentStatus === "cancelled")
