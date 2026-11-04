@@ -174,6 +174,57 @@ test("M3 (28/10/2026): MESMO instante em formatos de texto diferentes (Postgres 
   assert.equal(r.kind, "apply_confirm", "mesmo instante, texto diferente — nunca é stale_reminder");
 });
 
+test("DEFEITO CORRIGIDO 04/11/2026: no_show com starts_at ainda no futuro (edição manual incomum) nunca é confirmável — late_response, igual a completed", () => {
+  const r = decideThreadReply(base({ action: "confirm", appointmentStatus: "no_show" }));
+  assert.equal(r.kind, "late_response");
+});
+
+test("DEFEITO CORRIGIDO 04/11/2026: no_show com starts_at ainda no futuro também não é cancelável", () => {
+  const r = decideThreadReply(base({ action: "cancel", appointmentStatus: "no_show" }));
+  assert.equal(r.kind, "late_response");
+});
+
+test("DEFEITO CORRIGIDO 04/11/2026: lembrete desatualizado agora vale TAMBÉM no estado 'confirmed' (antes só valia em 'pending') — stale_reminder, nunca apply_cancel no horário antigo", () => {
+  const r = decideThreadReply(
+    base({
+      action: "cancel",
+      clientConfirmationStatus: "confirmed",
+      threadStatus: "resolved_confirmed",
+      appointmentStartsAtIso: "2026-11-11T18:00:00.000Z", // Agenda remarcou depois da confirmação
+    }),
+  );
+  assert.equal(
+    r.kind,
+    "stale_reminder",
+    "snapshot desatualizado tem que vencer, mesmo já confirmado",
+  );
+});
+
+test("DEFEITO CORRIGIDO 04/11/2026: lembrete desatualizado também vale no estado 'reschedule_requested'", () => {
+  const r = decideThreadReply(
+    base({
+      action: "confirm",
+      clientConfirmationStatus: "reschedule_requested",
+      threadStatus: "resolved_reschedule_requested",
+      appointmentStartsAtIso: "2026-11-11T18:00:00.000Z",
+    }),
+  );
+  assert.equal(r.kind, "stale_reminder");
+});
+
+test("DEFEITO CORRIGIDO 04/11/2026: lembrete desatualizado também vale no estado 'declined'/cancelado", () => {
+  const r = decideThreadReply(
+    base({
+      action: "confirm",
+      clientConfirmationStatus: "declined",
+      appointmentStatus: "cancelled",
+      threadStatus: "resolved_cancelled",
+      appointmentStartsAtIso: "2026-11-11T18:00:00.000Z",
+    }),
+  );
+  assert.equal(r.kind, "stale_reminder");
+});
+
 test("horário já passou: late_response, qualquer ação", () => {
   const r = decideThreadReply(
     base({ action: "confirm", now: new Date("2026-11-12T00:00:00.000Z") }),

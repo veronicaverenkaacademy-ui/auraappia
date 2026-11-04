@@ -53,6 +53,47 @@ parseMetaWebhookEvents (central-webhook-parser.ts) → eventos normalizados
     não existir localmente, fica em whatsapp_status_reconciliation
 ```
 
+## Tabela de comportamento das respostas de botão (status × ação)
+
+Fonte única de verdade: a função SQL `apply_whatsapp_central_reply`
+(`supabase/migrations/`), espelhada por `central-reply-decision.ts`
+(especificação pura, testada, NUNCA executada em produção — quem aplica
+de verdade é a função SQL, atômica, com `SELECT ... FOR UPDATE` no
+agendamento). Qualquer mudança de regra precisa ser feita nos dois
+lugares.
+
+Primeiro, uma checagem vale para QUALQUER ação, antes de tudo:
+
+- Agendamento não encontrado (apagado de verdade) → `appointment_not_found`.
+- Agendamento `completed` OU `no_show` OU `starts_at` já passou →
+  `late_response` ("resposta tardia", nenhuma mudança).
+- Horário do agendamento mudou desde que o lembrete foi enviado
+  (`whatsapp_central_threads.appointment_starts_at_snapshot <>
+  appointments.starts_at`) → `stale_reminder` ("lembrete desatualizado",
+  nenhuma mudança, a thread é marcada `stale`).
+
+Daí em diante, a decisão depende do **estado de confirmação atual**
+(`client_confirmation_status`), não do status da thread — um segundo
+toque (repetido, ou noutro botão da mesma mensagem) é reconhecido pelo
+que o agendamento JÁ É:
+
+| Estado atual (`client_confirmation_status`) | Ação: Confirmar | Ação: Cancelar | Ação: Reagendar |
+|---|---|---|---|
+| `pending` (nunca respondeu) | `status→confirmed`, grava `client_confirmed_at` | `status→cancelled` (`apply_cancel`/`apply_cancel_late` se faltar menos que `LATE_CANCEL_HOURS`) | não altera o agendamento, avisa 1x (`apply_reschedule_request`) |
+| `confirmed` | nada muda, sem erro, sem aviso (`no_op_already_confirmed`) | cancela (`apply_cancel`/`_late`) | não altera, avisa (`apply_reschedule_request`) |
+| `declined` (já cancelou) | não reabre, só avisa "quer manter, verifique" (`confirm_after_cancel`) | nada muda, sem aviso duplicado (`no_op_already_cancelled`) | sem regra específica → `late_response` |
+| `reschedule_requested` | confirma (`apply_confirm`) | cancela (`apply_cancel`/`_late`) | não altera, avisa de novo SEM duplicar notificação (`apply_reschedule_request_repeat`) |
+
+Toque repetido do MESMO evento (reentrega da Meta) é idempotente: a
+mensagem inbound é gravada com índice único por `(provider,
+provider_message_id)` ANTES de aplicar o efeito — uma reentrega nunca
+reaplica a ação duas vezes. O `UPDATE` do agendamento é sempre
+condicional (`WHERE id = ... AND <estado esperado>`) — zero linhas
+mudadas nunca é tratado como sucesso silencioso.
+
+A cliente NUNCA recebe resposta automática (decisão atual, mantida) — só
+a dona/profissional é avisada, via `app_notifications`.
+
 ## Tabela de erros da Meta (classificação)
 
 | Código | Significado (SUPOSIÇÃO — fonte secundária, não a doc. oficial da Meta lida ao vivo) | Classe | Freio de emergência |
