@@ -59,7 +59,25 @@ function computeLateCancel(appointmentStartsAt: Date, now: Date, lateCancelHours
 export function decideThreadReply(input: ThreadReplyDecisionInput): ThreadReplyDecision {
   const appointmentStartsAt = new Date(input.appointmentStartsAtIso);
   const alreadyPassed = appointmentStartsAt.getTime() <= input.now.getTime();
-  const stillSalvageable = input.appointmentStatus !== "completed" && !alreadyPassed;
+  // DEFEITO CORRIGIDO (04/11/2026): "no_show" nunca era excluído de
+  // "salvageable" (só "completed") — um agendamento marcado no-show com
+  // starts_at ainda no futuro (edição manual incomum, mas possível) podia
+  // ser confirmado/cancelado por um toque de botão como se nada tivesse
+  // acontecido.
+  const stillSalvageable =
+    input.appointmentStatus !== "completed" &&
+    input.appointmentStatus !== "no_show" &&
+    !alreadyPassed;
+
+  // DEFEITO CORRIGIDO (04/11/2026): a checagem de lembrete desatualizado
+  // (agendamento remarcado depois do envio) só valia dentro do ramo
+  // 'pending' — um toque em QUALQUER outro estado de confirmação (ex.:
+  // já confirmado, depois remarcado, cliente toca de novo num botão da
+  // mesma mensagem antiga) nunca comparava o snapshot. Promovida pra
+  // ANTES de qualquer decisão por estado — vale pra toda ação, sempre.
+  if (!sameInstant(input.threadAppointmentStartsAtSnapshotIso, input.appointmentStartsAtIso)) {
+    return { kind: "stale_reminder" };
+  }
 
   if (input.clientConfirmationStatus === "declined") {
     if (!stillSalvageable) return { kind: "late_response" };
@@ -93,16 +111,9 @@ export function decideThreadReply(input: ThreadReplyDecisionInput): ThreadReplyD
   }
 
   // clientConfirmationStatus === "pending": nenhuma resposta definitiva
-  // ainda — só aqui a freschura DESTA thread específica importa.
+  // ainda — só aqui a freschura DESTA thread específica (distinta da
+  // checagem de horário acima, que já foi feita) importa.
   if (input.threadStatus !== "awaiting_reply") return { kind: "late_response" };
-  // sameInstant (28/10/2026), não comparação de texto — esta função é só a
-  // especificação pura (nunca chamada em produção; quem de fato aplica é a
-  // função SQL apply_whatsapp_central_reply, que já compara timestamptz
-  // nativo, nunca texto) — troca aqui mantém a especificação fiel à MESMA
-  // semântica (comparar o instante) que o SQL real já usa.
-  if (!sameInstant(input.threadAppointmentStartsAtSnapshotIso, input.appointmentStartsAtIso)) {
-    return { kind: "stale_reminder" };
-  }
   if (!stillSalvageable || input.appointmentStatus === "cancelled")
     return { kind: "late_response" };
 

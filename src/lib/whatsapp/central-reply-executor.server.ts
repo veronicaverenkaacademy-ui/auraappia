@@ -1,6 +1,12 @@
 // Fina camada sobre a RPC atômica apply_whatsapp_central_reply (migration
-// 20261024194007) — só chama e tipa o resultado; a decisão de verdade mora
-// na função SQL (que espelha central-reply-decision.ts). Depois do
+// 20261024194007, corrigida em 20261104133657 — ver
+// docs/confirmacao-whatsapp-progress.md) — só chama e tipa o resultado; a
+// decisão de verdade mora na função SQL. FONTE ÚNICA (M1f, 04/11/2026): o
+// SQL decide a mudança de estado (único lugar com SELECT...FOR UPDATE e
+// transação real); este arquivo e central-reply-decision.ts NUNCA decidem
+// nada por conta própria — central-reply-decision.ts é só a especificação
+// TESTADA que o SQL precisa espelhar (nunca executada em produção), e este
+// arquivo só classifica o retorno (texto) em notificação. Depois do
 // resultado, monta a notificação certa (quando houver) para dona/profissional.
 import type { ReplyAction } from "./central-reply-decision.ts";
 
