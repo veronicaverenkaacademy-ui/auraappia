@@ -24,9 +24,20 @@
 // `node --test` hoje) — por isso aqui o import continua DINÂMICO (mesmo
 // padrão já usado para supabaseAdmin antes desta mudança), nunca estático:
 // só assim o módulo carrega sob `node --test` sem o resolvedor do Vite.
+//
+// DEFEITO CORRIGIDO (05-06/11/2026): o bloco "por salão" descartava TODO
+// evento do número central (nunca cadastrado em whatsapp_instances) antes
+// de alcançar o caminho central. Agora o payload é separado por
+// phone_number_id ANTES de qualquer caminho rodar (depois da assinatura,
+// nunca antes — só então o phone_number_id do corpo é confiável). Os dois
+// caminhos sempre são tentados, sequencialmente, cada um só com os eventos
+// que são dele; nenhum depende do resultado do outro.
 import { verifyMetaWebhookSignature } from "./central-webhook-signature.server.ts";
 import { parseMetaWebhookEvents } from "./central-webhook-parser.ts";
-import { handleCentralWebhookEvents } from "./central-webhook-handler.server.ts";
+import {
+  handleCentralWebhookEvents,
+  type CentralWebhookDeps,
+} from "./central-webhook-handler.server.ts";
 import { handleWebhookVerification } from "./central-webhook-verification.ts";
 
 type SupabaseAdmin = Awaited<
@@ -41,7 +52,56 @@ export type MetaWebhookDeps = {
   handleSalaoWebhook?: MetaCloudApiModule["metaCloudApiProvider"]["handleWebhook"];
   resolveClientCandidatesForPhone?: ConfirmationInboundModule["resolveClientCandidatesForPhone"];
   processInboundConfirmationReply?: ConfirmationInboundModule["processInboundConfirmationReply"];
+  /** Repassado pra handleCentralWebhookEvents tal como já definido em central-webhook-handler.server.ts — não altera aquele arquivo. */
+  centralDeps?: CentralWebhookDeps;
 };
+
+/** Mascara um phone_number_id pra log: só os 4 últimos dígitos. */
+function maskPhoneNumberId(id: string): string {
+  return id.length <= 4 ? "****" : `****${id.slice(-4)}`;
+}
+
+type MetaWebhookChange = { value?: { metadata?: { phone_number_id?: unknown } } };
+type MetaWebhookEntry = { changes?: MetaWebhookChange[] };
+
+/**
+ * Separa os `changes` do payload cru por phone_number_id: igual ao central
+ * (comparação exata após trim, só se o env estiver preenchido) sai do grupo
+ * "por salão"; sem phone_number_id ou qualquer outro valor fica no grupo
+ * "por salão", como hoje (nunca vira central por omissão).
+ */
+function splitPayloadByPhoneNumberId(
+  payload: unknown,
+  centralPhoneNumberIdRaw: string,
+): { salaoPayload: unknown; centralChangeCount: number } {
+  const central = centralPhoneNumberIdRaw.trim();
+  const body = payload as { entry?: MetaWebhookEntry[] };
+  if (!Array.isArray(body?.entry)) return { salaoPayload: payload, centralChangeCount: 0 };
+
+  let centralChangeCount = 0;
+  const salaoEntries = body.entry
+    .map((entry) => ({
+      ...entry,
+      changes: (entry.changes ?? []).filter((change) => {
+        const raw = change.value?.metadata?.phone_number_id;
+        const phoneNumberId = typeof raw === "string" ? raw.trim() : "";
+        if (!phoneNumberId) {
+          console.warn(
+            "[webhook-meta] change sem phone_number_id (origem=desconhecida) — nunca roteado ao central",
+          );
+          return true; // segue pro caminho "por salão", igual hoje
+        }
+        if (central && phoneNumberId === central) {
+          centralChangeCount++;
+          return false;
+        }
+        return true;
+      }),
+    }))
+    .filter((entry) => entry.changes.length > 0);
+
+  return { salaoPayload: { ...(body as object), entry: salaoEntries }, centralChangeCount };
+}
 
 async function resolveSalaoDeps(deps: MetaWebhookDeps) {
   const supabaseAdmin =
@@ -59,21 +119,13 @@ async function resolveSalaoDeps(deps: MetaWebhookDeps) {
   return { supabaseAdmin, handleSalaoWebhook, ...confirmation };
 }
 
-type SalaoOutcome = { finished: true; response: Response } | { finished: false };
-
 /**
- * Caminho "por salão" — MESMA lógica de antes, linha a linha, só extraída
- * pra função própria. `return` aqui só encerra ESTA função — por isso o
- * resultado é devolvido como { finished, response } pro chamador decidir se
- * repete a mesma resposta. Proposital: o defeito de hoje (eventos do número
- * central caem nos mesmos `return` abaixo, porque o número central nunca
- * está em whatsapp_instances) CONTINUA presente neste commit — é só
- * movimento, prova de que o refactor não mudou nada; corrigido no próximo.
+ * Caminho "por salão" — MESMA lógica de antes, linha a linha, só que agora
+ * roda sempre (nunca interrompe o caminho central, que roda em seguida,
+ * sempre) e recebe só os `changes` que NÃO são do número central (ver
+ * splitPayloadByPhoneNumberId). `return` aqui só encerra esta função.
  */
-async function processSalaoWebhookEvents(
-  payload: unknown,
-  deps: MetaWebhookDeps,
-): Promise<SalaoOutcome> {
+async function processSalaoWebhookEvents(payload: unknown, deps: MetaWebhookDeps): Promise<void> {
   try {
     const {
       supabaseAdmin,
@@ -84,8 +136,8 @@ async function processSalaoWebhookEvents(
 
     const parsed = await handleSalaoWebhook(payload);
     if (!parsed.instanceName) {
-      console.log("[webhook:meta] evento sem phone_number_id reconhecível — ignorado");
-      return { finished: true, response: new Response("OK", { status: 200 }) };
+      console.log("[webhook:meta] evento sem phone_number_id reconhecível (por salão) — ignorado");
+      return;
     }
 
     const { data: instance } = await supabaseAdmin
@@ -96,10 +148,10 @@ async function processSalaoWebhookEvents(
       .maybeSingle();
 
     if (!instance) {
-      console.error(
-        `[webhook:meta] phone_number_id desconhecido (${parsed.instanceName}) — ignorado.`,
+      console.warn(
+        `[webhook-meta] descartado motivo=phone_number_id_desconhecido origem=salao phone_number_id=${maskPhoneNumberId(parsed.instanceName)}`,
       );
-      return { finished: true, response: new Response("OK", { status: 200 }) };
+      return;
     }
     const ownerId = instance.owner_id as string;
     console.log(
@@ -163,7 +215,6 @@ async function processSalaoWebhookEvents(
     // por salão — a mudança abaixo (número central) tem sua própria regra.
     console.error("[webhook:meta] Falha ao processar payload", e);
   }
-  return { finished: false };
 }
 
 export async function handleMetaWhatsappWebhook(
@@ -204,20 +255,33 @@ export async function handleMetaWhatsappWebhook(
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  const salaoOutcome = await processSalaoWebhookEvents(payload, deps);
-  if (salaoOutcome.finished) {
-    return salaoOutcome.response;
+  // Roteamento só depois da assinatura válida. Os dois caminhos abaixo
+  // SEMPRE rodam, sequenciais e totalmente aguardados antes da resposta
+  // final — nenhum depende do resultado do outro.
+  const centralPhoneNumberId = process.env.META_WHATSAPP_CENTRAL_PHONE_NUMBER_ID ?? "";
+  const { salaoPayload, centralChangeCount } = splitPayloadByPhoneNumberId(
+    payload,
+    centralPhoneNumberId,
+  );
+  if (centralChangeCount > 0) {
+    console.log(`[webhook-meta] ${centralChangeCount} change(s) roteado(s) ao caminho central`);
   }
 
-  // Caminho do número CENTRAL (lembretes 24h/2h, respostas de botão) —
-  // paralelo e independente do bloco acima (filtra só eventos cujo
-  // phone_number_id é o número central; eventos de salão passam direto,
-  // sem efeito). Diferente do bloco acima: erro de INFRAESTRUTURA real
-  // (não um "não encontrado" esperado) devolve status de erro de verdade,
-  // pra Meta reenviar esta requisição — pedido explícito do item M5.
+  await processSalaoWebhookEvents(salaoPayload, deps);
+
+  // Relê o payload ORIGINAL (não o filtrado) — parseMetaWebhookEvents já
+  // filtra por phoneNumberId internamente (handleCentralWebhookEvents), sem
+  // risco de pegar eventos de salão. Erro de INFRAESTRUTURA real (não um
+  // "não encontrado" esperado) devolve status de erro de verdade, pra Meta
+  // reenviar esta requisição — comportamento intocado desta etapa.
   try {
-    const { events } = parseMetaWebhookEvents(payload);
-    await handleCentralWebhookEvents(events);
+    const { events, unrecognized } = parseMetaWebhookEvents(payload);
+    for (const u of unrecognized) {
+      console.warn(
+        `[webhook-meta] evento central não reconhecido motivo=${u.reason} formato=${u.payloadShape.join(",")}`,
+      );
+    }
+    await handleCentralWebhookEvents(events, deps.centralDeps);
   } catch (e) {
     console.error("[webhook:meta:central] Falha de infraestrutura ao processar evento(s)", e);
     return new Response("Internal Error", { status: 500 });

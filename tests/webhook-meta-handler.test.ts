@@ -213,17 +213,32 @@ test("DEFEITO DE HOJE (documentado, será invertido no commit 2): phone_number_i
   assert.equal(db.tables.whatsapp_messages.length, 0, "nada deveria ter sido gravado");
 });
 
-test("DEFEITO DE HOJE (documentado): evento 'formato central' (phone_number_id configurado como central, mas central nunca cadastrado em whatsapp_instances) some em silêncio — 200, sem crash mesmo sem deps do caminho central, provando que ele nunca roda", async () => {
+test("DEFEITO INVERTIDO NO COMMIT 2: evento 'formato central' agora é roteado ao caminho central (não mais descartado pelo caminho por salão) — caminho por salão não grava nada, central grava a mensagem órfã", async () => {
   process.env.META_WHATSAPP_CENTRAL_PHONE_NUMBER_ID = "CENTRAL_PNID";
   try {
-    const db = makeDb();
-    // Nenhum deps.centralDeps é passado (não existe neste commit) — se o
-    // caminho central fosse alcançado, tentaria o import dinâmico real de
-    // @/integrations/supabase/client.server e lançaria (confirmado por
-    // teste manual nesta sessão: o alias "@/" não resolve sob node --test).
-    // Receber 200 aqui É a prova de que ele não foi alcançado.
-    const res = await post(textPayload("CENTRAL_PNID"), baseDeps(db));
+    const db = makeDb(); // caminho por salão — não deve receber nada
+    const centralDb = new FakeSupabaseAdmin({
+      tables: { whatsapp_messages: [], whatsapp_central_orphan_messages: [] },
+      uniqueKeys: { whatsapp_central_orphan_messages: [["provider_message_id"]] },
+    });
+    const res = await post(textPayload("CENTRAL_PNID", "5547999990011", "oi central"), {
+      ...baseDeps(db),
+      centralDeps: {
+        supabaseAdmin: centralDb as never,
+        now: () => new Date("2026-11-11T12:00:00Z"),
+      },
+    });
     assert.equal(res.status, 200);
+    assert.equal(
+      db.tables.whatsapp_messages.length,
+      0,
+      "caminho por salão não deveria ter gravado nada",
+    );
+    assert.equal(
+      centralDb.tables.whatsapp_central_orphan_messages.length,
+      1,
+      "caminho central deveria ter processado o evento (texto sem contexto/candidato vira mensagem órfã)",
+    );
   } finally {
     delete process.env.META_WHATSAPP_CENTRAL_PHONE_NUMBER_ID;
   }
