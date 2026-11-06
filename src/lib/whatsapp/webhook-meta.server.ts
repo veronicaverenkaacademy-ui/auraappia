@@ -13,59 +13,80 @@
 //     número é resolvida pelo phone_number_id que vem no próprio payload
 //     (metadata.phone_number_id), consultado contra
 //     whatsapp_instances.instance_id.
-import { metaCloudApiProvider } from "./providers/meta-cloud-api.server";
-import {
-  processInboundConfirmationReply,
-  resolveClientCandidatesForPhone,
-} from "./confirmation-inbound.server";
-import { verifyMetaWebhookSignature } from "./central-webhook-signature.server";
-import { parseMetaWebhookEvents } from "./central-webhook-parser";
-import { handleCentralWebhookEvents } from "./central-webhook-handler.server";
+//
+// Refatoração de testabilidade (sem mudar comportamento, ver
+// docs/webhook-central-roteamento-progress.md): o bloco "por salão" virou a
+// função processSalaoWebhookEvents, com um parâmetro `deps` opcional
+// (produção chama sem deps e fica idêntica a antes). metaCloudApiProvider e
+// confirmation-inbound.server.ts importam `@/lib/phone` (alias só resolvido
+// pelo Vite) — diferente de central-webhook-handler.server.ts (cujas
+// dependências são todas relativas, por isso já é importável por
+// `node --test` hoje) — por isso aqui o import continua DINÂMICO (mesmo
+// padrão já usado para supabaseAdmin antes desta mudança), nunca estático:
+// só assim o módulo carrega sob `node --test` sem o resolvedor do Vite.
+import { verifyMetaWebhookSignature } from "./central-webhook-signature.server.ts";
+import { parseMetaWebhookEvents } from "./central-webhook-parser.ts";
+import { handleCentralWebhookEvents } from "./central-webhook-handler.server.ts";
 import { handleWebhookVerification } from "./central-webhook-verification.ts";
 
-export async function handleMetaWhatsappWebhook(request: Request): Promise<Response> {
-  const url = new URL(request.url);
+type SupabaseAdmin = Awaited<
+  typeof import("@/integrations/supabase/client.server")
+>["supabaseAdmin"];
+type MetaCloudApiModule = typeof import("./providers/meta-cloud-api.server.ts");
+type ConfirmationInboundModule = typeof import("./confirmation-inbound.server.ts");
 
-  if (request.method === "GET") {
-    return handleWebhookVerification(url);
-  }
+/** Deps injetáveis, todas opcionais — produção resolve tudo por import dinâmico de sempre. */
+export type MetaWebhookDeps = {
+  supabaseAdmin?: SupabaseAdmin;
+  handleSalaoWebhook?: MetaCloudApiModule["metaCloudApiProvider"]["handleWebhook"];
+  resolveClientCandidatesForPhone?: ConfirmationInboundModule["resolveClientCandidatesForPhone"];
+  processInboundConfirmationReply?: ConfirmationInboundModule["processInboundConfirmationReply"];
+};
 
-  if (request.method !== "POST") {
-    return new Response("Method Not Allowed", { status: 405 });
-  }
+async function resolveSalaoDeps(deps: MetaWebhookDeps) {
+  const supabaseAdmin =
+    deps.supabaseAdmin ?? (await import("@/integrations/supabase/client.server")).supabaseAdmin;
+  const handleSalaoWebhook =
+    deps.handleSalaoWebhook ??
+    (await import("./providers/meta-cloud-api.server")).metaCloudApiProvider.handleWebhook;
+  const confirmation =
+    deps.resolveClientCandidatesForPhone && deps.processInboundConfirmationReply
+      ? {
+          resolveClientCandidatesForPhone: deps.resolveClientCandidatesForPhone,
+          processInboundConfirmationReply: deps.processInboundConfirmationReply,
+        }
+      : await import("./confirmation-inbound.server");
+  return { supabaseAdmin, handleSalaoWebhook, ...confirmation };
+}
 
-  // Assinatura validada sobre o corpo CRU, antes de qualquer JSON.parse —
-  // vale para TODO POST a este endpoint (número central e por salão, é um
-  // único App/assinatura). Falha fechada: cabeçalho ausente/errado ou
-  // segredo não configurado = 401, sem processar nada. Reaproveita
-  // META_APP_SECRET (já existe, usado na troca de código do Embedded
-  // Signup) — nenhum segredo novo é necessário só para isto.
-  const rawBody = await request.text();
-  const signatureResult = await verifyMetaWebhookSignature(
-    rawBody,
-    request.headers.get("x-hub-signature-256"),
-    process.env.META_APP_SECRET,
-  );
-  if (!signatureResult.ok) {
-    console.error(`[webhook:meta] Assinatura inválida: ${signatureResult.reason}`);
-    return new Response("Unauthorized", { status: 401 });
-  }
+type SalaoOutcome = { finished: true; response: Response } | { finished: false };
 
-  let payload: unknown;
+/**
+ * Caminho "por salão" — MESMA lógica de antes, linha a linha, só extraída
+ * pra função própria. `return` aqui só encerra ESTA função — por isso o
+ * resultado é devolvido como { finished, response } pro chamador decidir se
+ * repete a mesma resposta. Proposital: o defeito de hoje (eventos do número
+ * central caem nos mesmos `return` abaixo, porque o número central nunca
+ * está em whatsapp_instances) CONTINUA presente neste commit — é só
+ * movimento, prova de que o refactor não mudou nada; corrigido no próximo.
+ */
+async function processSalaoWebhookEvents(
+  payload: unknown,
+  deps: MetaWebhookDeps,
+): Promise<SalaoOutcome> {
   try {
-    payload = JSON.parse(rawBody);
-  } catch {
-    return new Response("Invalid JSON", { status: 400 });
-  }
+    const {
+      supabaseAdmin,
+      handleSalaoWebhook,
+      resolveClientCandidatesForPhone,
+      processInboundConfirmationReply,
+    } = await resolveSalaoDeps(deps);
 
-  try {
-    const parsed = await metaCloudApiProvider.handleWebhook(payload);
+    const parsed = await handleSalaoWebhook(payload);
     if (!parsed.instanceName) {
       console.log("[webhook:meta] evento sem phone_number_id reconhecível — ignorado");
-      return new Response("OK", { status: 200 });
+      return { finished: true, response: new Response("OK", { status: 200 }) };
     }
-
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const { data: instance } = await supabaseAdmin
       .from("whatsapp_instances")
@@ -78,7 +99,7 @@ export async function handleMetaWhatsappWebhook(request: Request): Promise<Respo
       console.error(
         `[webhook:meta] phone_number_id desconhecido (${parsed.instanceName}) — ignorado.`,
       );
-      return new Response("OK", { status: 200 });
+      return { finished: true, response: new Response("OK", { status: 200 }) };
     }
     const ownerId = instance.owner_id as string;
     console.log(
@@ -141,6 +162,51 @@ export async function handleMetaWhatsappWebhook(request: Request): Promise<Respo
     // vai se corrigir sozinho no reenvio. Comportamento INTOCADO do fluxo
     // por salão — a mudança abaixo (número central) tem sua própria regra.
     console.error("[webhook:meta] Falha ao processar payload", e);
+  }
+  return { finished: false };
+}
+
+export async function handleMetaWhatsappWebhook(
+  request: Request,
+  deps: MetaWebhookDeps = {},
+): Promise<Response> {
+  const url = new URL(request.url);
+
+  if (request.method === "GET") {
+    return handleWebhookVerification(url);
+  }
+
+  if (request.method !== "POST") {
+    return new Response("Method Not Allowed", { status: 405 });
+  }
+
+  // Assinatura validada sobre o corpo CRU, antes de qualquer JSON.parse —
+  // vale para TODO POST a este endpoint (número central e por salão, é um
+  // único App/assinatura). Falha fechada: cabeçalho ausente/errado ou
+  // segredo não configurado = 401, sem processar nada. Reaproveita
+  // META_APP_SECRET (já existe, usado na troca de código do Embedded
+  // Signup) — nenhum segredo novo é necessário só para isto.
+  const rawBody = await request.text();
+  const signatureResult = await verifyMetaWebhookSignature(
+    rawBody,
+    request.headers.get("x-hub-signature-256"),
+    process.env.META_APP_SECRET,
+  );
+  if (!signatureResult.ok) {
+    console.error(`[webhook:meta] Assinatura inválida: ${signatureResult.reason}`);
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    return new Response("Invalid JSON", { status: 400 });
+  }
+
+  const salaoOutcome = await processSalaoWebhookEvents(payload, deps);
+  if (salaoOutcome.finished) {
+    return salaoOutcome.response;
   }
 
   // Caminho do número CENTRAL (lembretes 24h/2h, respostas de botão) —
