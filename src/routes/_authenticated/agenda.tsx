@@ -45,7 +45,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { cn } from "@/lib/utils";
-import { getWeekDays, getWeekRangeISO } from "@/lib/agenda-week";
+import { getWeekDays, getWeekRangeISO, addDays, daysBetween } from "@/lib/agenda-week";
 import {
   cancelAppointment,
   completeAppointment,
@@ -132,8 +132,13 @@ function Agenda() {
   const [blockFormOpen, setBlockFormOpen] = useState<{ prefillStart?: Date } | null>(null);
 
   const now = useNow();
-  const dayDate = useMemo(() => { const d = new Date(); d.setDate(d.getDate() + dayOffset); return d; }, [dayOffset]);
+  const dayDate = useMemo(() => addDays(new Date(), dayOffset), [dayOffset]);
   const todayIdx = (new Date().getDay() + 6) % 7;
+
+  const openDayFromWeek = (date: Date) => {
+    setDayOffset(daysBetween(new Date(), date));
+    setView("day");
+  };
 
   const { fromISO: dFrom, toISO: dTo } = useMemo(() => dayRangeISO(dayDate), [dayDate]);
   const { data: dayAppts = [], isLoading: loadingDay } = useQuery({
@@ -216,6 +221,42 @@ function Agenda() {
           </div>
         </div>
 
+        {/* Navegação de dia no celular — Dia/Semana/Lista/Timeline usam `hidden
+            md:flex` acima (telas largas, intocado). A visão Semana já tem suas
+            próprias setas (sempre visíveis, dentro de WeekView), por isso fica
+            fora daqui. */}
+        {view !== "week" && (
+          <div className="flex md:hidden items-center justify-between gap-2 mt-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-11 w-11 rounded-full"
+              aria-label="Dia anterior"
+              onClick={() => setDayOffset((d) => d - 1)}
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-11 rounded-full px-5"
+              aria-label="Ir para hoje"
+              onClick={() => setDayOffset(0)}
+            >
+              Hoje
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-11 w-11 rounded-full"
+              aria-label="Próximo dia"
+              onClick={() => setDayOffset((d) => d + 1)}
+            >
+              <ChevronRight className="w-5 h-5" />
+            </Button>
+          </div>
+        )}
+
         <div className="mt-5 grid grid-cols-3 gap-3">
           <SummaryCard label="atendimentos" value={String(activeAppts.length).padStart(2, "0")} />
           <SummaryCard label="ocupação" value={`${occupancy}%`} />
@@ -267,6 +308,7 @@ function Agenda() {
             setWeekOffset={setWeekOffset}
             todayIdx={todayIdx}
             onSelectAppt={(a) => setSelection({ type: "appointment", data: a })}
+            onSelectDay={openDayFromWeek}
           />
         )}
         {view === "list" && (
@@ -487,12 +529,13 @@ function Avatar({ name }: { name: string }) {
 
 // ---------- Week view ----------
 function WeekView({
-  weekOffset, setWeekOffset, onSelectAppt, todayIdx,
+  weekOffset, setWeekOffset, onSelectAppt, todayIdx, onSelectDay,
 }: {
   weekOffset: number;
   setWeekOffset: (fn: (n: number) => number) => void;
   onSelectAppt: (a: Appointment) => void;
   todayIdx: number;
+  onSelectDay: (date: Date) => void;
 }) {
   const days = useMemo(() => getWeekDays(new Date(), weekOffset), [weekOffset]);
 
@@ -523,14 +566,20 @@ function WeekView({
             {days.map((d, i) => {
               const isToday = weekOffset === 0 && i === todayIdx;
               return (
-                <div key={i} className="text-center" aria-label={d.toLocaleDateString("pt-BR", { weekday: "long" })}>
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => onSelectDay(d)}
+                  className="text-center"
+                  aria-label={`Ver ${d.toLocaleDateString("pt-BR", { weekday: "long" })}, dia ${d.getDate()}`}
+                >
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
                     {d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")}
                   </div>
                   <div className={cn("mt-1 mx-auto w-8 h-8 flex items-center justify-center rounded-full text-sm tabular-nums", isToday ? "bg-primary text-primary-foreground font-medium" : "")}>
                     {d.getDate()}
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
