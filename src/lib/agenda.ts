@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { isHiddenFromAgenda } from "@/lib/agenda-cancelled-actions";
 
 export type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled" | "no_show";
 
@@ -21,6 +22,13 @@ export type Appointment = {
   force_overlap: boolean;
   created_at: string;
   updated_at: string;
+  // Opcionais de propósito (FASE D, migration 20261107150000): o `*` do
+  // SELECT faz o Postgres/PostgREST simplesmente omitir estas duas chaves
+  // enquanto a migration não tiver sido aplicada — "ausente" e "null" têm
+  // o mesmo efeito (nada escondido), ver isHiddenFromAgenda em
+  // agenda-cancelled-actions.ts. Nunca marque como obrigatório.
+  agenda_removed_at?: string | null;
+  agenda_removed_by?: string | null;
   client: { id: string; full_name: string; phone: string | null } | null;
   service: { id: string; name: string; duration_min: number } | null;
   professional: { id: string; full_name: string; agenda_color: string | null } | null;
@@ -90,6 +98,10 @@ function translateSaveError(error: { code?: string; message: string }): Error {
 
 // ---------- Reads ----------
 
+// Só avisa uma vez por sessão do navegador (nunca por chamada) — evita
+// inundar o console enquanto a migration da Fase D ainda não foi aplicada.
+let warnedMissingAgendaRemovedColumn = false;
+
 export async function listAppointmentsRange(fromISO: string, toISO: string): Promise<Appointment[]> {
   const { data, error } = await supabase
     .from("appointments")
@@ -98,7 +110,15 @@ export async function listAppointmentsRange(fromISO: string, toISO: string): Pro
     .gt("ends_at", fromISO)
     .order("starts_at");
   if (error) throw error;
-  return (data ?? []) as unknown as Appointment[];
+  const rows = (data ?? []) as unknown as Appointment[];
+  if (!warnedMissingAgendaRemovedColumn && rows.length > 0 && !("agenda_removed_at" in rows[0])) {
+    warnedMissingAgendaRemovedColumn = true;
+    // eslint-disable-next-line no-console
+    console.warn("[agenda] coluna agenda_removed_at ainda não existe no banco — modo compatível (nada escondido) até a migration da Fase D ser aplicada.");
+  }
+  // Única função de filtro de "removido da agenda" (Dia/Semana/Lista/Timeline
+  // compartilham esta mesma função de leitura — ver Etapa D0b).
+  return rows.filter((a) => !isHiddenFromAgenda(a));
 }
 
 export async function getAppointment(id: string): Promise<Appointment> {
@@ -250,6 +270,31 @@ export async function confirmAppointment(id: string): Promise<void> {
 export async function cancelAppointment(id: string): Promise<void> {
   const { error } = await supabase.from("appointments").update({ status: "cancelled" }).eq("id", id);
   if (error) throw error;
+}
+
+/**
+ * Liga/desliga "removido da agenda" num agendamento cancelado (FASE D).
+ * Retorna o texto fixo da função SQL ("ok" | "sem_permissao" |
+ * "nao_encontrado" | "nao_cancelado") — nunca lança por esses casos, só por
+ * falha de rede/RPC em si (ver describeSetRemovedResult em
+ * agenda-cancelled-actions.ts pra traduzir pro português).
+ */
+export async function setAgendaRemoved(id: string, removed: boolean): Promise<string> {
+  const { data, error } = await supabase.rpc("set_agenda_removed", { p_appointment_id: id, p_removed: removed });
+  if (error) throw error;
+  return data as string;
+}
+
+/**
+ * Reativa um agendamento cancelado (FASE D) — volta pending/pending, nunca
+ * avisa a cliente. Retorno fixo ("ok" | "sem_permissao" | "nao_encontrado" |
+ * "nao_cancelado" | "horario_passado" | "horario_ocupado"); ver
+ * describeReactivateResult em agenda-cancelled-actions.ts.
+ */
+export async function reactivateCancelledAppointment(id: string): Promise<string> {
+  const { data, error } = await supabase.rpc("reactivate_cancelled_appointment", { p_appointment_id: id });
+  if (error) throw error;
+  return data as string;
 }
 
 export type MaterialAdjustment = { product_id: string; quantity: number };
