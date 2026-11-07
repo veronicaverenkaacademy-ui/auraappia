@@ -14,6 +14,7 @@ import {
   getWeekRangeISO,
   addDays,
   daysBetween,
+  dayLabel,
 } from "../src/lib/agenda-week.ts";
 
 const SAB_07_11_2026 = new Date("2026-11-07T10:00:00"); // sábado
@@ -279,4 +280,102 @@ test("addDays + daysBetween são inversas: addDays(ref, daysBetween(ref, alvo)) 
   const voltaAoDia = addDays(ref, offset);
   assert.equal(voltaAoDia.getDate(), alvo.getDate());
   assert.equal(voltaAoDia.getDay(), alvo.getDay());
+});
+
+// ---------- dayLabel: rótulo do botão central (Hoje/Ontem/Amanhã/dia da semana) ----------
+// "hoje" de referência em todos os testes abaixo: sábado 07/11/2026.
+
+const WEEKDAY_NAMES_PT_TEST = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+function expectedWeekdayDate(d: Date, today: Date): string {
+  const weekday = WEEKDAY_NAMES_PT_TEST[d.getDay()];
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return d.getFullYear() !== today.getFullYear()
+    ? `${weekday} ${dd}/${mm}/${d.getFullYear()}`
+    : `${weekday} ${dd}/${mm}`;
+}
+
+test("dayLabel: diff 0 => 'Hoje'", () => {
+  assert.equal(dayLabel(SAB_07_11_2026, SAB_07_11_2026), "Hoje");
+});
+
+test("dayLabel: diff -1 => 'Ontem'", () => {
+  const ontem = addDays(SAB_07_11_2026, -1);
+  assert.equal(dayLabel(ontem, SAB_07_11_2026), "Ontem");
+});
+
+test("dayLabel: diff +1 => 'Amanhã'", () => {
+  const amanha = addDays(SAB_07_11_2026, 1);
+  assert.equal(dayLabel(amanha, SAB_07_11_2026), "Amanhã");
+});
+
+test("dayLabel: diff -2 => nome do dia + DD/MM, sem ano (mesmo ano de hoje)", () => {
+  const d = addDays(SAB_07_11_2026, -2); // quinta 05/11
+  assert.equal(dayLabel(d, SAB_07_11_2026), "Quinta 05/11");
+});
+
+test("dayLabel: diff +2 => nome do dia + DD/MM, sem ano", () => {
+  const d = addDays(SAB_07_11_2026, 2); // segunda 09/11
+  assert.equal(dayLabel(d, SAB_07_11_2026), "Segunda 09/11");
+});
+
+test("dayLabel: diff +7 (uma semana) => nome do dia + DD/MM", () => {
+  const d = addDays(SAB_07_11_2026, 7); // sábado 14/11
+  assert.equal(dayLabel(d, SAB_07_11_2026), "Sábado 14/11");
+});
+
+test("dayLabel: diff +365 => ano diferente de hoje, aparece no rótulo", () => {
+  const d = addDays(SAB_07_11_2026, 365);
+  assert.equal(d.getFullYear(), 2027);
+  assert.equal(dayLabel(d, SAB_07_11_2026), expectedWeekdayDate(d, SAB_07_11_2026));
+  assert.match(dayLabel(d, SAB_07_11_2026), /\/2027$/);
+});
+
+test("dayLabel: virada de ano — diff +1/-1 continua 'Amanhã'/'Ontem' mesmo cruzando 31/12->01/01", () => {
+  const silvestre = new Date("2026-12-31T10:00:00"); // quinta, 31/12/2026
+  const anoNovo = addDays(silvestre, 1); // 01/01/2027
+  assert.equal(dayLabel(anoNovo, silvestre), "Amanhã");
+  assert.equal(dayLabel(silvestre, anoNovo), "Ontem");
+});
+
+test("dayLabel: virada de ano — diff +2/-2 mostra o ano, pois já é diferente do de hoje", () => {
+  const silvestre = new Date("2026-12-31T10:00:00"); // quinta, 31/12/2026, ano 2026
+  const d = addDays(silvestre, 2); // sábado 02/01/2027, ano 2027 (diferente)
+  assert.equal(dayLabel(d, silvestre), "Sábado 02/01/2027");
+});
+
+test("dayLabel: dia bissexto (29/02/2028) tratado como 'Amanhã' a partir de 28/02/2028", () => {
+  const dia28 = new Date("2028-02-28T10:00:00"); // segunda, 28/02/2028 (2028 é bissexto)
+  const dia29 = addDays(dia28, 1);
+  assert.equal(dia29.getDate(), 29);
+  assert.equal(dayLabel(dia29, dia28), "Amanhã");
+});
+
+test("dayLabel: dois dias depois do bissexto cai em março, sem ano (mesmo ano)", () => {
+  const dia28 = new Date("2028-02-28T10:00:00");
+  const dia01Mar = addDays(dia28, 2);
+  assert.equal(dia01Mar.getMonth(), 2); // março
+  assert.equal(dayLabel(dia01Mar, dia28), expectedWeekdayDate(dia01Mar, dia28));
+});
+
+test("dayLabel: fuso — sábado 22:30 BRT (hoje) e domingo 01:30 (mesmo instante em UTC) não trocam de dia por causa da hora, só por data de calendário", () => {
+  const hojeTarde = new Date("2026-11-07T22:30:00"); // sábado, hora tardia
+  const amanhaDeManha = new Date("2026-11-08T01:30:00"); // domingo, hora cedo — +1 dia de calendário, não +3h
+  assert.equal(dayLabel(amanhaDeManha, hojeTarde), "Amanhã");
+  assert.equal(dayLabel(hojeTarde, amanhaDeManha), "Ontem");
+});
+
+test("dayLabel: nunca usa divisão por 86400000 (ms) — diff de calendário correto mesmo com horas bem diferentes no mesmo dia", () => {
+  const madrugada = new Date("2026-11-07T00:05:00");
+  const quaseMeiaNoite = new Date("2026-11-07T23:55:00");
+  assert.equal(dayLabel(quaseMeiaNoite, madrugada), "Hoje", "mesma data de calendário, apesar de ~24h de diferença de horário");
+});
+
+// ---------- Formatação do título completo (Intl pt-BR) — regra da Etapa A1 ----------
+
+test("título: toLocaleDateString('pt-BR', day+month+year) já devolve '8 de novembro de 2026' com 'de' minúsculo, sem precisar de CSS capitalize", () => {
+  const d = new Date(2026, 10, 8); // 8 de novembro de 2026, local
+  const titulo = d.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
+  assert.equal(titulo, "8 de novembro de 2026");
+  assert.ok(!titulo.includes(" De "), "'de' deve ficar minúsculo, sem depender de CSS capitalize");
 });

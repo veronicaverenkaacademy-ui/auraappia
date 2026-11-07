@@ -54,3 +54,28 @@ export function daysBetween(from: Date, to: Date): number {
   b.setHours(0, 0, 0, 0);
   return Math.round((b.getTime() - a.getTime()) / 86_400_000);
 }
+
+/** Nome do dia da semana em pt-BR, sem "-feira", indexado como Date.getDay() (domingo=0). */
+const WEEKDAY_NAMES_PT = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+
+/**
+ * Rótulo do botão central de navegação de dia: "Hoje"/"Ontem"/"Amanhã" para
+ * diferença de 0/-1/+1 dia de calendário (nunca ms), e para os demais dias o
+ * nome da semana + data curta (DD/MM), com o ano só quando `displayed` cai
+ * num ano diferente do de `today`.
+ */
+export function dayLabel(displayed: Date, today: Date): string {
+  const diff = daysBetween(today, displayed);
+  if (diff === 0) return "Hoje";
+  if (diff === -1) return "Ontem";
+  if (diff === 1) return "Amanhã";
+
+  const weekday = WEEKDAY_NAMES_PT[displayed.getDay()];
+  const dd = String(displayed.getDate()).padStart(2, "0");
+  const mm = String(displayed.getMonth() + 1).padStart(2, "0");
+  const dateStr =
+    displayed.getFullYear() !== today.getFullYear()
+      ? `${dd}/${mm}/${displayed.getFullYear()}`
+      : `${dd}/${mm}`;
+  return `${weekday} ${dateStr}`;
+}
