@@ -46,6 +46,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { cn } from "@/lib/utils";
 import { getWeekDays, getWeekRangeISO, addDays, daysBetween, dayLabel } from "@/lib/agenda-week";
+import { LEGACY_STATUS_STYLE, calcCardRect } from "@/lib/agenda-card-style";
 import {
   cancelAppointment,
   completeAppointment,
@@ -65,7 +66,6 @@ import {
   type MaterialAdjustment,
   type AgendaBlock,
   type Appointment,
-  type AppointmentStatus,
   type ConflictItem,
 } from "@/lib/agenda";
 import { listClients, upsertClient, type Client } from "@/lib/clients";
@@ -88,13 +88,9 @@ export const Route = createFileRoute("/_authenticated/agenda")({
 const HOUR_H = 64;
 const HOURS = Array.from({ length: 24 }, (_, i) => i); // 0..23 — grade mostra o dia inteiro, independente do horário de atendimento configurado (que não limita a visualização, só a disponibilidade no Portal da Cliente, em booking.functions.ts)
 
-const STATUS: Record<AppointmentStatus, { label: string; dot: string; ring: string; bg: string; badge: string }> = {
-  pending: { label: "Agendado", dot: "bg-muted-foreground/60", ring: "border-border", bg: "bg-card", badge: "bg-secondary text-muted-foreground" },
-  confirmed: { label: "Confirmado", dot: "bg-success", ring: "border-success/30", bg: "bg-card", badge: "bg-success/10 text-success" },
-  completed: { label: "Concluído", dot: "bg-purple-500", ring: "border-purple-500/30", bg: "bg-card", badge: "bg-purple-500/10 text-purple-600 dark:text-purple-400" },
-  cancelled: { label: "Cancelado", dot: "bg-destructive", ring: "border-destructive/30", bg: "bg-card opacity-60", badge: "bg-destructive/10 text-destructive" },
-  no_show: { label: "Não compareceu", dot: "bg-amber-500", ring: "border-amber-500/30", bg: "bg-amber-50/60 dark:bg-amber-500/5", badge: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
-};
+// Estilo por status: extraído pra agenda-card-style.ts (LEGACY_STATUS_STYLE),
+// mesmos valores de antes — alias local pra não precisar renomear os usos.
+const STATUS = LEGACY_STATUS_STYLE;
 
 // ---------- Date/time helpers ----------
 const fmtHour = (h: number) => `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.round((h % 1) * 60)).padStart(2, "0")}`;
@@ -471,8 +467,7 @@ function ApptCard({
 }) {
   const start = hourOf(a.starts_at);
   const end = hourOf(a.ends_at);
-  const top = (start - HOURS[0]) * HOUR_H + 2;
-  const height = Math.max(30, (end - start) * HOUR_H - 6);
+  const { top, height } = calcCardRect(start, end, { hourHeight: HOUR_H, minHeight: 30, bottomPad: 6 });
   const s = STATUS[a.status];
   return (
     <button
@@ -515,8 +510,7 @@ function ApptCard({
 function BlockBar({ b, onSelect }: { b: AgendaBlock; onSelect: (b: AgendaBlock) => void }) {
   const start = hourOf(b.starts_at);
   const end = hourOf(b.ends_at);
-  const top = (start - HOURS[0]) * HOUR_H + 2;
-  const height = Math.max(26, (end - start) * HOUR_H - 6);
+  const { top, height } = calcCardRect(start, end, { hourHeight: HOUR_H, minHeight: 26, bottomPad: 6 });
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onSelect(b); }}
@@ -619,11 +613,12 @@ function WeekView({
                     const start = hourOf(a.starts_at);
                     const end = hourOf(a.ends_at);
                     const s = STATUS[a.status];
+                    const { top, height } = calcCardRect(start, end, { hourHeight: HOUR_H, minHeight: 24, bottomPad: 4 });
                     return (
                       <button
                         key={a.id}
                         onClick={() => onSelectAppt(a)}
-                        style={{ top: (start - HOURS[0]) * HOUR_H + 2, height: Math.max(24, (end - start) * HOUR_H - 4) }}
+                        style={{ top, height }}
                         className={cn("absolute inset-x-1 rounded-xl border px-2 py-1.5 text-left overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-[1px] transition", s.ring, s.bg)}
                       >
                         <div className="flex items-center gap-1.5">
