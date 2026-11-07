@@ -45,6 +45,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { cn } from "@/lib/utils";
+import { getWeekDays, getWeekRangeISO } from "@/lib/agenda-week";
 import {
   cancelAppointment,
   completeAppointment,
@@ -493,16 +494,9 @@ function WeekView({
   onSelectAppt: (a: Appointment) => void;
   todayIdx: number;
 }) {
-  const days = useMemo(() => {
-    const start = new Date();
-    const dow = (start.getDay() + 6) % 7;
-    start.setDate(start.getDate() - dow + weekOffset * 7);
-    start.setHours(0, 0, 0, 0);
-    return Array.from({ length: 6 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
-  }, [weekOffset]);
+  const days = useMemo(() => getWeekDays(new Date(), weekOffset), [weekOffset]);
 
-  const fromISO = useMemo(() => days[0].toISOString(), [days]);
-  const toISO = useMemo(() => { const d = new Date(days[days.length - 1]); d.setDate(d.getDate() + 1); return d.toISOString(); }, [days]);
+  const { fromISO, toISO } = useMemo(() => getWeekRangeISO(days), [days]);
   const { data: appts = [] } = useQuery({ queryKey: ["appointments", fromISO, toISO], queryFn: () => listAppointmentsRange(fromISO, toISO) });
 
   return (
