@@ -45,7 +45,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { cn } from "@/lib/utils";
-import { getWeekDays, getWeekRangeISO, addDays, daysBetween } from "@/lib/agenda-week";
+import { getWeekDays, getWeekRangeISO, addDays, daysBetween, dayLabel } from "@/lib/agenda-week";
 import {
   cancelAppointment,
   completeAppointment,
@@ -132,7 +132,10 @@ function Agenda() {
   const [blockFormOpen, setBlockFormOpen] = useState<{ prefillStart?: Date } | null>(null);
 
   const now = useNow();
-  const dayDate = useMemo(() => addDays(new Date(), dayOffset), [dayOffset]);
+  // `now` (atualizado a cada 60s por useNow) em vez de `new Date()` direto:
+  // sem isso, dayDate ficava congelado no "hoje" de quando a página abriu e
+  // nunca percebia a virada da meia-noite enquanto dayOffset não mudasse.
+  const dayDate = useMemo(() => addDays(now, dayOffset), [now, dayOffset]);
   const todayIdx = (new Date().getDay() + 6) % 7;
 
   const openDayFromWeek = (date: Date) => {
@@ -204,8 +207,11 @@ function Agenda() {
             <p className="text-[10px] text-muted-foreground uppercase tracking-[0.18em]">
               {dayDate.toLocaleDateString("pt-BR", { weekday: "long" })}
             </p>
-            <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight capitalize leading-tight">
-              {dayDate.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
+            {/* Sem `capitalize`: text-transform maiusculizaria toda palavra
+                (inclusive "de"), e o pt-BR do Intl já vem com a capitalização
+                certa ("8 de novembro de 2026"). */}
+            <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight leading-tight">
+              {dayDate.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" })}
             </h1>
           </div>
           <div className="hidden md:flex items-center gap-1">
@@ -225,37 +231,47 @@ function Agenda() {
             md:flex` acima (telas largas, intocado). A visão Semana já tem suas
             próprias setas (sempre visíveis, dentro de WeekView), por isso fica
             fora daqui. */}
-        {view !== "week" && (
-          <div className="flex md:hidden items-center justify-between gap-2 mt-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-11 w-11 rounded-full"
-              aria-label="Dia anterior"
-              onClick={() => setDayOffset((d) => d - 1)}
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-11 rounded-full px-5"
-              aria-label="Ir para hoje"
-              onClick={() => setDayOffset(0)}
-            >
-              Hoje
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-11 w-11 rounded-full"
-              aria-label="Próximo dia"
-              onClick={() => setDayOffset((d) => d + 1)}
-            >
-              <ChevronRight className="w-5 h-5" />
-            </Button>
-          </div>
-        )}
+        {view !== "week" && (() => {
+          const fullWeekday = dayDate.toLocaleDateString("pt-BR", { weekday: "long" });
+          const fullWeekdayCap = fullWeekday.charAt(0).toUpperCase() + fullWeekday.slice(1);
+          const fullDate = dayDate.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" });
+          const fullDateAria = `${fullWeekdayCap}, ${fullDate}`;
+          const centerLabel = dayLabel(dayDate, now);
+          const centerAriaLabel =
+            dayOffset === 0 ? fullDateAria : `Voltar para hoje. Dia exibido: ${fullDateAria}`;
+          return (
+            <div className="flex md:hidden items-center justify-between gap-2 mt-3">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 rounded-full"
+                aria-label="Dia anterior"
+                onClick={() => setDayOffset((d) => d - 1)}
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-11 min-w-[112px] rounded-full px-4 gap-1.5 whitespace-nowrap"
+                aria-label={centerAriaLabel}
+                onClick={() => setDayOffset(0)}
+              >
+                {dayOffset !== 0 && <RotateCcw className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />}
+                {centerLabel}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 rounded-full"
+                aria-label="Próximo dia"
+                onClick={() => setDayOffset((d) => d + 1)}
+              >
+                <ChevronRight className="w-5 h-5" />
+              </Button>
+            </div>
+          );
+        })()}
 
         <div className="mt-5 grid grid-cols-3 gap-3">
           <SummaryCard label="atendimentos" value={String(activeAppts.length).padStart(2, "0")} />
