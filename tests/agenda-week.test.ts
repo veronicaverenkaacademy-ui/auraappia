@@ -8,7 +8,13 @@ process.env.TZ = "America/Sao_Paulo"; // ANTES de qualquer `new Date(...)` deste
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mondayStartIndex, getWeekDays, getWeekRangeISO } from "../src/lib/agenda-week.ts";
+import {
+  mondayStartIndex,
+  getWeekDays,
+  getWeekRangeISO,
+  addDays,
+  daysBetween,
+} from "../src/lib/agenda-week.ts";
 
 const SAB_07_11_2026 = new Date("2026-11-07T10:00:00"); // sábado
 const DOM_08_11_2026 = new Date("2026-11-08T10:00:00"); // domingo
@@ -216,4 +222,61 @@ test("semana vazia: getWeekDays sempre devolve 7 dias, mesmo sem nenhum agendame
   assert.equal(days.length, 7);
   assert.equal(days[0].getDay(), 1);
   assert.equal(days[6].getDay(), 0);
+});
+
+// ---------- Navegação de dia (addDays/daysBetween) — usadas pela nova
+// navegação no celular (Dia/Lista/Timeline) e pelo toque num dia da Semana ----------
+
+test("addDays: avança dias de calendário (nunca soma de ms) nos dois sentidos", () => {
+  const d1 = addDays(SAB_07_11_2026, 1);
+  assert.equal(d1.getDay(), 0, "sábado + 1 = domingo");
+  assert.equal(d1.getDate(), 8);
+  const dMinus1 = addDays(SAB_07_11_2026, -1);
+  assert.equal(dMinus1.getDay(), 5, "sábado - 1 = sexta");
+  assert.equal(dMinus1.getDate(), 6);
+});
+
+test("addDays: 'Hoje' é addDays(referência, 0) — mesma data, sem alterar hora", () => {
+  const d = addDays(SAB_07_11_2026, 0);
+  assert.equal(d.getTime(), SAB_07_11_2026.getTime());
+});
+
+test("addDays: atravessa domingo sem pular (sexta -> sábado -> domingo -> segunda, um dia de cada vez)", () => {
+  const sex = new Date("2026-11-06T10:00:00");
+  assert.equal(addDays(sex, 1).getDay(), 6); // sábado
+  assert.equal(addDays(sex, 2).getDay(), 0); // domingo
+  assert.equal(addDays(sex, 3).getDay(), 1); // segunda
+});
+
+test("addDays: virada de mês e de ano corretas", () => {
+  const fimDeAno = new Date("2026-12-30T10:00:00");
+  const d = addDays(fimDeAno, 3);
+  assert.equal(d.getFullYear(), 2027);
+  assert.equal(d.getMonth(), 0);
+  assert.equal(d.getDate(), 2);
+});
+
+test("daysBetween: mesma data local = 0, ignora a hora", () => {
+  assert.equal(daysBetween(new Date("2026-11-07T08:00:00"), new Date("2026-11-07T22:00:00")), 0);
+});
+
+test("daysBetween: usado pra achar o dayOffset de um dia tocado na Semana — domingo da semana atual", () => {
+  const hoje = SAB_07_11_2026;
+  const domingoDaSemana = getWeekDays(hoje, 0)[6]; // 08/11
+  assert.equal(daysBetween(hoje, domingoDaSemana), 1, "de sábado pro domingo seguinte é +1 dia");
+});
+
+test("daysBetween: dia tocado no passado dá número negativo", () => {
+  const hoje = SAB_07_11_2026;
+  const segundaDaSemana = getWeekDays(hoje, 0)[0]; // 02/11
+  assert.equal(daysBetween(hoje, segundaDaSemana), -5);
+});
+
+test("addDays + daysBetween são inversas: addDays(ref, daysBetween(ref, alvo)) volta no mesmo dia do alvo", () => {
+  const ref = SAB_07_11_2026;
+  const alvo = new Date("2026-11-08T14:00:00"); // domingo, hora diferente de ref
+  const offset = daysBetween(ref, alvo);
+  const voltaAoDia = addDays(ref, offset);
+  assert.equal(voltaAoDia.getDate(), alvo.getDate());
+  assert.equal(voltaAoDia.getDay(), alvo.getDay());
 });

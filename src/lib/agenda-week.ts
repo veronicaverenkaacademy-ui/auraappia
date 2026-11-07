@@ -1,11 +1,11 @@
-// Cálculo da semana usada pela visão "Semana" da Agenda — extraído de
-// agenda.tsx (que não é importável por `node --test`, mesmo motivo de
-// webhook-meta.server.ts: arquivo pesado de JSX/React) pra um módulo puro,
-// sem nenhuma dependência, só pra poder ser testado. Pura: nunca lê o
-// relógio sozinha, sempre recebe `reference` de fora — e assume que
-// `reference` já está no fuso certo do negócio (America/Sao_Paulo), mesma
-// premissa já usada em todo o resto de agenda.tsx (combineLocal,
-// dayRangeISO) — o ambiente (navegador/WebView) roda no fuso do Brasil.
+// Cálculo de datas da Agenda (semana E dia) — extraído de agenda.tsx (não
+// importável por `node --test`, mesmo motivo de webhook-meta.server.ts:
+// arquivo pesado de JSX/React) pra um módulo puro, sem nenhuma dependência,
+// só pra poder ser testado. Pura: nunca lê o relógio sozinha, sempre recebe
+// `reference` de fora — e assume que `reference` já está no fuso certo do
+// negócio (America/Sao_Paulo), mesma premissa já usada em todo o resto de
+// agenda.tsx (combineLocal, dayRangeISO) — o ambiente (navegador/WebView)
+// roda no fuso do Brasil.
 //
 // DEFEITO CORRIGIDO (07/11/2026): a semana ia de segunda a SÁBADO (6 dias)
 // — o domingo nunca aparecia na grade nem entrava na busca de dados.
@@ -37,4 +37,20 @@ export function getWeekRangeISO(days: Date[]): { fromISO: string; toISO: string 
   const to = new Date(days[days.length - 1]);
   to.setDate(to.getDate() + 1);
   return { fromISO: from.toISOString(), toISO: to.toISOString() };
+}
+
+/** `reference` + `days` dias de calendário (nunca soma de ms — atravessa mês/ano certo). */
+export function addDays(reference: Date, days: number): Date {
+  const d = new Date(reference);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+/** Diferença em dias de calendário INTEIROS entre duas datas locais (meia-noite a meia-noite) — usada pra achar o dayOffset de um dia tocado na Semana. */
+export function daysBetween(from: Date, to: Date): number {
+  const a = new Date(from);
+  a.setHours(0, 0, 0, 0);
+  const b = new Date(to);
+  b.setHours(0, 0, 0, 0);
+  return Math.round((b.getTime() - a.getTime()) / 86_400_000);
 }
