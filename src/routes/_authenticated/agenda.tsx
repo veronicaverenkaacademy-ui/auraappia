@@ -517,13 +517,13 @@ function WeekView({
       </div>
 
       <div className="overflow-auto -mx-4 md:-mx-8 px-4 md:px-8">
-        <div className="min-w-[720px]">
-          <div className="grid grid-cols-[48px_repeat(6,1fr)] gap-2 mb-2 sticky top-0 bg-background z-10 pb-2">
+        <div className="min-w-[840px]">
+          <div className="grid grid-cols-[48px_repeat(7,1fr)] gap-2 mb-2 sticky top-0 bg-background z-10 pb-2">
             <div />
             {days.map((d, i) => {
               const isToday = weekOffset === 0 && i === todayIdx;
               return (
-                <div key={i} className="text-center">
+                <div key={i} className="text-center" aria-label={d.toLocaleDateString("pt-BR", { weekday: "long" })}>
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
                     {d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")}
                   </div>
@@ -535,7 +535,7 @@ function WeekView({
             })}
           </div>
 
-          <div className="grid grid-cols-[48px_repeat(6,1fr)] gap-2">
+          <div className="grid grid-cols-[48px_repeat(7,1fr)] gap-2">
             <div className="relative">
               {HOURS.map((h) => (
                 <div key={h} style={{ height: HOUR_H }} className="text-[10px] text-muted-foreground text-right pr-2 -translate-y-1.5 tabular-nums">

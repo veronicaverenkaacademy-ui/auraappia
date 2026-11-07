@@ -7,22 +7,24 @@
 // premissa já usada em todo o resto de agenda.tsx (combineLocal,
 // dayRangeISO) — o ambiente (navegador/WebView) roda no fuso do Brasil.
 //
-// NESTA VERSÃO (extração, sem mudar comportamento): a semana ainda vai de
-// segunda a SÁBADO (6 dias) — mesmo defeito de hoje (domingo excluído),
-// preservado de propósito só pra provar que a extração é neutra.
+// DEFEITO CORRIGIDO (07/11/2026): a semana ia de segunda a SÁBADO (6 dias)
+// — o domingo nunca aparecia na grade nem entrava na busca de dados.
+// Agora são sempre 7 dias, segunda a DOMINGO.
 
 /** Índice 0-6 de segunda(0) a domingo(6), a partir de Date.getDay() (que usa domingo=0). */
 export function mondayStartIndex(date: Date): number {
   return (date.getDay() + 6) % 7;
 }
 
-/** Os dias (meia-noite local) da semana de `reference`, deslocada `weekOffset` semanas, começando sempre na segunda. */
+const DAYS_PER_WEEK = 7;
+
+/** Os 7 dias (meia-noite local) da semana de `reference`, deslocada `weekOffset` semanas, de segunda a domingo. */
 export function getWeekDays(reference: Date, weekOffset: number): Date[] {
   const start = new Date(reference);
   const dow = mondayStartIndex(start);
   start.setDate(start.getDate() - dow + weekOffset * 7);
   start.setHours(0, 0, 0, 0);
-  return Array.from({ length: 6 }, (_, i) => {
+  return Array.from({ length: DAYS_PER_WEEK }, (_, i) => {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
     return d;
