@@ -12,6 +12,10 @@ export type Appointment = {
   starts_at: string;
   ends_at: string;
   status: AppointmentStatus;
+  // Já vem do `*` do SELECT (coluna existente desde a migration
+  // 20260816150000); só faltava no tipo. Usado pra distinguir cancelamento
+  // pela cliente (declined) do cancelamento pela equipe na cor do cartão.
+  client_confirmation_status: "pending" | "confirmed" | "declined" | "reschedule_requested";
   price: number;
   notes: string | null;
   force_overlap: boolean;

@@ -47,6 +47,14 @@ import { DecimalInput } from "@/components/ui/decimal-input";
 import { cn } from "@/lib/utils";
 import { getWeekDays, getWeekRangeISO, addDays, daysBetween, dayLabel } from "@/lib/agenda-week";
 import {
+  calcCardRect,
+  appointmentCardTone,
+  clipToDayMinutes,
+  assignLanes,
+  weekCardStackStyle,
+  type LaneAssignment,
+} from "@/lib/agenda-card-style";
+import {
   cancelAppointment,
   completeAppointment,
   confirmAppointment,
@@ -65,7 +73,6 @@ import {
   type MaterialAdjustment,
   type AgendaBlock,
   type Appointment,
-  type AppointmentStatus,
   type ConflictItem,
 } from "@/lib/agenda";
 import { listClients, upsertClient, type Client } from "@/lib/clients";
@@ -87,14 +94,6 @@ export const Route = createFileRoute("/_authenticated/agenda")({
 // ---------- Constants ----------
 const HOUR_H = 64;
 const HOURS = Array.from({ length: 24 }, (_, i) => i); // 0..23 — grade mostra o dia inteiro, independente do horário de atendimento configurado (que não limita a visualização, só a disponibilidade no Portal da Cliente, em booking.functions.ts)
-
-const STATUS: Record<AppointmentStatus, { label: string; dot: string; ring: string; bg: string; badge: string }> = {
-  pending: { label: "Agendado", dot: "bg-muted-foreground/60", ring: "border-border", bg: "bg-card", badge: "bg-secondary text-muted-foreground" },
-  confirmed: { label: "Confirmado", dot: "bg-success", ring: "border-success/30", bg: "bg-card", badge: "bg-success/10 text-success" },
-  completed: { label: "Concluído", dot: "bg-purple-500", ring: "border-purple-500/30", bg: "bg-card", badge: "bg-purple-500/10 text-purple-600 dark:text-purple-400" },
-  cancelled: { label: "Cancelado", dot: "bg-destructive", ring: "border-destructive/30", bg: "bg-card opacity-60", badge: "bg-destructive/10 text-destructive" },
-  no_show: { label: "Não compareceu", dot: "bg-amber-500", ring: "border-amber-500/30", bg: "bg-amber-50/60 dark:bg-amber-500/5", badge: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
-};
 
 // ---------- Date/time helpers ----------
 const fmtHour = (h: number) => `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.round((h % 1) * 60)).padStart(2, "0")}`;
@@ -401,6 +400,20 @@ function DayView({
   const nowH = now.getHours() + now.getMinutes() / 60;
   const showNow = isToday && nowH >= HOURS[0] && nowH <= HOURS[HOURS.length - 1] + 1;
 
+  // Cartões simultâneos lado a lado: recorte "data-aware" (clipToDayMinutes,
+  // diferente do hourOf usado em calcCardRect) só pra decidir quantas faixas
+  // e qual faixa cada cartão ocupa — a posição vertical continua igual.
+  const lanes = useMemo(() => {
+    const items = appts
+      .map((a) => {
+        const clipped = clipToDayMinutes(a.starts_at, a.ends_at, baseDate);
+        return clipped ? { id: a.id, startMin: clipped.startMin, endMin: clipped.endMin } : null;
+      })
+      .filter((x): x is { id: string; startMin: number; endMin: number } => x !== null);
+    const assignments = assignLanes(items);
+    return new Map(assignments.map((l) => [l.id, l]));
+  }, [appts, baseDate]);
+
   const handleColumnClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const offsetY = e.clientY - rect.top;
@@ -452,6 +465,7 @@ function DayView({
               a={a}
               needsAttention={attentionIds?.has(a.id)}
               onSelect={onSelectAppt}
+              lane={lanes.get(a.id)}
             />
           ))}
         </div>
@@ -464,25 +478,33 @@ function ApptCard({
   a,
   needsAttention,
   onSelect,
+  lane,
 }: {
   a: Appointment;
   needsAttention?: boolean;
   onSelect: (a: Appointment) => void;
+  lane?: LaneAssignment;
 }) {
+  if (lane?.hidden) return null; // escondido no "+N" de outro cartão desta mesma faixa
+
   const start = hourOf(a.starts_at);
   const end = hourOf(a.ends_at);
-  const top = (start - HOURS[0]) * HOUR_H + 2;
-  const height = Math.max(30, (end - start) * HOUR_H - 6);
-  const s = STATUS[a.status];
+  const { top, height } = calcCardRect(start, end, { hourHeight: HOUR_H, minHeight: 30, bottomPad: 6 });
+  const tone = appointmentCardTone(a.status, a.client_confirmation_status, "day");
+  const laneStyle =
+    lane && lane.totalLanes > 1
+      ? { left: `calc(${(lane.lane / lane.totalLanes) * 100}% + 2px)`, width: `calc(${100 / lane.totalLanes}% - 4px)` }
+      : undefined;
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onSelect(a); }}
-      style={{ top, height }}
+      style={{ top, height, ...laneStyle }}
       className={cn(
-        "absolute left-1 right-1 rounded-2xl border shadow-sm px-3.5 py-2.5 text-left overflow-hidden transition-all",
+        "absolute rounded-2xl border shadow-sm px-3.5 py-2.5 text-left overflow-hidden transition-all",
         "hover:shadow-md hover:-translate-y-[1px] active:translate-y-0",
-        s.ring,
-        s.bg,
+        laneStyle ? undefined : "left-1 right-1",
+        tone.ring,
+        tone.bg,
       )}
     >
       {needsAttention && (
@@ -491,8 +513,15 @@ function ApptCard({
           className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-destructive"
         />
       )}
+      {!!lane?.overflowCount && (
+        <span className="absolute top-1.5 left-1.5 text-[9px] font-medium px-1 rounded-full bg-foreground/10 text-foreground">
+          +{lane.overflowCount}
+        </span>
+      )}
       <div className="flex items-center gap-2">
-        <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", s.dot)} />
+        <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", tone.dot)} />
+        {tone.icon === "check" && <Check className="w-3 h-3 text-success shrink-0" aria-label={tone.iconAriaLabel ?? undefined} />}
+        {tone.icon === "x" && <X className="w-3 h-3 text-destructive shrink-0" aria-label={tone.iconAriaLabel ?? undefined} />}
         <span className="text-[10px] font-medium tabular-nums text-muted-foreground">
           {fmtHour(start)} · {Math.round((end - start) * 60)}min
         </span>
@@ -515,8 +544,7 @@ function ApptCard({
 function BlockBar({ b, onSelect }: { b: AgendaBlock; onSelect: (b: AgendaBlock) => void }) {
   const start = hourOf(b.starts_at);
   const end = hourOf(b.ends_at);
-  const top = (start - HOURS[0]) * HOUR_H + 2;
-  const height = Math.max(26, (end - start) * HOUR_H - 6);
+  const { top, height } = calcCardRect(start, end, { hourHeight: HOUR_H, minHeight: 26, bottomPad: 6 });
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onSelect(b); }}
@@ -618,16 +646,26 @@ function WeekView({
                   {dayAppts.map((a) => {
                     const start = hourOf(a.starts_at);
                     const end = hourOf(a.ends_at);
-                    const s = STATUS[a.status];
+                    const tone = appointmentCardTone(a.status, a.client_confirmation_status, "week");
+                    const { top, height } = calcCardRect(start, end, { hourHeight: HOUR_H, minHeight: 24, bottomPad: 4 });
+                    const stack = weekCardStackStyle(a.status);
                     return (
                       <button
                         key={a.id}
                         onClick={() => onSelectAppt(a)}
-                        style={{ top: (start - HOURS[0]) * HOUR_H + 2, height: Math.max(24, (end - start) * HOUR_H - 4) }}
-                        className={cn("absolute inset-x-1 rounded-xl border px-2 py-1.5 text-left overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-[1px] transition", s.ring, s.bg)}
+                        style={{ top, height }}
+                        className={cn(
+                          "absolute inset-x-1 rounded-xl border px-2 py-1.5 text-left overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-[1px] transition",
+                          tone.ring,
+                          tone.bg,
+                          stack.z,
+                          stack.offset,
+                        )}
                       >
                         <div className="flex items-center gap-1.5">
-                          <span className={cn("w-1 h-1 rounded-full", s.dot)} />
+                          <span className={cn("w-1 h-1 rounded-full", tone.dot)} />
+                          {tone.icon === "check" && <Check className="w-2.5 h-2.5 text-success" aria-label={tone.iconAriaLabel ?? undefined} />}
+                          {tone.icon === "x" && <X className="w-2.5 h-2.5 text-destructive" aria-label={tone.iconAriaLabel ?? undefined} />}
                           <span className="text-[10px] tabular-nums text-muted-foreground">{fmtHour(start)}</span>
                         </div>
                         <div className="text-[11px] font-medium truncate mt-0.5">{a.client?.full_name ?? "Cliente"}</div>
@@ -672,19 +710,26 @@ function ListView({
             <div key={i} className="relative py-2">
               <div className="absolute left-0 top-3 text-[10px] tabular-nums text-muted-foreground w-11 text-right pr-3">{fmtHour(r.at)}</div>
               <div className="absolute left-[48px] top-4 w-2 h-2 rounded-full bg-background border-2 border-border" />
-              {r.kind === "appt" ? (
+              {r.kind === "appt" ? (() => {
+                const tone = appointmentCardTone(r.a.status, r.a.client_confirmation_status, "list");
+                return (
                 <button
                   onClick={() => onSelectAppt(r.a)}
-                  className={cn("w-full text-left rounded-2xl border bg-card px-3 py-2.5 flex items-center gap-3 hover:shadow-md hover:-translate-y-[1px] transition", STATUS[r.a.status].ring)}
+                  className={cn("w-full text-left rounded-2xl border px-3 py-2.5 flex items-center gap-3 hover:shadow-md hover:-translate-y-[1px] transition", tone.ring, tone.bg)}
                 >
                   <Avatar name={r.a.client?.full_name ?? "Cliente"} />
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate">{r.a.client?.full_name ?? "Cliente"}</div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="text-sm font-medium truncate">{r.a.client?.full_name ?? "Cliente"}</div>
+                      {tone.icon === "check" && <Check className="w-3 h-3 text-success shrink-0" aria-label={tone.iconAriaLabel ?? undefined} />}
+                      {tone.icon === "x" && <X className="w-3 h-3 text-destructive shrink-0" aria-label={tone.iconAriaLabel ?? undefined} />}
+                    </div>
                     <div className="text-xs text-muted-foreground truncate">{r.a.service_name ?? "Atendimento"}</div>
                   </div>
                   <div className="text-xs font-medium tabular-nums">{formatBRL(Number(r.a.price))}</div>
                 </button>
-              ) : (
+                );
+              })() : (
                 <button
                   onClick={() => onSelectBlock(r.b)}
                   className={cn("w-full text-left rounded-2xl border border-dashed border-muted-foreground/40 bg-secondary/40 px-3 py-2 flex items-center gap-2", dense ? "py-1.5" : "")}
@@ -1134,8 +1179,8 @@ function AppointmentDetailSheet({
                   <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
                     {fmtHour(hourOf(a.starts_at))} — {fmtHour(hourOf(a.ends_at))}
                   </div>
-                  <span className={cn("text-[10px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-full", STATUS[a.status].badge)}>
-                    {STATUS[a.status].label}
+                  <span className={cn("text-[10px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-full", appointmentCardTone(a.status, a.client_confirmation_status, "detail").badge)}>
+                    {appointmentCardTone(a.status, a.client_confirmation_status, "detail").label}
                   </span>
                 </div>
 
