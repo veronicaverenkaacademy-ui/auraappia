@@ -3,54 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import type { CompanyProfile } from "@/lib/companyProfile";
 import { MarketingError } from "@/lib/marketing/types";
-
-const DayHoursSchema = z
-  .object({ open: z.string().regex(/^\d{2}:\d{2}$/), close: z.string().regex(/^\d{2}:\d{2}$/) })
-  .nullable();
-
-const BusinessHoursSchema = z.object({
-  mon: DayHoursSchema,
-  tue: DayHoursSchema,
-  wed: DayHoursSchema,
-  thu: DayHoursSchema,
-  fri: DayHoursSchema,
-  sat: DayHoursSchema,
-  sun: DayHoursSchema,
-});
-
-// Slugs que colidiriam com rotas do próprio AURA — bloqueados na aplicação,
-// não no banco (o CHECK do banco só valida formato).
-const RESERVED_SLUGS = new Set([
-  "admin",
-  "api",
-  "app",
-  "auth",
-  "login",
-  "cadastro",
-  "portal",
-  "empresa",
-  "mais",
-  "agenda",
-  "clientes",
-  "financeiro",
-  "estoque",
-  "marketing",
-  "equipe",
-  "whatsapp",
-  "assinatura",
-  "termos-de-uso",
-  "politica-de-privacidade",
-  "termo-consentimento",
-]);
-
-const SlugSchema = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .min(2)
-  .max(60)
-  .regex(/^[a-z0-9-]+$/, "Use apenas letras minúsculas, números e hífen.")
-  .refine((s) => !RESERVED_SLUGS.has(s), "Esse endereço é reservado pelo AURA — escolha outro.");
+import { SlugSchema, UpsertInput, friendlyUpsertError } from "@/lib/companyProfile.schema";
 
 export const getMyCompanyProfile = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -84,28 +37,13 @@ export const checkCompanySlugAvailable = createServerFn({ method: "GET" })
     return { available: true };
   });
 
-const UpsertInput = z.object({
-  slug: SlugSchema,
-  display_name: z.string().trim().min(1).max(120),
-  category: z.string().trim().max(80).optional().or(z.literal("")),
-  description: z.string().trim().max(600).optional().or(z.literal("")),
-  city: z.string().trim().max(100).optional().or(z.literal("")),
-  state: z.string().trim().max(2).optional().or(z.literal("")),
-  address: z.string().trim().max(300).optional().or(z.literal("")),
-  phone: z.string().trim().max(30).optional().or(z.literal("")),
-  whatsapp: z.string().trim().max(30).optional().or(z.literal("")),
-  instagram: z.string().trim().max(60).optional().or(z.literal("")),
-  facebook: z.string().trim().max(100).optional().or(z.literal("")),
-  tiktok: z.string().trim().max(60).optional().or(z.literal("")),
-  open_hours_text: z.string().trim().max(200).optional().or(z.literal("")),
-  logo_url: z.string().trim().max(500).optional().or(z.literal("")),
-  cover_image_url: z.string().trim().max(500).optional().or(z.literal("")),
-  business_hours: BusinessHoursSchema.optional(),
-});
-
 export const upsertCompanyProfile = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((raw: unknown) => UpsertInput.parse(raw))
+  .inputValidator((raw: unknown) => {
+    const parsed = UpsertInput.safeParse(raw);
+    if (!parsed.success) throw friendlyUpsertError(parsed.error);
+    return parsed.data;
+  })
   .handler(async ({ data, context }) => {
     const { data: adminCheck } = await context.supabase.rpc("is_admin", {
       _user_id: context.userId,

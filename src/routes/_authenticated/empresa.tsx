@@ -2,9 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { Capacitor } from "@capacitor/core";
 import { ChevronLeft, Check, X, Loader2, ExternalLink, Copy, Download } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,6 +29,8 @@ import {
 import {
   slugify,
   DEFAULT_BUSINESS_HOURS,
+  normalizeProfileForForm,
+  validateBusinessHours,
   type CompanyProfile,
   type BusinessHours,
   type DayHours,
@@ -79,6 +84,15 @@ function EmpresaPage() {
   const update = (patch: Partial<ControlCenterState["company"]>) =>
     setState((s) => ({ ...s, company: { ...s.company, ...patch } }));
 
+  // Mesma condição de AppShell (src/components/app-shell.tsx) pra saber se a
+  // navegação inferior web (MobileBottomNav, h-16 = 64px) está realmente
+  // sendo renderizada agora — dentro do app nativo (Capacitor) ela nunca é
+  // (a tab bar é a nativa do iOS), então a barra fixa de salvar não precisa
+  // abrir espaço pra ela. Isso evita basear a posição só na largura da tela
+  // (que não distingue nativo de navegador mobile).
+  const isMobile = useIsMobile();
+  const showBottomNav = isMobile && !Capacitor.isNativePlatform();
+
   const qc = useQueryClient();
   const getProfileFn = useServerFn(getMyCompanyProfile);
   const upsertFn = useServerFn(upsertCompanyProfile);
@@ -91,6 +105,7 @@ function EmpresaPage() {
 
   const [form, setForm] = useState<PublicForm>(EMPTY_PUBLIC_FORM);
   const [hydratedFromProfile, setHydratedFromProfile] = useState(false);
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
   const [slugStatus, setSlugStatus] = useState<"idle" | "checking" | "available" | "unavailable">(
     "idle",
   );
@@ -98,8 +113,9 @@ function EmpresaPage() {
 
   useEffect(() => {
     if (!loadingProfile && !hydratedFromProfile) {
-      if (profile)
-        setForm({ ...profile, business_hours: profile.business_hours ?? DEFAULT_BUSINESS_HOURS });
+      const next = profile ? normalizeProfileForForm(profile) : EMPTY_PUBLIC_FORM;
+      setForm(next);
+      setSavedSnapshot(JSON.stringify(next));
       setHydratedFromProfile(true);
     }
   }, [loadingProfile, profile, hydratedFromProfile]);
@@ -132,12 +148,22 @@ function EmpresaPage() {
   const save = useMutation({
     mutationFn: () => upsertFn({ data: form }),
     onSuccess: () => {
-      toast.success("Portal público atualizado.");
+      toast.success("Alterações salvas.");
+      setSavedSnapshot(JSON.stringify(form));
       qc.invalidateQueries({ queryKey: ["my-company-profile"] });
       qc.invalidateQueries({ queryKey: ["company-slug"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Não foi possível salvar."),
   });
+
+  const handleSave = () => {
+    const hoursError = validateBusinessHours(businessHours);
+    if (hoursError) {
+      toast.error(hoursError);
+      return;
+    }
+    save.mutate();
+  };
 
   const importFromBrowser = () => {
     patchForm({
@@ -161,9 +187,10 @@ function EmpresaPage() {
     form.display_name.trim().length > 0 &&
     form.slug.trim().length >= 2 &&
     slugStatus !== "unavailable";
+  const isDirty = savedSnapshot !== null && JSON.stringify(form) !== savedSnapshot;
 
   return (
-    <AppShell className="px-4 md:px-8 py-6 md:py-10 max-w-3xl mx-auto pb-28 md:pb-12">
+    <AppShell className="px-4 md:px-8 py-6 md:py-10 max-w-3xl mx-auto pb-44 md:pb-24">
       <Link to="/mais" className="inline-flex">
         <Button variant="ghost" size="icon" className="rounded-full mb-4">
           <ChevronLeft className="w-5 h-5" />
@@ -382,39 +409,30 @@ function EmpresaPage() {
               />
             </div>
 
-            <div className="flex items-center justify-between gap-3 pt-2">
-              <div className="flex items-center gap-2 min-w-0">
-                {publicUrl && (
-                  <>
-                    <code className="text-xs px-3 py-1.5 rounded-full bg-muted/60 truncate">
-                      {publicUrl}
-                    </code>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="rounded-full h-8 w-8 shrink-0"
-                      onClick={() => {
-                        navigator.clipboard.writeText(publicUrl);
-                        toast.success("Link copiado.");
-                      }}
-                    >
-                      <Copy className="w-3.5 h-3.5" />
+            <div className="flex items-center gap-2 min-w-0 pt-2">
+              {publicUrl && (
+                <>
+                  <code className="text-xs px-3 py-1.5 rounded-full bg-muted/60 truncate">
+                    {publicUrl}
+                  </code>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-full h-8 w-8 shrink-0"
+                    onClick={() => {
+                      navigator.clipboard.writeText(publicUrl);
+                      toast.success("Link copiado.");
+                    }}
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </Button>
+                  <a href={publicUrl} target="_blank" rel="noreferrer">
+                    <Button variant="ghost" size="icon" className="rounded-full h-8 w-8 shrink-0">
+                      <ExternalLink className="w-3.5 h-3.5" />
                     </Button>
-                    <a href={publicUrl} target="_blank" rel="noreferrer">
-                      <Button variant="ghost" size="icon" className="rounded-full h-8 w-8 shrink-0">
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </Button>
-                    </a>
-                  </>
-                )}
-              </div>
-              <Button
-                onClick={() => save.mutate()}
-                disabled={!canSave || save.isPending}
-                className="rounded-full shrink-0"
-              >
-                {save.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
-              </Button>
+                  </a>
+                </>
+              )}
             </div>
           </div>
         </Section>
@@ -458,18 +476,11 @@ function EmpresaPage() {
             <Field label="País">
               <Input value={c.country} onChange={(e) => update({ country: e.target.value })} />
             </Field>
-            <Field label="Fuso horário">
-              <Select value={c.timezone} onValueChange={(v) => update({ timezone: v })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="America/Sao_Paulo">America/Sao_Paulo</SelectItem>
-                  <SelectItem value="America/Fortaleza">America/Fortaleza</SelectItem>
-                  <SelectItem value="America/Manaus">America/Manaus</SelectItem>
-                  <SelectItem value="Europe/Lisbon">Europe/Lisbon</SelectItem>
-                </SelectContent>
-              </Select>
+            <Field
+              label="Fuso horário"
+              hint="Ainda não é possível trocar — é usado para calcular os horários do agendamento online, e hoje é sempre o padrão do sistema."
+            >
+              <Input value="America/Sao_Paulo (padrão)" disabled />
             </Field>
             <Field label="Idioma">
               <Select value={c.language} onValueChange={(v) => update({ language: v })}>
@@ -520,6 +531,30 @@ function EmpresaPage() {
             </Field>
           </div>
         </Section>
+      </div>
+
+      <div
+        className={cn(
+          "fixed left-0 right-0 z-40 border-t border-border/70 bg-background/95 backdrop-blur px-4 pt-3 md:px-8",
+          // Acima da navegação inferior (h-16 = 64px) só quando ela está de
+          // fato na tela (web mobile); no app nativo (Capacitor) e no
+          // desktop ela não existe, então a barra fica no rodapé mesmo.
+          showBottomNav ? "bottom-16" : "bottom-0",
+        )}
+        style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))" }}
+      >
+        <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
+          <span className="text-xs text-muted-foreground">
+            {isDirty ? "Alterações não salvas" : "Tudo salvo"}
+          </span>
+          <Button
+            onClick={handleSave}
+            disabled={!canSave || save.isPending}
+            className="rounded-full shrink-0"
+          >
+            {save.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar alterações"}
+          </Button>
+        </div>
       </div>
     </AppShell>
   );

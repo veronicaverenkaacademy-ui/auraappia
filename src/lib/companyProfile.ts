@@ -79,6 +79,59 @@ export async function fetchCompanySlugByOwnerId(ownerId: string): Promise<string
   return data?.slug ?? null;
 }
 
+/**
+ * Normaliza o perfil lido do banco (onde campos opcionais não preenchidos vêm
+ * como `null`) para o formato do formulário da aba Empresa (onde tudo é
+ * string) — sem isso, os valores `null` eram enviados de volta ao salvar e
+ * rejeitados pela validação do servidor (FASE H, 08/11/2026).
+ */
+export function normalizeProfileForForm(profile: CompanyProfile): Omit<CompanyProfile, "owner_id"> {
+  return {
+    slug: profile.slug,
+    display_name: profile.display_name,
+    category: profile.category ?? "",
+    description: profile.description ?? "",
+    city: profile.city ?? "",
+    state: profile.state ?? "",
+    address: profile.address ?? "",
+    phone: profile.phone ?? "",
+    whatsapp: profile.whatsapp ?? "",
+    instagram: profile.instagram ?? "",
+    facebook: profile.facebook ?? "",
+    tiktok: profile.tiktok ?? "",
+    open_hours_text: profile.open_hours_text ?? "",
+    logo_url: profile.logo_url ?? "",
+    cover_image_url: profile.cover_image_url ?? "",
+    business_hours: profile.business_hours ?? DEFAULT_BUSINESS_HOURS,
+  };
+}
+
+/** Valida o horário de agendamento antes de salvar: formato HH:MM e
+ * fechamento depois da abertura — mensagem amigável, sem deixar chegar ao
+ * erro bruto de validação do servidor (item 1.4 da FASE H). */
+export function validateBusinessHours(hours: BusinessHours): string | null {
+  const labels: Record<keyof BusinessHours, string> = {
+    mon: "Segunda",
+    tue: "Terça",
+    wed: "Quarta",
+    thu: "Quinta",
+    fri: "Sexta",
+    sat: "Sábado",
+    sun: "Domingo",
+  };
+  for (const key of Object.keys(labels) as (keyof BusinessHours)[]) {
+    const day = hours[key];
+    if (!day) continue;
+    if (!/^\d{2}:\d{2}$/.test(day.open) || !/^\d{2}:\d{2}$/.test(day.close)) {
+      return `Horário de ${labels[key]} inválido — use o formato HH:MM.`;
+    }
+    if (day.close <= day.open) {
+      return `${labels[key]}: o horário de fechamento precisa ser depois do de abertura.`;
+    }
+  }
+  return null;
+}
+
 export function slugify(input: string): string {
   return input
     .normalize("NFD")
