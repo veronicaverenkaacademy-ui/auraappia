@@ -159,7 +159,13 @@ const EXPECTED_DAYS_UNTIL_APPOINTMENT: Record<ReminderTemplateKey, number> = {
   lembrete_2h: 0, // "hoje"
 };
 
-function isPhoneInTestList(recipientPhoneE164: string, testPhones: readonly string[]): boolean {
+// Exportada pro modo teste do OTP (FASE G6.2) reaproveitar a mesma
+// comparação (últimos 8 dígitos) — nenhuma mudança de comportamento, só
+// visibilidade.
+export function isPhoneInTestList(
+  recipientPhoneE164: string,
+  testPhones: readonly string[],
+): boolean {
   const recipientDigits = recipientPhoneE164.replace(/\D/g, "");
   if (!recipientDigits) return false;
   const recipientLast8 = recipientDigits.slice(-8);

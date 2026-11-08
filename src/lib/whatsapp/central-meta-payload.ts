@@ -77,6 +77,66 @@ export function buildMetaTemplateBody(input: BuildMetaTemplateBodyInput): MetaTe
   };
 }
 
+// ===== Template de Autenticação (OTP da cliente, FASE G6.2) — isolado dos
+// lembretes acima de propósito: botão "copiar código" não é quick_reply
+// (não tem action de confirmar/cancelar/reagendar), e o código aparece tanto
+// no corpo quanto no botão. Nenhuma função acima foi alterada.
+//
+// SUPOSIÇÃO (FASE G6.2, 08/11/2026): formato do componente de botão no
+// ENVIO de um template de Autenticação com botão "copiar código", conforme
+// especificado pela dona (sub_type "url", index "0", mesmo código do corpo
+// como parâmetro de texto). Não confirmado ao vivo contra a documentação
+// primária da Meta nesta sessão — fontes de terceiros sobre a API mais
+// recente também citam o nome "copy_code" para este sub_type. Isolado
+// nesta função só para o OTP (nunca para os lembretes) justamente para
+// ajustar fácil se a Meta rejeitar este formato na primeira tentativa real
+// — mudar só aqui, nada fora deste arquivo conhece este JSON.
+export type BuildMetaAuthTemplateBodyInput = {
+  toPhoneDigits: string; // só dígitos, com código do país — sem "+"
+  templateName: string;
+  languageCode: string; // "pt_BR"
+  code: string; // 6 dígitos — aparece no corpo E no botão, idêntico
+};
+
+export type MetaAuthTemplateBody = {
+  messaging_product: "whatsapp";
+  recipient_type: "individual";
+  to: string;
+  type: "template";
+  template: {
+    name: string;
+    language: { code: string };
+    components: [
+      { type: "body"; parameters: [{ type: "text"; text: string }] },
+      { type: "button"; sub_type: "url"; index: "0"; parameters: [{ type: "text"; text: string }] },
+    ];
+  };
+};
+
+export function buildMetaAuthTemplateBody(
+  input: BuildMetaAuthTemplateBodyInput,
+): MetaAuthTemplateBody {
+  return {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: input.toPhoneDigits,
+    type: "template",
+    template: {
+      name: input.templateName,
+      language: { code: input.languageCode },
+      components: [
+        { type: "body", parameters: [{ type: "text", text: input.code }] },
+        {
+          type: "button",
+          sub_type: "url",
+          index: "0",
+          parameters: [{ type: "text", text: input.code }],
+        },
+      ],
+    },
+  };
+}
+
 /** Só a variável [0] (primeiro nome da cliente) é mascarada para auditoria — as demais (hora/serviço/local) não são PII sensível. */
 export function maskReminderVariablesForAudit(variables: string[]): string[] {
   if (variables.length === 0) return variables;

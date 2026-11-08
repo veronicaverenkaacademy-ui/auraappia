@@ -5,7 +5,7 @@
 // Rodar com: node --experimental-strip-types --test tests/render-final-templates.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SYSTEM_TEMPLATES, getSystemTemplate } from "../src/lib/marketing/system-templates.ts";
+import { getSystemTemplate } from "../src/lib/marketing/system-templates.ts";
 import { buildReminderTemplateVariables } from "../src/lib/whatsapp/central-template-variables.ts";
 
 const FICTICIOUS = {
@@ -70,7 +70,9 @@ const RENDERED: Record<string, string> = {
 };
 
 test("as 4 mensagens finais são impressas (evidência pro relatório)", () => {
-  for (const key of SYSTEM_TEMPLATES.map((t) => t.key)) {
+  // otp_verificacao (FASE G6.2) não tem renderização aqui de propósito —
+  // este teste é só dos 4 templates de marketing/lembrete originais.
+  for (const key of Object.keys(RENDERED) as Array<keyof typeof RENDERED>) {
     console.log(`\n=== ${key} (${getSystemTemplate(key).metaTemplateName}) ===\n${RENDERED[key]}`);
   }
   assert.equal(Object.keys(RENDERED).length, 4);

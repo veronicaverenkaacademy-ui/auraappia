@@ -47,10 +47,13 @@
 // ao formato exigido pela Meta — não é o mesmo formato nomeado ({{nome}},
 // {{hora}}) usado nas automações comuns criadas pela própria dona.
 
-export type MetaCategory = "UTILITY" | "MARKETING";
+// AUTHENTICATION acrescentado na FASE G6.2 (08/11/2026) — só o template de
+// código de verificação da cliente usa essa categoria; nada mais muda para
+// UTILITY/MARKETING.
+export type MetaCategory = "UTILITY" | "MARKETING" | "AUTHENTICATION";
 
 export type SystemTemplateKey =
-  "lembrete_24h" | "lembrete_2h" | "pos_avaliacao_google" | "retorno_30_dias";
+  "lembrete_24h" | "lembrete_2h" | "pos_avaliacao_google" | "retorno_30_dias" | "otp_verificacao";
 
 /** Ação de cada botão de resposta rápida — espelha ButtonAction de central-button-payload.ts (não importado daqui pra não acoplar marketing/ a whatsapp/). */
 export type SystemTemplateButtonAction = "confirm" | "reschedule" | "cancel";
@@ -169,6 +172,35 @@ export const SYSTEM_TEMPLATES: readonly SystemTemplate[] = [
     buttonActions: [],
     // Ainda não enviado pelo código (Etapa 2) — só mapeado nesta rodada.
     triggerDescription: "Cliente há mais de 30 dias sem atendimento concluído",
+  },
+  {
+    key: "otp_verificacao",
+    displayName: "Código de verificação (Minha conta / agendamento)",
+    // Nome a ser criado pela dona no WhatsApp Manager (FASE G6.2) —
+    // categoria Authentication, pt_BR, botão "copiar código", expiração de
+    // 10min (igual ao TTL do código em otp.functions.ts). Nunca enviar
+    // antes de confirmar a aprovação na Meta (mesmo cuidado dos templates
+    // _v2 acima).
+    metaTemplateName: "aura_codigo_verificacao",
+    language: "pt_BR",
+    category: "AUTHENTICATION",
+    appCategory: "autenticacao",
+    channel: "whatsapp",
+    // Corpo/aviso de segurança reais são o padrão fixo da Meta para
+    // Authentication (não personalizável como os templates UTILITY acima)
+    // — este texto é só pra bater a contagem de variáveis do validador
+    // estático, nunca é montado/enviado de verdade (ver
+    // buildMetaAuthTemplateBody em central-meta-payload.ts).
+    text: "Seu código de verificação é {{1}}.",
+    variableOrder: ["code"],
+    examples: ["123456"],
+    // Botão "copiar código" não é quick_reply (sem action de confirmar/
+    // cancelar/reagendar) — mesmo padrão já usado por retorno_30_dias acima
+    // (buttons com rótulo, buttonActions vazio = fora do mecanismo de
+    // quick_reply; validateSystemTemplateContract já trata esse caso).
+    buttons: ["Copiar código"],
+    buttonActions: [],
+    triggerDescription: "Login da cliente no portal (agendamento e Minha conta)",
   },
 ] as const;
 

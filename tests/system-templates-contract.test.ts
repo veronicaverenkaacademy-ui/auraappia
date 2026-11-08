@@ -68,7 +68,7 @@ test("template hipotético com {{}} vazio (tipo 'Nome' nunca preenchido, a causa
   );
 });
 
-test("corpo não pode começar nem terminar com uma variável — nenhum dos 4 templates reais viola isso", () => {
+test("corpo não pode começar nem terminar com uma variável — nenhum dos templates reais viola isso", () => {
   for (const t of SYSTEM_TEMPLATES) {
     const startsWithVar = /^\{\{\d+\}\}/.test(t.text);
     const endsWithVar = t.text.trimEnd().endsWith("}}");
