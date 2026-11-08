@@ -176,12 +176,14 @@ export const SYSTEM_TEMPLATES: readonly SystemTemplate[] = [
   {
     key: "otp_verificacao",
     displayName: "Código de verificação (Minha conta / agendamento)",
-    // Nome a ser criado pela dona no WhatsApp Manager (FASE G6.2) —
-    // categoria Authentication, pt_BR, botão "copiar código", expiração de
-    // 10min (igual ao TTL do código em otp.functions.ts). Nunca enviar
-    // antes de confirmar a aprovação na Meta (mesmo cuidado dos templates
-    // _v2 acima).
-    metaTemplateName: "aura_codigo_verificacao",
+    // Nome REAL já aprovado na Meta (print do WhatsApp Manager da conta
+    // "AURA agendaia WABA", confirmado pela dona, 08/11/2026 — status
+    // "Ativo — Qualidade pendente") — a Meta NÃO permite renomear um
+    // template aprovado, então este valor é definitivo. Categoria
+    // Authentication, pt_BR, corpo com 1 variável (o código), botão
+    // "Copiar código" (copy_code) — sem aviso de segurança nem texto de
+    // validade no corpo (o template aprovado não tem nenhum dos dois).
+    metaTemplateName: "autenti_",
     language: "pt_BR",
     category: "AUTHENTICATION",
     appCategory: "autenticacao",

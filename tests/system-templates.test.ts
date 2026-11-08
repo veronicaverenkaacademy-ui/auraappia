@@ -129,7 +129,7 @@ const EXPECTED_META_TEMPLATE_NAME: Record<string, string> = {
   lembrete_2h: "lembrete_2h_v2",
   pos_avaliacao_google: "pedido_de_avaliao_",
   retorno_30_dias: "retorno_30_dias",
-  otp_verificacao: "aura_codigo_verificacao",
+  otp_verificacao: "autenti_",
 };
 
 for (const t of SYSTEM_TEMPLATES) {

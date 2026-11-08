@@ -86,7 +86,7 @@ function neverCallFetch(): CapturedCall[] {
 test("buildMetaAuthTemplateBody: body com o código, botão copy_code (sub_type url) com o MESMO código, nenhum campo extra", () => {
   const body = buildMetaAuthTemplateBody({
     toPhoneDigits: "5547999990001",
-    templateName: "aura_codigo_verificacao",
+    templateName: "autenti_",
     languageCode: "pt_BR",
     code: "123456",
   });
@@ -96,7 +96,7 @@ test("buildMetaAuthTemplateBody: body com o código, botão copy_code (sub_type 
     to: "5547999990001",
     type: "template",
     template: {
-      name: "aura_codigo_verificacao",
+      name: "autenti_",
       language: { code: "pt_BR" },
       components: [
         { type: "body", parameters: [{ type: "text", text: "123456" }] },
@@ -114,7 +114,7 @@ test("buildMetaAuthTemplateBody: body com o código, botão copy_code (sub_type 
 test("buildMetaAuthTemplateBody: código de 6 dígitos aparece IDÊNTICO no corpo e no botão", () => {
   const body = buildMetaAuthTemplateBody({
     toPhoneDigits: "5547999990002",
-    templateName: "aura_codigo_verificacao",
+    templateName: "autenti_",
     languageCode: "pt_BR",
     code: "000042",
   });
@@ -126,14 +126,33 @@ test("buildMetaAuthTemplateBody: código de 6 dígitos aparece IDÊNTICO no corp
 
 // ===== Template registrado em system-templates.ts =====
 
-test("template otp_verificacao: categoria Authentication, pt_BR, 1 variável, botão 'Copiar código'", () => {
+test("template otp_verificacao: categoria Authentication, pt_BR, 1 variável, botão 'Copiar código', nome real 'autenti_' (já aprovado na Meta, não pode renomear)", () => {
   const t = getSystemTemplate("otp_verificacao");
   assert.equal(t.category, "AUTHENTICATION");
   assert.equal(t.language, "pt_BR");
   assert.equal(t.variableOrder.length, 1);
   assert.deepEqual(t.buttons, ["Copiar código"]);
   assert.deepEqual(t.buttonActions, []);
-  assert.equal(t.metaTemplateName, "aura_codigo_verificacao");
+  assert.equal(t.metaTemplateName, "autenti_");
+});
+
+test("nome 'autenti_' só usa [a-z0-9_] (inclusive sublinhado no fim) — mesmo padrão já aceito por pos_avaliacao_google ('pedido_de_avaliao_')", () => {
+  const t = getSystemTemplate("otp_verificacao");
+  assert.match(t.metaTemplateName, /^[a-z0-9_]+$/);
+  assert.ok(t.metaTemplateName.endsWith("_"), "esperava terminar com '_'");
+  assert.equal(t.metaTemplateName, "autenti_");
+});
+
+test("o nome vai EXATAMENTE 'autenti_' no payload de envio — sem sufixo de idioma, sem espaço", () => {
+  const t = getSystemTemplate("otp_verificacao");
+  const body = buildMetaAuthTemplateBody({
+    toPhoneDigits: "5547999990003",
+    templateName: t.metaTemplateName,
+    languageCode: t.language,
+    code: "123456",
+  });
+  assert.equal(body.template.name, "autenti_");
+  assert.equal(body.template.language.code, "pt_BR");
 });
 
 // ===== Modo teste próprio (fail-safe, independente dos lembretes) =====
