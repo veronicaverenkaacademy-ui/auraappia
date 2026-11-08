@@ -85,6 +85,9 @@ DECLARE v_schema text := (SELECT pg_my_temp_schema()::regnamespace::text);
 BEGIN
   EXECUTE format('GRANT USAGE ON SCHEMA %s TO anon, authenticated', v_schema);
   EXECUTE format('GRANT ALL ON %s.zzfx_results, %s.zzfx_ids TO anon, authenticated', v_schema, v_schema);
+  -- A sequence do serial (zzfx_results.ordem) é um objeto separado — GRANT ALL
+  -- na tabela não cobre automaticamente o USAGE/SELECT nela.
+  EXECUTE format('GRANT USAGE, SELECT ON %s.zzfx_results_ordem_seq TO anon, authenticated', v_schema);
 END $grant$;
 
 DO $run$
@@ -255,6 +258,189 @@ BEGIN
       NOT v_anon1 AND NOT v_anon2 AND v_authenticated1 AND v_authenticated2);
   END;
 END $run$;
+
+-- =====================================================================================
+-- D-TER (Opção A): reactivate_cancelled_appointment reabre lembretes 'cancelled'
+-- que só foram cancelados pelo próprio cancelamento do agendamento
+-- =====================================================================================
+
+-- Helper: cria 1 job sintético com estado à escolha (sem passar pelo scheduler/trigger).
+-- SECURITY DEFINER só nesta função auxiliar de TESTE: notification_jobs é
+-- REVOKE ALL de authenticated/anon (só service_role tem acesso de verdade),
+-- e os casos abaixo rodam como "authenticated" (simulando a profissional
+-- logada chamando reactivate_cancelled_appointment) — sem isto, nem
+-- conseguiríamos montar o cenário sintético.
+CREATE OR REPLACE FUNCTION pg_temp.zzfx_make_job(
+  p_owner uuid, p_appt uuid, p_client uuid, p_type text,
+  p_status text DEFAULT 'cancelled', p_last_error text DEFAULT NULL, p_sent_at timestamptz DEFAULT NULL
+) RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE v_job uuid;
+BEGIN
+  INSERT INTO public.notification_jobs (owner_id, appointment_id, client_id, type, recipient_phone, status, last_error, sent_at)
+  VALUES (p_owner, p_appt, p_client, p_type, 'ZZFX_PHONE', p_status, p_last_error, p_sent_at)
+  RETURNING id INTO v_job;
+  RETURN v_job;
+END;
+$$;
+
+-- Helper de LEITURA: mesmo motivo do zzfx_make_job acima — "authenticated"
+-- não tem nem SELECT em notification_jobs, só service_role.
+CREATE OR REPLACE FUNCTION pg_temp.zzfx_job_row(p_job uuid)
+RETURNS TABLE(status text, sent_at timestamptz)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY SELECT n.status, n.sent_at FROM public.notification_jobs n WHERE n.id = p_job;
+END;
+$$;
+
+DO $run2$
+DECLARE
+  v_owner_a uuid := (SELECT v FROM zzfx_ids WHERE k='owner_a');
+  v_owner_b uuid := (SELECT v FROM zzfx_ids WHERE k='owner_b');
+  v_client_a uuid := (SELECT v FROM zzfx_ids WHERE k='client_a');
+  v_appt uuid; v_appt_b uuid; v_outro_appt uuid;
+  v_job24 uuid; v_job2h uuid; v_job_sent uuid; v_job_outro_motivo uuid;
+  v_job_outro_appt uuid; v_job_outro_estab uuid; v_job_nao_lembrete uuid;
+  r text;
+  v_status24 text; v_status2h text; v_sent_status text; v_sent_at_antes timestamptz; v_sent_at_depois timestamptz;
+  v_outro_motivo_status text; v_outro_appt_status text; v_outro_estab_status text; v_nao_lembrete_status text;
+  v_n int; v_claim_ids uuid[];
+BEGIN
+  SET LOCAL ROLE authenticated;
+  PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
+  PERFORM set_config('request.jwt.claim.sub', v_owner_a::text, true);
+
+  -- ===== 20: cancelar via TRIGGER REAL (pending->cancelled) com 2 lembretes pendentes, reativar dentro da janela — os dois voltam =====
+  v_appt := pg_temp.zzfx_make_appt(v_owner_a, v_client_a, NULL, interval '100 hours', p_status := 'pending', p_conf := 'pending');
+  v_job24 := pg_temp.zzfx_make_job(v_owner_a, v_appt, v_client_a, 'appointment_reminder_24h', 'pending');
+  v_job2h := pg_temp.zzfx_make_job(v_owner_a, v_appt, v_client_a, 'appointment_reminder_2h', 'pending');
+  UPDATE public.appointments SET status = 'cancelled' WHERE id = v_appt; -- trigger real cancela os 2 jobs 'pending'
+  SELECT status INTO v_status24 FROM pg_temp.zzfx_job_row(v_job24);
+  SELECT status INTO v_status2h FROM pg_temp.zzfx_job_row(v_job2h);
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('20a_trigger_real_cancela_os_2_pendentes',
+    format('24h=%s 2h=%s', v_status24, v_status2h), v_status24 = 'cancelled' AND v_status2h = 'cancelled');
+
+  r := public.reactivate_cancelled_appointment(v_appt);
+  SELECT status INTO v_status24 FROM pg_temp.zzfx_job_row(v_job24);
+  SELECT status INTO v_status2h FROM pg_temp.zzfx_job_row(v_job2h);
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('20b_reativar_dentro_da_janela_reabre_os_2',
+    format('r=%s 24h=%s 2h=%s', r, v_status24, v_status2h), r = 'ok' AND v_status24 = 'pending' AND v_status2h = 'pending');
+
+  -- ===== 21: janela do 24h já passou (falta 3h), mas 2h ainda cabe (>=105min) =====
+  v_appt := pg_temp.zzfx_make_appt(v_owner_a, v_client_a, NULL, interval '3 hours', p_status := 'pending', p_conf := 'pending');
+  v_job24 := pg_temp.zzfx_make_job(v_owner_a, v_appt, v_client_a, 'appointment_reminder_24h', 'pending');
+  v_job2h := pg_temp.zzfx_make_job(v_owner_a, v_appt, v_client_a, 'appointment_reminder_2h', 'pending');
+  UPDATE public.appointments SET status = 'cancelled' WHERE id = v_appt;
+  r := public.reactivate_cancelled_appointment(v_appt);
+  SELECT status INTO v_status24 FROM pg_temp.zzfx_job_row(v_job24);
+  SELECT status INTO v_status2h FROM pg_temp.zzfx_job_row(v_job2h);
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('21_janela_24h_passou_mas_2h_cabe',
+    format('r=%s 24h=%s(esperado cancelled) 2h=%s(esperado pending)', r, v_status24, v_status2h),
+    r = 'ok' AND v_status24 = 'cancelled' AND v_status2h = 'pending');
+
+  -- ===== 22: as duas janelas já passaram (falta 30min) — reativação 'ok', nenhum job reabre =====
+  v_appt := pg_temp.zzfx_make_appt(v_owner_a, v_client_a, NULL, interval '30 minutes', p_status := 'pending', p_conf := 'pending');
+  v_job24 := pg_temp.zzfx_make_job(v_owner_a, v_appt, v_client_a, 'appointment_reminder_24h', 'pending');
+  v_job2h := pg_temp.zzfx_make_job(v_owner_a, v_appt, v_client_a, 'appointment_reminder_2h', 'pending');
+  UPDATE public.appointments SET status = 'cancelled' WHERE id = v_appt;
+  r := public.reactivate_cancelled_appointment(v_appt);
+  SELECT status INTO v_status24 FROM pg_temp.zzfx_job_row(v_job24);
+  SELECT status INTO v_status2h FROM pg_temp.zzfx_job_row(v_job2h);
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('22_as_duas_janelas_passaram_nenhum_reabre',
+    format('r=%s 24h=%s 2h=%s', r, v_status24, v_status2h),
+    r = 'ok' AND v_status24 = 'cancelled' AND v_status2h = 'cancelled');
+
+  -- ===== 23: job 'sent' nunca é tocado (status e sent_at intactos) =====
+  v_appt := pg_temp.zzfx_make_appt(v_owner_a, v_client_a, NULL, interval '102 hours', p_status := 'pending', p_conf := 'pending');
+  v_sent_at_antes := now() - interval '10 hours';
+  v_job_sent := pg_temp.zzfx_make_job(v_owner_a, v_appt, v_client_a, 'appointment_reminder_24h', 'sent', NULL, v_sent_at_antes);
+  UPDATE public.appointments SET status = 'cancelled' WHERE id = v_appt; -- trigger só afeta 'pending', não toca 'sent'
+  PERFORM public.reactivate_cancelled_appointment(v_appt);
+  SELECT status, sent_at INTO v_sent_status, v_sent_at_depois FROM pg_temp.zzfx_job_row(v_job_sent);
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('23_job_sent_nunca_tocado',
+    format('status=%s sent_at_igual=%s', v_sent_status, v_sent_at_depois = v_sent_at_antes),
+    v_sent_status = 'sent' AND v_sent_at_depois = v_sent_at_antes);
+
+  -- ===== 24: job cancelado por OUTRO motivo (last_error preenchido) nunca reabre =====
+  v_appt := pg_temp.zzfx_make_appt(v_owner_a, v_client_a, NULL, interval '104 hours', p_status := 'pending', p_conf := 'pending');
+  v_job_outro_motivo := pg_temp.zzfx_make_job(v_owner_a, v_appt, v_client_a, 'appointment_reminder_24h', 'cancelled', 'Telefone inválido.');
+  UPDATE public.appointments SET status = 'cancelled' WHERE id = v_appt;
+  PERFORM public.reactivate_cancelled_appointment(v_appt);
+  SELECT status INTO v_outro_motivo_status FROM pg_temp.zzfx_job_row(v_job_outro_motivo);
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('24_cancelado_por_outro_motivo_nao_reabre',
+    format('status=%s (tem que seguir cancelled)', v_outro_motivo_status), v_outro_motivo_status = 'cancelled');
+
+  -- ===== 25: job de OUTRO agendamento (mesmo estabelecimento) não é tocado =====
+  v_appt := pg_temp.zzfx_make_appt(v_owner_a, v_client_a, NULL, interval '106 hours', p_status := 'pending', p_conf := 'pending');
+  v_outro_appt := pg_temp.zzfx_make_appt(v_owner_a, v_client_a, NULL, interval '108 hours', p_status := 'cancelled', p_conf := 'declined');
+  v_job_outro_appt := pg_temp.zzfx_make_job(v_owner_a, v_outro_appt, v_client_a, 'appointment_reminder_24h', 'cancelled');
+  UPDATE public.appointments SET status = 'cancelled' WHERE id = v_appt;
+  PERFORM public.reactivate_cancelled_appointment(v_appt);
+  SELECT status INTO v_outro_appt_status FROM pg_temp.zzfx_job_row(v_job_outro_appt);
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('25_job_de_outro_agendamento_intacto',
+    format('status=%s', v_outro_appt_status), v_outro_appt_status = 'cancelled');
+
+  -- ===== 26: job de OUTRO estabelecimento (owner_b) não é tocado ao reativar um agendamento de owner_a — prova o filtro por owner_id =====
+  -- RLS de appointments exige auth.uid() = owner_id no INSERT (zzfx_make_appt não é
+  -- SECURITY DEFINER) — troca temporária de sub pra owner_b só nesta linha.
+  PERFORM set_config('request.jwt.claim.sub', v_owner_b::text, true);
+  v_appt_b := pg_temp.zzfx_make_appt(v_owner_b, v_client_a, NULL, interval '48 hours', p_status := 'cancelled', p_conf := 'declined');
+  PERFORM set_config('request.jwt.claim.sub', v_owner_a::text, true);
+  v_job_outro_estab := pg_temp.zzfx_make_job(v_owner_b, v_appt_b, v_client_a, 'appointment_reminder_24h', 'cancelled');
+  v_appt := pg_temp.zzfx_make_appt(v_owner_a, v_client_a, NULL, interval '110 hours', p_status := 'pending', p_conf := 'pending');
+  UPDATE public.appointments SET status = 'cancelled' WHERE id = v_appt;
+  PERFORM public.reactivate_cancelled_appointment(v_appt);
+  SELECT status INTO v_outro_estab_status FROM pg_temp.zzfx_job_row(v_job_outro_estab);
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('26_job_de_outro_estabelecimento_intacto',
+    format('status=%s', v_outro_estab_status), v_outro_estab_status = 'cancelled');
+
+  -- ===== 27: tipo que não é lembrete (ex. appointment_confirmation) nunca reabre =====
+  v_appt := pg_temp.zzfx_make_appt(v_owner_a, v_client_a, NULL, interval '112 hours', p_status := 'pending', p_conf := 'pending');
+  v_job_nao_lembrete := pg_temp.zzfx_make_job(v_owner_a, v_appt, v_client_a, 'appointment_confirmation', 'cancelled');
+  UPDATE public.appointments SET status = 'cancelled' WHERE id = v_appt;
+  PERFORM public.reactivate_cancelled_appointment(v_appt);
+  SELECT status INTO v_nao_lembrete_status FROM pg_temp.zzfx_job_row(v_job_nao_lembrete);
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('27_tipo_nao_lembrete_nao_reabre',
+    format('status=%s', v_nao_lembrete_status), v_nao_lembrete_status = 'cancelled');
+
+  -- ===== 28: reativar duas vezes seguidas — segunda 'nao_cancelado', job já reaberto fica como está =====
+  v_appt := pg_temp.zzfx_make_appt(v_owner_a, v_client_a, NULL, interval '114 hours', p_status := 'pending', p_conf := 'pending');
+  v_job24 := pg_temp.zzfx_make_job(v_owner_a, v_appt, v_client_a, 'appointment_reminder_24h', 'pending');
+  UPDATE public.appointments SET status = 'cancelled' WHERE id = v_appt;
+  PERFORM public.reactivate_cancelled_appointment(v_appt); -- 1a: reabre
+  r := public.reactivate_cancelled_appointment(v_appt); -- 2a: já não está mais cancelled
+  SELECT status INTO v_status24 FROM pg_temp.zzfx_job_row(v_job24);
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('28_reativar_duas_vezes_job_nao_duplica',
+    format('r2=%s job=%s', r, v_status24), r = 'nao_cancelado' AND v_status24 = 'pending');
+
+  -- ===== 29: reativação 'horario_ocupado' não altera nenhum job =====
+  v_appt := pg_temp.zzfx_make_appt(v_owner_a, v_client_a, NULL, interval '116 hours', p_status := 'pending', p_conf := 'pending');
+  v_job24 := pg_temp.zzfx_make_job(v_owner_a, v_appt, v_client_a, 'appointment_reminder_24h', 'pending');
+  UPDATE public.appointments SET status = 'cancelled' WHERE id = v_appt;
+  PERFORM pg_temp.zzfx_make_appt(v_owner_a, v_client_a, NULL, interval '116 hours', p_status := 'pending', p_conf := 'pending'); -- ocupa o mesmo horário (professional_id NULL nos dois)
+  r := public.reactivate_cancelled_appointment(v_appt);
+  SELECT status INTO v_status24 FROM pg_temp.zzfx_job_row(v_job24);
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('29_horario_ocupado_nao_altera_job',
+    format('r=%s job=%s(esperado cancelled)', r, v_status24), r = 'horario_ocupado' AND v_status24 = 'cancelled');
+
+  -- ===== 30: depois de reaberto, claim_notification_jobs vê o job como elegível =====
+  v_appt := pg_temp.zzfx_make_appt(v_owner_a, v_client_a, NULL, interval '118 hours', p_status := 'pending', p_conf := 'pending');
+  v_job24 := pg_temp.zzfx_make_job(v_owner_a, v_appt, v_client_a, 'appointment_reminder_24h', 'pending');
+  UPDATE public.appointments SET status = 'cancelled' WHERE id = v_appt;
+  PERFORM public.reactivate_cancelled_appointment(v_appt);
+  SET LOCAL ROLE service_role; -- claim_notification_jobs só é executável por service_role (o scheduler de verdade)
+  SELECT array_agg(id) INTO v_claim_ids FROM public.claim_notification_jobs(50);
+  SELECT count(*) INTO v_n FROM public.notification_jobs WHERE id = v_job24 AND status = 'processing';
+  RESET ROLE; -- service_role nunca recebeu GRANT na tabela TEMP de resultados — volta antes do INSERT
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('30_job_reaberto_elegivel_pro_claim',
+    format('job_id_no_resultado_do_claim=%s status_depois=processing(%s)', v_job24 = ANY(v_claim_ids), v_n = 1),
+    v_job24 = ANY(v_claim_ids) AND v_n = 1);
+END $run2$;
 
 SELECT caso, detalhe, passou FROM zzfx_results ORDER BY ordem;
 

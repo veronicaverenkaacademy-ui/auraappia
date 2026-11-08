@@ -28,13 +28,46 @@
 -- agenda_removed_at/by. Nunca apaga a linha, nunca altera price/notes/
 -- client_id/service_id/professional_id/starts_at/ends_at.
 --
--- Lembretes (Etapa D0e, achado crítico, NÃO corrigido aqui): se o job de
--- lembrete de um agendamento já foi marcado 'cancelled' (terminal) em
--- notification_jobs enquanto ele estava cancelado, reativar NÃO faz esse
--- lembrete voltar — o scheduler (central-reminder-scheduler.server.ts) só
--- recalcula job 'pending', nunca 'cancelled'/'sent'/'failed'/'processing'.
--- Falha silenciosa conhecida, relatada à dona, fora do escopo desta fase
--- (não altera o scheduler).
+-- Lembretes (Etapa D0e, achado crítico — CORRIGIDO na Etapa D-TER, 08/11):
+-- se o job de lembrete de um agendamento já foi marcado 'cancelled'
+-- (terminal) em notification_jobs enquanto ele estava cancelado, reativar
+-- não fazia esse lembrete voltar — o scheduler
+-- (central-reminder-scheduler.server.ts) só recalcula job 'pending', nunca
+-- 'cancelled'/'sent'/'failed'/'processing'. Resolvido pela OPÇÃO A (das 3
+-- avaliadas na Fase D-BIS, somente leitura): reactivate_cancelled_appointment
+-- agora reabre, na MESMA transação, só os jobs 'cancelled' deste
+-- agendamento que seguem TODAS as condições abaixo — nunca toca
+-- scheduler/cron/trigger (travas da fase respeitadas):
+--   1. appointment_id + owner_id do PRÓPRIO agendamento reativado (nunca de
+--      outro agendamento/estabelecimento);
+--   2. type IN ('appointment_reminder_24h', 'appointment_reminder_2h) —
+--      nunca 'appointment_confirmation'/'appointment_created'/'test';
+--   3. status='cancelled' E last_error IS NULL — critério objetivo (Etapa
+--      D-TER 0b): o ÚNICO escritor que cancela um job de lembrete SEM
+--      gravar last_error é o trigger enqueue_appointment_whatsapp_jobs()
+--      (20260817200000...sql:49-55), disparado só pelo cancelamento do
+--      PRÓPRIO agendamento. Todo outro cancelamento (telefone inválido,
+--      atraso, agendamento não mais ativo, automação não aprovada, sem
+--      agendamento/cliente — todos em central-reminder-scheduler.server.ts)
+--      sempre grava um motivo em last_error. Limitação honesta, aceita
+--      como segura: um job que passou por "hold_pending" (fica 'pending',
+--      mas com last_error preenchido) e só depois foi cancelado pelo
+--      mesmo trigger manteria esse last_error antigo e NÃO seria reaberto
+--      — erra pro lado seguro (deixa de reabrir em vez de reabrir por
+--      engano), nunca o contrário;
+--   4. ainda dentro da janela de política (central-reminder-policy.ts:
+--      51-58,195-222) checada com now() DO BANCO: 24h precisa de pelo
+--      menos 12h (MAX_LATE_24H_BEFORE_START_MS) até starts_at; 2h precisa
+--      de pelo menos 105min=1h45 (MAX_LATE_2H_BEFORE_START_MS). O envio
+--      real reverifica essa mesma janela no momento de processar
+--      (decideReminderJobAction, chamada em todo claim) — defesa em
+--      profundidade, a checagem aqui só evita reabrir o que já nasceria
+--      descartado de novo.
+-- Nunca toca jobs 'sent'/'processing'/'failed', nunca insere nem apaga
+-- linha (preserva o índice único appointment_id+type), só UPDATE. Qualquer
+-- exceção inesperada nesse UPDATE propaga e desfaz a transação inteira
+-- (nada parcial) — a profissional vê a mensagem genérica já tratada no
+-- app, nunca um erro bruto.
 --
 -- GRANT só para authenticated: nenhum job/scheduler/webhook do servidor
 -- chama estas funções (diferente de apply_whatsapp_central_reply, chamada
@@ -129,6 +162,7 @@ AS $$
 DECLARE
   v_appt public.appointments;
   v_allowed boolean;
+  v_reminders_reopened int;
 BEGIN
   IF auth.uid() IS NULL THEN
     RETURN 'sem_permissao';
@@ -176,8 +210,37 @@ BEGIN
     RETURN 'horario_ocupado';
   END;
 
+  -- Reabre os lembretes cancelados SÓ por causa do cancelamento deste
+  -- agendamento (ver comentário no topo do arquivo) que ainda cabem na
+  -- janela da política — nunca 'sent'/'processing'/'failed', nunca de
+  -- outro agendamento/estabelecimento, nunca insere/apaga linha. Fora de
+  -- um bloco BEGIN/EXCEPTION de propósito: uma exceção inesperada aqui
+  -- deve desfazer a reativação inteira (nada parcial), nunca só pular o
+  -- reabrimento — a função então propaga o erro, e o app já trata isso
+  -- com a mensagem genérica.
+  UPDATE public.notification_jobs
+  SET status = 'pending', attempts = 0, next_attempt_at = now()
+  WHERE appointment_id = p_appointment_id
+    AND owner_id = v_appt.owner_id
+    AND status = 'cancelled'
+    AND last_error IS NULL
+    AND (
+      (type = 'appointment_reminder_24h' AND EXTRACT(EPOCH FROM (v_appt.starts_at - now())) >= 43200) -- 12h = MAX_LATE_24H_BEFORE_START_MS
+      OR
+      (type = 'appointment_reminder_2h' AND EXTRACT(EPOCH FROM (v_appt.starts_at - now())) >= 6300) -- 105min = MAX_LATE_2H_BEFORE_START_MS
+    );
+  GET DIAGNOSTICS v_reminders_reopened = ROW_COUNT;
+
   INSERT INTO public.audit_log (owner_id, actor_id, actor_name, action, resource, resource_id, details)
-  VALUES (v_appt.owner_id, auth.uid(), NULL, 'reactivated', 'appointments', p_appointment_id::text, NULL);
+  VALUES (
+    v_appt.owner_id,
+    auth.uid(),
+    NULL,
+    'reactivated',
+    'appointments',
+    p_appointment_id::text,
+    jsonb_build_object('reminders_reopened', v_reminders_reopened)
+  );
 
   RETURN 'ok';
 END;

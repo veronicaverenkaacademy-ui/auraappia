@@ -17,6 +17,11 @@
 -- migration ter sido aplicada (nenhum dado anterior existia, por serem
 -- colunas novas) — é o comportamento esperado de desfazer a feature, não
 -- uma perda acidental.
+--
+-- Também desfaz a reabertura de lembretes cancelados (Etapa D-TER, Opção
+-- A) — volta ao gap conhecido da Fase D (reativar não traz o lembrete de
+-- volta). Nenhuma linha de notification_jobs é tocada por este rollback em
+-- si; só a função que fazia a reabertura deixa de existir.
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '10s';
