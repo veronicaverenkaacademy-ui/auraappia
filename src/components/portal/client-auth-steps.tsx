@@ -53,6 +53,19 @@ export function PhoneStep({
           autoFocus
         />
       </div>
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        Ao continuar, você autoriza o envio de mensagens por WhatsApp para verificar o seu número e
+        avisar sobre os seus agendamentos, como lembretes. Para deixar de receber, é só avisar o
+        salão. Veja a{" "}
+        <Link
+          to="/politica-de-privacidade"
+          target="_blank"
+          className="text-foreground underline underline-offset-2"
+        >
+          Política de Privacidade
+        </Link>
+        .
+      </p>
       <Button onClick={onSubmit} disabled={loading} className="w-full h-12 rounded-xl">
         {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Enviar código"}
       </Button>
