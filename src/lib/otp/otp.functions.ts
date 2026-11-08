@@ -172,20 +172,51 @@ export const verifyClientOtp = createServerFn({ method: "POST" })
             phone: phoneForUser,
             phone_confirm: true,
           });
-          if (createErr || !created.user)
-            throw createErr ?? new Error("createUser sem usuário retornado");
-          return created.user.id;
+          if (!createErr && created.user) return { ok: true, userId: created.user.id };
+          const code = (createErr as { code?: string } | null)?.code;
+          if (code === "phone_exists") return { ok: false, reason: "phone_exists" };
+          return {
+            ok: false,
+            reason: "other",
+            error: createErr ?? new Error("createUser sem usuário retornado"),
+          };
+        },
+        // Item 1.2 (FASE G6.2-F): só chamado quando createAuthUser disse
+        // "phone_exists" — a API admin não tem um "getUserByPhone" direto,
+        // então procuramos na listagem paginada (1000/página é bem mais do
+        // que um único salão deveria ter de usuários; o limite de páginas é
+        // só uma salvaguarda contra um laço sem fim).
+        findExistingUserByPhone: async (phoneForUser) => {
+          const digitsNoPlus = phoneForUser.replace(/^\+/, "");
+          const PER_PAGE = 1000;
+          const MAX_PAGES = 20;
+          for (let page = 1; page <= MAX_PAGES;) {
+            const { data, error } = await supabaseAdmin.auth.admin.listUsers({
+              page,
+              perPage: PER_PAGE,
+            });
+            if (error || !data) return null;
+            const match = data.users.find((u) => u.phone === digitsNoPlus);
+            if (match) return { userId: match.id, hasEmail: Boolean(match.email) };
+            if (!data.nextPage) return null;
+            page = data.nextPage;
+          }
+          return null;
         },
         createSession: async (userId, phoneForUser, tempPassword) => {
           const { error: pwErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
             password: tempPassword,
           });
-          if (pwErr) throw pwErr;
+          if (pwErr) return { ok: false, step: "update_password", error: pwErr };
 
           const SUPABASE_URL = process.env.SUPABASE_URL;
           const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
           if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-            throw new Error("Variáveis do Supabase ausentes no servidor.");
+            return {
+              ok: false,
+              step: "update_password",
+              error: new Error("Variáveis do Supabase ausentes no servidor."),
+            };
           }
           const { createClient } = await import("@supabase/supabase-js");
           const throwawayClient = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
@@ -195,8 +226,15 @@ export const verifyClientOtp = createServerFn({ method: "POST" })
             phone: phoneForUser,
             password: tempPassword,
           });
-          if (signInErr || !signIn.session) throw signInErr ?? new Error("Sessão não criada.");
+          if (signInErr || !signIn.session) {
+            return {
+              ok: false,
+              step: "sign_in",
+              error: signInErr ?? new Error("Sessão não criada."),
+            };
+          }
           return {
+            ok: true,
             access_token: signIn.session.access_token,
             refresh_token: signIn.session.refresh_token,
           };
