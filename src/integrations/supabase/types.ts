@@ -106,6 +106,8 @@ export type Database = {
       }
       appointments: {
         Row: {
+          agenda_removed_at: string | null
+          agenda_removed_by: string | null
           client_confirmation_status: string
           client_confirmed_at: string | null
           client_id: string
@@ -128,6 +130,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          agenda_removed_at?: string | null
+          agenda_removed_by?: string | null
           client_confirmation_status?: string
           client_confirmed_at?: string | null
           client_id: string
@@ -150,6 +154,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          agenda_removed_at?: string | null
+          agenda_removed_by?: string | null
           client_confirmation_status?: string
           client_confirmed_at?: string | null
           client_id?: string
@@ -2554,6 +2560,14 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
+      reactivate_cancelled_appointment: {
+        Args: { p_appointment_id: string }
+        Returns: string
+      }
+      set_agenda_removed: {
+        Args: { p_appointment_id: string; p_removed: boolean }
+        Returns: string
+      }
     }
     Enums: {
       app_role: "admin" | "staff"

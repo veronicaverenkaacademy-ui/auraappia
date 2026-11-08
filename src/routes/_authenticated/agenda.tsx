@@ -55,6 +55,13 @@ import {
   type LaneAssignment,
 } from "@/lib/agenda-card-style";
 import {
+  buildCancelWhatsappMessage,
+  buildWhatsappLink,
+  describeReactivateResult,
+  describeSetRemovedResult,
+  resolveCancelMessageVersion,
+} from "@/lib/agenda-cancelled-actions";
+import {
   cancelAppointment,
   completeAppointment,
   confirmAppointment,
@@ -67,7 +74,9 @@ import {
   getRevertPreview,
   listAppointmentsRange,
   listBlocksRange,
+  reactivateCancelledAppointment,
   revertCompleted,
+  setAgendaRemoved,
   updateAppointment,
   updateAppointmentTime,
   type MaterialAdjustment,
@@ -1151,10 +1160,13 @@ function AppointmentDetailSheet({
   const [completeOpen, setCompleteOpen] = useState(false);
   const [revertOpen, setRevertOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [reactivateOpen, setReactivateOpen] = useState(false);
+  const [removeOpen, setRemoveOpen] = useState(false);
   const open = !!appointment;
   const a = appointment;
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["appointments"] });
+  const GENERIC_ERROR = "Não foi possível concluir agora. Tente novamente em instantes.";
 
   const confirmMut = useMutation({
     mutationFn: () => confirmAppointment(a!.id),
@@ -1166,6 +1178,63 @@ function AppointmentDetailSheet({
     onSuccess: () => { toast.success("Agendamento cancelado"); invalidate(); setCancelOpen(false); onClose(); },
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Erro ao cancelar"),
   });
+
+  // FASE D — ações em agendamento cancelado. "Reativar" e "Remover" nunca
+  // avisam a cliente (decisão fechada). Em qualquer resultado diferente de
+  // "ok", a agenda é atualizada do mesmo jeito (ex.: "nao_cancelado" avisa
+  // que alguém já alterou e refaz a consulta, em vez de travar a tela).
+  const reactivateMut = useMutation({
+    mutationFn: () => reactivateCancelledAppointment(a!.id),
+    onSuccess: (result) => {
+      setReactivateOpen(false);
+      invalidate();
+      if (result === "ok") { toast.success("Agendamento reativado"); onClose(); }
+      else toast.error(describeReactivateResult(result));
+    },
+    onError: () => { setReactivateOpen(false); toast.error(GENERIC_ERROR); },
+  });
+  const removeMut = useMutation({
+    mutationFn: () => setAgendaRemoved(a!.id, true),
+    onSuccess: (result) => {
+      setRemoveOpen(false);
+      invalidate();
+      if (result === "ok") {
+        const removedId = a!.id;
+        onClose();
+        toast("Removido da agenda", {
+          duration: 8000,
+          action: {
+            label: "Desfazer",
+            onClick: () => {
+              setAgendaRemoved(removedId, false)
+                .then((r) => {
+                  qc.invalidateQueries({ queryKey: ["appointments"] });
+                  if (r === "ok") toast.success("Trazido de volta pra agenda");
+                  else toast.error(describeSetRemovedResult(r));
+                })
+                .catch(() => toast.error(GENERIC_ERROR));
+            },
+          },
+        });
+      } else {
+        toast.error(describeSetRemovedResult(result));
+      }
+    },
+    onError: () => { setRemoveOpen(false); toast.error(GENERIC_ERROR); },
+  });
+
+  const cancelWaMessage = a
+    ? buildCancelWhatsappMessage({
+        version: resolveCancelMessageVersion(a.status, a.client_confirmation_status),
+        clientFullName: a.client?.full_name,
+        serviceName: a.service_name ?? a.service?.name,
+        startsAt: new Date(a.starts_at),
+        now: new Date(),
+      })
+    : "";
+  const cancelWaLink = a ? buildWhatsappLink(a.client?.phone, cancelWaMessage) : null;
+  const canReactivate = !!a && new Date(a.starts_at) > new Date();
+  const cancelledActionsBusy = reactivateMut.isPending || removeMut.isPending;
 
   return (
     <>
@@ -1218,7 +1287,7 @@ function AppointmentDetailSheet({
                 {a.status === "completed" && <ConsumedProducts appointmentId={a.id} />}
               </div>
 
-              <div className="p-4 border-t border-border/50 bg-background">
+              <div className={cn("p-4 border-t border-border/50 bg-background", a.status === "cancelled" && "pb-[calc(1rem+env(safe-area-inset-bottom))]")}>
                 {(a.status === "pending" || a.status === "confirmed") && (
                   <Button className="w-full h-12 rounded-2xl gap-2 text-sm" onClick={() => setCompleteOpen(true)}>
                     <CheckCircle2 className="w-4 h-4" /> Concluir atendimento
@@ -1228,6 +1297,41 @@ function AppointmentDetailSheet({
                   <Button variant="outline" className="w-full h-12 rounded-2xl gap-2 text-sm" onClick={() => setRevertOpen(true)}>
                     <RotateCcw className="w-4 h-4" /> Desmarcar conclusão
                   </Button>
+                )}
+                {a.status === "cancelled" && (
+                  <div className="space-y-3">
+                    {cancelWaLink ? (
+                      <a
+                        href={cancelWaLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-2 w-full h-12 rounded-2xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
+                      >
+                        <Phone className="w-4 h-4" /> Chamar no WhatsApp
+                      </a>
+                    ) : (
+                      <Button disabled variant="outline" className="w-full h-12 rounded-2xl gap-2 text-sm">
+                        <Phone className="w-4 h-4" /> Cliente sem WhatsApp cadastrado
+                      </Button>
+                    )}
+                    <Button
+                      variant="secondary"
+                      className="w-full h-12 rounded-2xl gap-2 text-sm"
+                      disabled={!canReactivate || cancelledActionsBusy}
+                      aria-label={canReactivate ? "Reativar agendamento" : "Reativar agendamento — indisponível para horário no passado"}
+                      onClick={() => setReactivateOpen(true)}
+                    >
+                      <RotateCcw className="w-4 h-4" /> Reativar agendamento
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className="w-full h-11 rounded-2xl gap-2 text-xs text-muted-foreground hover:text-destructive"
+                      disabled={cancelledActionsBusy}
+                      onClick={() => setRemoveOpen(true)}
+                    >
+                      <X className="w-3.5 h-3.5" /> Remover da agenda
+                    </Button>
+                  </div>
                 )}
               </div>
             </>
@@ -1251,6 +1355,38 @@ function AppointmentDetailSheet({
                 <AlertDialogCancel>Voltar</AlertDialogCancel>
                 <AlertDialogAction onClick={() => cancelMut.mutate()} disabled={cancelMut.isPending}>
                   {cancelMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Cancelar agendamento"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <AlertDialog open={reactivateOpen} onOpenChange={setReactivateOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reativar este horário?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Ele voltará como pendente. A cliente não será avisada automaticamente.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={reactivateMut.isPending}>Voltar</AlertDialogCancel>
+                <AlertDialogAction onClick={() => reactivateMut.mutate()} disabled={reactivateMut.isPending}>
+                  {reactivateMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Reativar"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <AlertDialog open={removeOpen} onOpenChange={setRemoveOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Remover da agenda?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  O agendamento cancelado continuará no histórico da cliente.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={removeMut.isPending}>Voltar</AlertDialogCancel>
+                <AlertDialogAction onClick={() => removeMut.mutate()} disabled={removeMut.isPending}>
+                  {removeMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Remover"}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
