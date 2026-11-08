@@ -28,6 +28,12 @@ export type SignupFields = {
   accepted_terms: boolean;
 };
 
+// Mesmo intervalo de 60s já aplicado no servidor (COOLDOWN_MS, em
+// otp.functions.ts) — aqui é só pra mostrar a contagem regressiva; quem
+// garante o limite de verdade é o servidor (item 1.4: limites continuam
+// valendo mesmo que o relógio do navegador esteja errado).
+const RESEND_COOLDOWN_MS = 60 * 1000;
+
 const EMPTY_SIGNUP: SignupFields = {
   full_name: "",
   email: "",
@@ -50,6 +56,7 @@ export function useClientAuth(ownerId: string) {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [signup, setSignup] = useState<SignupFields>(EMPTY_SIGNUP);
+  const [resendAvailableAt, setResendAvailableAt] = useState<number | null>(null);
 
   const linkFn = useServerFn(linkClientAccount);
   const requestOtpFn = useServerFn(requestClientOtp);
@@ -109,6 +116,7 @@ export function useClientAuth(ownerId: string) {
     try {
       await requestOtpFn({ data: { owner_id: ownerId, phone } });
       toast.success("Código enviado por WhatsApp");
+      setResendAvailableAt(Date.now() + RESEND_COOLDOWN_MS);
       setView("otp");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Não foi possível enviar o código.");
@@ -117,7 +125,35 @@ export function useClientAuth(ownerId: string) {
     }
   };
 
+  /** Item 1.7: botão "Reenviar código" na tela do código, mesmo cooldown de 60s do servidor. */
+  const resendCode = async () => {
+    if (resendAvailableAt && Date.now() < resendAvailableAt) return;
+    setLoading(true);
+    try {
+      await requestOtpFn({ data: { owner_id: ownerId, phone } });
+      toast.success("Novo código enviado por WhatsApp");
+      setCode("");
+      setResendAvailableAt(Date.now() + RESEND_COOLDOWN_MS);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível reenviar agora.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const verify = async (): Promise<boolean> => {
+    // Item 1.5 (FASE G6.2-E): se uma tentativa anterior já validou o código
+    // e criou a sessão, mas falhou depois (no vínculo com o cadastro da
+    // cliente — linkClientAccount), `session` já está preenchida aqui. Tenta
+    // de novo só o vínculo, sem exigir nem gastar um novo código — o código
+    // antigo não tem nenhum papel nessa chamada.
+    if (session) {
+      setLoading(true);
+      const ok = await resolveClient();
+      setLoading(false);
+      return ok;
+    }
+
     if (code.length !== 6) return false;
     setLoading(true);
     try {
@@ -155,6 +191,7 @@ export function useClientAuth(ownerId: string) {
     setMyClient(null);
     setView("closed");
     setSignup(EMPTY_SIGNUP);
+    setResendAvailableAt(null);
   };
 
   return {
@@ -170,8 +207,10 @@ export function useClientAuth(ownerId: string) {
     signup,
     setSignup,
     loading,
+    resendAvailableAt,
     start,
     sendCode,
+    resendCode,
     verify,
     confirmSignup,
     logout,
