@@ -2,9 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { Capacitor } from "@capacitor/core";
 import { ChevronLeft, Check, X, Loader2, ExternalLink, Copy, Download } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -80,6 +83,15 @@ function EmpresaPage() {
   const c = state.company;
   const update = (patch: Partial<ControlCenterState["company"]>) =>
     setState((s) => ({ ...s, company: { ...s.company, ...patch } }));
+
+  // Mesma condição de AppShell (src/components/app-shell.tsx) pra saber se a
+  // navegação inferior web (MobileBottomNav, h-16 = 64px) está realmente
+  // sendo renderizada agora — dentro do app nativo (Capacitor) ela nunca é
+  // (a tab bar é a nativa do iOS), então a barra fixa de salvar não precisa
+  // abrir espaço pra ela. Isso evita basear a posição só na largura da tela
+  // (que não distingue nativo de navegador mobile).
+  const isMobile = useIsMobile();
+  const showBottomNav = isMobile && !Capacitor.isNativePlatform();
 
   const qc = useQueryClient();
   const getProfileFn = useServerFn(getMyCompanyProfile);
@@ -178,7 +190,7 @@ function EmpresaPage() {
   const isDirty = savedSnapshot !== null && JSON.stringify(form) !== savedSnapshot;
 
   return (
-    <AppShell className="px-4 md:px-8 py-6 md:py-10 max-w-3xl mx-auto pb-28 md:pb-20">
+    <AppShell className="px-4 md:px-8 py-6 md:py-10 max-w-3xl mx-auto pb-44 md:pb-24">
       <Link to="/mais" className="inline-flex">
         <Button variant="ghost" size="icon" className="rounded-full mb-4">
           <ChevronLeft className="w-5 h-5" />
@@ -464,18 +476,11 @@ function EmpresaPage() {
             <Field label="País">
               <Input value={c.country} onChange={(e) => update({ country: e.target.value })} />
             </Field>
-            <Field label="Fuso horário">
-              <Select value={c.timezone} onValueChange={(v) => update({ timezone: v })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="America/Sao_Paulo">America/Sao_Paulo</SelectItem>
-                  <SelectItem value="America/Fortaleza">America/Fortaleza</SelectItem>
-                  <SelectItem value="America/Manaus">America/Manaus</SelectItem>
-                  <SelectItem value="Europe/Lisbon">Europe/Lisbon</SelectItem>
-                </SelectContent>
-              </Select>
+            <Field
+              label="Fuso horário"
+              hint="Ainda não é possível trocar — é usado para calcular os horários do agendamento online, e hoje é sempre o padrão do sistema."
+            >
+              <Input value="America/Sao_Paulo (padrão)" disabled />
             </Field>
             <Field label="Idioma">
               <Select value={c.language} onValueChange={(v) => update({ language: v })}>
@@ -528,7 +533,16 @@ function EmpresaPage() {
         </Section>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border/70 bg-background/95 backdrop-blur px-4 py-3 md:px-8">
+      <div
+        className={cn(
+          "fixed left-0 right-0 z-40 border-t border-border/70 bg-background/95 backdrop-blur px-4 pt-3 md:px-8",
+          // Acima da navegação inferior (h-16 = 64px) só quando ela está de
+          // fato na tela (web mobile); no app nativo (Capacitor) e no
+          // desktop ela não existe, então a barra fica no rodapé mesmo.
+          showBottomNav ? "bottom-16" : "bottom-0",
+        )}
+        style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))" }}
+      >
         <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
           <span className="text-xs text-muted-foreground">
             {isDirty ? "Alterações não salvas" : "Tudo salvo"}

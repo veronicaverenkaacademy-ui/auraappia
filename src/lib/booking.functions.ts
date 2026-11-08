@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { computeFreeSlots, BOOKING_WINDOW_DAYS, type BusinessHours } from "@/lib/booking-slots";
+import { isValidTimeZone } from "@/lib/timezone";
 
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
 
@@ -98,7 +99,9 @@ export const getAvailableSlots = createServerFn({ method: "GET" })
         .maybeSingle();
       if (companyErr) throw new Error(companyErr.message);
       const businessHours = (company?.business_hours ?? {}) as BusinessHours;
-      const timeZone = company?.timezone || DEFAULT_TIMEZONE;
+      // company_profiles.timezone é texto livre, sem CHECK de IANA válido —
+      // nunca deixa um valor vazio/inválido virar erro pro portal (item A1).
+      const timeZone = isValidTimeZone(company?.timezone) ? company.timezone : DEFAULT_TIMEZONE;
 
       const now = new Date();
       const rangeEnd = new Date(now.getTime() + BOOKING_WINDOW_DAYS * 24 * 60 * 60 * 1000);
