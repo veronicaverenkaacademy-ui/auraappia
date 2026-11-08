@@ -5,6 +5,8 @@ import { normalizePhoneBR, isValidPhoneBR } from "@/lib/phone";
 
 const RATE_LIMIT_MSG = "Por segurança, aguarde alguns minutos antes de tentar novamente.";
 const SEND_FAILED_MSG = "Não conseguimos enviar o código agora. Tente novamente em instantes.";
+const NO_WHATSAPP_MSG =
+  "Esse número parece não ter WhatsApp. Confira o número ou fale com o salão.";
 const WRONG_CODE_MSG = "Código incorreto. Verifique e tente novamente.";
 const EXPIRED_MSG = "Este código expirou. Solicite um novo código.";
 const ATTEMPTS_EXCEEDED_MSG =
@@ -54,7 +56,7 @@ export const requestClientOtp = createServerFn({ method: "POST" })
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { generateOtpCode, hashOtpCode } = await import("./otp-crypto.server");
-    const { sendOtpWhatsapp } = await import("./send-otp-360dialog.server");
+    const { sendOtpViaMeta } = await import("./send-otp-meta.server");
 
     const logAttempt = (action: string, details: Record<string, unknown> = {}) =>
       supabaseAdmin.from("audit_log").insert({
@@ -114,19 +116,26 @@ export const requestClientOtp = createServerFn({ method: "POST" })
       .eq("phone", phone)
       .is("used_at", null);
 
-    const { error: insertErr } = await supabaseAdmin.from("client_otp_codes").insert({
-      phone,
-      code_hash: codeHash,
-      expires_at: expiresAt,
-      attempts: 0,
-    } as never);
-    if (insertErr) throw new Error(insertErr.message);
+    const { data: inserted, error: insertErr } = await supabaseAdmin
+      .from("client_otp_codes")
+      .insert({
+        phone,
+        code_hash: codeHash,
+        expires_at: expiresAt,
+        attempts: 0,
+      } as never)
+      .select("id")
+      .single();
+    if (insertErr || !inserted) throw new Error(insertErr?.message ?? "Falha ao gravar código.");
 
-    const sendResult = await sendOtpWhatsapp(phone, code);
-    if (!sendResult.ok) {
-      console.error("[requestClientOtp] Falha ao enviar via WhatsApp", sendResult.error);
-      await logAttempt("client_otp_send_failed", { error: sendResult.error });
-      throw new Error(SEND_FAILED_MSG);
+    const sendResult = await sendOtpViaMeta(phone, code);
+    if (sendResult.kind !== "enviado") {
+      // O código nunca chegou — apaga a linha pra não contar como um pedido
+      // válido (evita bloquear a cliente num limite por tentativa que não
+      // foi entregue; não muda os limites em si, só evita um fantasma).
+      await supabaseAdmin.from("client_otp_codes").delete().eq("id", inserted.id);
+      await logAttempt("client_otp_send_failed", { result: sendResult.kind });
+      throw new Error(sendResult.kind === "sem_whatsapp" ? NO_WHATSAPP_MSG : SEND_FAILED_MSG);
     }
 
     await logAttempt("client_otp_requested");

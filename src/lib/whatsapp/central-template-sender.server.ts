@@ -132,7 +132,9 @@ async function openIncident(
   }
 }
 
-async function fetchMetaSend(
+// Exportada pro envio de OTP (FASE G6.2) reaproveitar o mesmo transporte
+// HTTP/timeout — nenhuma mudança de comportamento, só visibilidade.
+export async function fetchMetaSend(
   phoneNumberId: string,
   accessToken: string,
   body: unknown,

@@ -56,7 +56,11 @@ const FROZEN_MIGRATION_BUTTONS: Record<string, string[]> = {
   retorno_30_dias: ["Parar de receber mensagens"],
 };
 
-for (const t of SYSTEM_TEMPLATES) {
+// otp_verificacao (FASE G6.2) nunca existiu na migration 3 — nasceu direto
+// com os valores certos, sem snapshot histórico pra comparar. Escopo deste
+// bloco aos templates que de fato têm FROZEN_MIGRATION_TEXT (os 4
+// originais), nunca todo SYSTEM_TEMPLATES.
+for (const t of SYSTEM_TEMPLATES.filter((t) => FROZEN_MIGRATION_TEXT[t.key])) {
   test(`migration 3 contém o texto CONGELADO (antigo, não o real da Meta) de "${t.key}"`, () => {
     assert.ok(
       migrationSql.includes(FROZEN_MIGRATION_TEXT[t.key]),
@@ -100,10 +104,16 @@ for (const t of SYSTEM_TEMPLATES) {
   });
 }
 
-test("as 4 chaves internas (template_key) são exatamente as esperadas — NUNCA mudam, mesmo quando o nome real na Meta muda", () => {
+test("as 5 chaves internas (template_key) são exatamente as esperadas — NUNCA mudam, mesmo quando o nome real na Meta muda", () => {
   assert.deepEqual(
     SYSTEM_TEMPLATES.map((t) => t.key).sort(),
-    ["lembrete_24h", "lembrete_2h", "pos_avaliacao_google", "retorno_30_dias"].sort(),
+    [
+      "lembrete_24h",
+      "lembrete_2h",
+      "pos_avaliacao_google",
+      "retorno_30_dias",
+      "otp_verificacao",
+    ].sort(),
   );
   for (const t of SYSTEM_TEMPLATES) {
     assert.equal(t.language, "pt_BR");
@@ -119,6 +129,7 @@ const EXPECTED_META_TEMPLATE_NAME: Record<string, string> = {
   lembrete_2h: "lembrete_2h_v2",
   pos_avaliacao_google: "pedido_de_avaliao_",
   retorno_30_dias: "retorno_30_dias",
+  otp_verificacao: "autenti_",
 };
 
 for (const t of SYSTEM_TEMPLATES) {
