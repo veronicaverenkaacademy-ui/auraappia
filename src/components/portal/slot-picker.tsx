@@ -30,7 +30,12 @@ function formatDayLabel(key: string): string {
     day: "2-digit",
     month: "short",
   });
-  return label.replace(".", "");
+  // Remove só o ponto depois da abreviação do dia da semana (ex.: "seg., 09 de
+  // nov." -> "seg, 09 de nov.") e capitaliza só a primeira letra — a classe
+  // CSS "capitalize" usada antes maiusculizava TODA palavra, inclusive a
+  // preposição "de" ("De"), por isso removida do botão abaixo.
+  const cleaned = label.replace(".", "");
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
 function formatTime(iso: string): string {
@@ -107,7 +112,7 @@ export function SlotPicker({
             type="button"
             onClick={() => setActiveDay(key)}
             className={cn(
-              "shrink-0 rounded-xl px-3 py-2 text-xs border capitalize transition",
+              "shrink-0 rounded-xl px-3 py-2 text-xs border transition",
               key === selectedDay
                 ? "bg-foreground text-background border-foreground"
                 : "border-border/70 text-muted-foreground hover:text-foreground",

@@ -1,18 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import { computeFreeSlots, BOOKING_WINDOW_DAYS, type BusinessHours } from "@/lib/booking-slots";
 
-const SLOT_GRANULARITY_MIN = 15;
-const BOOKING_WINDOW_DAYS = 14;
-const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+const DEFAULT_TIMEZONE = "America/Sao_Paulo";
 
 /** Postgres SQLSTATE for exclusion_violation — mesma constraint appointments_no_overlap
  * já usada pela Agenda real (src/lib/agenda.ts). */
 const EXCLUSION_VIOLATION = "23P01";
-
-type BusinessHours = Partial<
-  Record<(typeof DAY_KEYS)[number], { open: string; close: string } | null>
->;
 
 const AvailabilityInput = z.object({
   owner_id: z.string().uuid(),
@@ -32,6 +27,7 @@ async function computeFreeSlotsForProfessional(
   professionalId: string | null,
   durationMs: number,
   businessHours: BusinessHours,
+  timeZone: string,
   now: Date,
   rangeEnd: Date,
 ): Promise<string[]> {
@@ -65,41 +61,7 @@ async function computeFreeSlotsForProfessional(
     end: new Date(r.ends_at).getTime(),
   }));
 
-  const slots: string[] = [];
-  for (let dayOffset = 0; dayOffset < BOOKING_WINDOW_DAYS; dayOffset++) {
-    const day = new Date(now.getTime() + dayOffset * 24 * 60 * 60 * 1000);
-    const hours = businessHours[DAY_KEYS[day.getDay()]];
-    if (!hours) continue;
-
-    const [openH, openM] = hours.open.split(":").map(Number);
-    const [closeH, closeM] = hours.close.split(":").map(Number);
-    const dayStart = new Date(
-      day.getFullYear(),
-      day.getMonth(),
-      day.getDate(),
-      openH,
-      openM,
-      0,
-      0,
-    ).getTime();
-    const dayClose = new Date(
-      day.getFullYear(),
-      day.getMonth(),
-      day.getDate(),
-      closeH,
-      closeM,
-      0,
-      0,
-    ).getTime();
-
-    for (let t = dayStart; t + durationMs <= dayClose; t += SLOT_GRANULARITY_MIN * 60 * 1000) {
-      if (t < now.getTime()) continue;
-      const slotEnd = t + durationMs;
-      const conflicts = busy.some((b) => t < b.end && slotEnd > b.start);
-      if (!conflicts) slots.push(new Date(t).toISOString());
-    }
-  }
-  return slots;
+  return computeFreeSlots(now, businessHours, timeZone, durationMs, busy);
 }
 
 /**
@@ -131,11 +93,12 @@ export const getAvailableSlots = createServerFn({ method: "GET" })
 
       const { data: company, error: companyErr } = await supabaseAdmin
         .from("company_profiles")
-        .select("business_hours")
+        .select("business_hours, timezone")
         .eq("owner_id", data.owner_id)
         .maybeSingle();
       if (companyErr) throw new Error(companyErr.message);
       const businessHours = (company?.business_hours ?? {}) as BusinessHours;
+      const timeZone = company?.timezone || DEFAULT_TIMEZONE;
 
       const now = new Date();
       const rangeEnd = new Date(now.getTime() + BOOKING_WINDOW_DAYS * 24 * 60 * 60 * 1000);
@@ -160,6 +123,7 @@ export const getAvailableSlots = createServerFn({ method: "GET" })
             member.id,
             durationMs,
             businessHours,
+            timeZone,
             now,
             rangeEnd,
           );
@@ -177,6 +141,7 @@ export const getAvailableSlots = createServerFn({ method: "GET" })
           data.professional_id,
           durationMs,
           businessHours,
+          timeZone,
           now,
           rangeEnd,
         );

@@ -26,6 +26,8 @@ import {
 import {
   slugify,
   DEFAULT_BUSINESS_HOURS,
+  normalizeProfileForForm,
+  validateBusinessHours,
   type CompanyProfile,
   type BusinessHours,
   type DayHours,
@@ -91,6 +93,7 @@ function EmpresaPage() {
 
   const [form, setForm] = useState<PublicForm>(EMPTY_PUBLIC_FORM);
   const [hydratedFromProfile, setHydratedFromProfile] = useState(false);
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
   const [slugStatus, setSlugStatus] = useState<"idle" | "checking" | "available" | "unavailable">(
     "idle",
   );
@@ -98,8 +101,9 @@ function EmpresaPage() {
 
   useEffect(() => {
     if (!loadingProfile && !hydratedFromProfile) {
-      if (profile)
-        setForm({ ...profile, business_hours: profile.business_hours ?? DEFAULT_BUSINESS_HOURS });
+      const next = profile ? normalizeProfileForForm(profile) : EMPTY_PUBLIC_FORM;
+      setForm(next);
+      setSavedSnapshot(JSON.stringify(next));
       setHydratedFromProfile(true);
     }
   }, [loadingProfile, profile, hydratedFromProfile]);
@@ -132,12 +136,22 @@ function EmpresaPage() {
   const save = useMutation({
     mutationFn: () => upsertFn({ data: form }),
     onSuccess: () => {
-      toast.success("Portal público atualizado.");
+      toast.success("Alterações salvas.");
+      setSavedSnapshot(JSON.stringify(form));
       qc.invalidateQueries({ queryKey: ["my-company-profile"] });
       qc.invalidateQueries({ queryKey: ["company-slug"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Não foi possível salvar."),
   });
+
+  const handleSave = () => {
+    const hoursError = validateBusinessHours(businessHours);
+    if (hoursError) {
+      toast.error(hoursError);
+      return;
+    }
+    save.mutate();
+  };
 
   const importFromBrowser = () => {
     patchForm({
@@ -161,9 +175,10 @@ function EmpresaPage() {
     form.display_name.trim().length > 0 &&
     form.slug.trim().length >= 2 &&
     slugStatus !== "unavailable";
+  const isDirty = savedSnapshot !== null && JSON.stringify(form) !== savedSnapshot;
 
   return (
-    <AppShell className="px-4 md:px-8 py-6 md:py-10 max-w-3xl mx-auto pb-28 md:pb-12">
+    <AppShell className="px-4 md:px-8 py-6 md:py-10 max-w-3xl mx-auto pb-28 md:pb-20">
       <Link to="/mais" className="inline-flex">
         <Button variant="ghost" size="icon" className="rounded-full mb-4">
           <ChevronLeft className="w-5 h-5" />
@@ -382,39 +397,30 @@ function EmpresaPage() {
               />
             </div>
 
-            <div className="flex items-center justify-between gap-3 pt-2">
-              <div className="flex items-center gap-2 min-w-0">
-                {publicUrl && (
-                  <>
-                    <code className="text-xs px-3 py-1.5 rounded-full bg-muted/60 truncate">
-                      {publicUrl}
-                    </code>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="rounded-full h-8 w-8 shrink-0"
-                      onClick={() => {
-                        navigator.clipboard.writeText(publicUrl);
-                        toast.success("Link copiado.");
-                      }}
-                    >
-                      <Copy className="w-3.5 h-3.5" />
+            <div className="flex items-center gap-2 min-w-0 pt-2">
+              {publicUrl && (
+                <>
+                  <code className="text-xs px-3 py-1.5 rounded-full bg-muted/60 truncate">
+                    {publicUrl}
+                  </code>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-full h-8 w-8 shrink-0"
+                    onClick={() => {
+                      navigator.clipboard.writeText(publicUrl);
+                      toast.success("Link copiado.");
+                    }}
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </Button>
+                  <a href={publicUrl} target="_blank" rel="noreferrer">
+                    <Button variant="ghost" size="icon" className="rounded-full h-8 w-8 shrink-0">
+                      <ExternalLink className="w-3.5 h-3.5" />
                     </Button>
-                    <a href={publicUrl} target="_blank" rel="noreferrer">
-                      <Button variant="ghost" size="icon" className="rounded-full h-8 w-8 shrink-0">
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </Button>
-                    </a>
-                  </>
-                )}
-              </div>
-              <Button
-                onClick={() => save.mutate()}
-                disabled={!canSave || save.isPending}
-                className="rounded-full shrink-0"
-              >
-                {save.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
-              </Button>
+                  </a>
+                </>
+              )}
             </div>
           </div>
         </Section>
@@ -520,6 +526,21 @@ function EmpresaPage() {
             </Field>
           </div>
         </Section>
+      </div>
+
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border/70 bg-background/95 backdrop-blur px-4 py-3 md:px-8">
+        <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
+          <span className="text-xs text-muted-foreground">
+            {isDirty ? "Alterações não salvas" : "Tudo salvo"}
+          </span>
+          <Button
+            onClick={handleSave}
+            disabled={!canSave || save.isPending}
+            className="rounded-full shrink-0"
+          >
+            {save.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar alterações"}
+          </Button>
+        </div>
       </div>
     </AppShell>
   );
