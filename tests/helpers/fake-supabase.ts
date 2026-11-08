@@ -25,6 +25,17 @@ function uniqueViolation(message = "duplicate key value violates unique constrai
   return { code: "23505", message };
 }
 
+/** Mesmo erro real do PostgREST pra .single()/.maybeSingle() quando a consulta
+ * encontra mais de 1 linha — ver node_modules/@supabase/postgrest-js
+ * (fetch.ts), confirmado lendo o pacote instalado nesta fase (FASE G6.2-E). */
+function uniqueOrNoRowsError(rowCount: number): PgError {
+  return {
+    code: "PGRST116",
+    message: "JSON object requested, multiple (or no) rows returned",
+    details: `Results contain ${rowCount} rows, application/vnd.pgrst.object+json requires 1 row`,
+  } as PgError & { details: string };
+}
+
 export class FakeSupabaseAdmin {
   tables: Record<string, Row[]> = {};
   private uniqueKeys: Record<string, string[][]>;
@@ -66,6 +77,7 @@ export class FakeSupabaseAdmin {
     const db = this;
     const filters: Array<(r: Row) => boolean> = [];
     let orderBy: { col: string; ascending: boolean } | null = null;
+    let limitN: number | null = null;
 
     function applyFilters(): Row[] {
       let result = db.tables[table].filter((r) => filters.every((f) => f(r)));
@@ -77,6 +89,10 @@ export class FakeSupabaseAdmin {
           return ascending ? av.localeCompare(bv) : bv.localeCompare(av);
         });
       }
+      // .limit() é aplicado pelo Postgres ANTES de .single()/.maybeSingle()
+      // avaliarem "0 ou mais de 1 linha" — por isso entra aqui, não só como
+      // um corte estético do array devolvido.
+      if (limitN !== null) result = result.slice(0, limitN);
       return result;
     }
 
@@ -112,16 +128,30 @@ export class FakeSupabaseAdmin {
         filters.push((r) => (r[col] ?? null) === val);
         return builder;
       },
+      // Só o subconjunto usado por src/lib/otp/otp.functions.ts:
+      // `.not(col, "is", null)` == coluna NÃO é null.
+      not(col: string, op: "is", val: null) {
+        if (op !== "is") throw new Error(`fake-supabase: .not(..., "${op}", ...) não suportado`);
+        filters.push((r) => (r[col] ?? null) !== val);
+        return builder;
+      },
       order(col: string, opts: { ascending: boolean }) {
         orderBy = { col, ascending: opts.ascending };
         return builder;
       },
-      limit(_n: number) {
+      limit(n: number) {
+        limitN = n;
         return builder;
       },
       async maybeSingle() {
         const rows = applyFilters();
+        if (rows.length > 1) return { data: null, error: uniqueOrNoRowsError(rows.length) };
         return { data: rows[0] ?? null, error: null };
+      },
+      async single() {
+        const rows = applyFilters();
+        if (rows.length !== 1) return { data: null, error: uniqueOrNoRowsError(rows.length) };
+        return { data: rows[0], error: null };
       },
       insert(obj: Row | Row[]) {
         const objs = Array.isArray(obj) ? obj : [obj];
@@ -140,13 +170,47 @@ export class FakeSupabaseAdmin {
         return makeInsertResult(inserted, null);
       },
       update(obj: Row) {
-        return {
-          async eq(col: string, val: unknown) {
-            const rows = db.tables[table].filter((r) => r[col] === val);
-            for (const r of rows) Object.assign(r, obj);
-            return { data: rows, error: null };
+        const updateFilters: Array<(r: Row) => boolean> = [];
+        let applied = false;
+        function applyUpdate(): Row[] {
+          if (applied) return db.tables[table].filter((r) => updateFilters.every((f) => f(r)));
+          const rows = db.tables[table].filter((r) => updateFilters.every((f) => f(r)));
+          for (const r of rows) Object.assign(r, obj);
+          applied = true;
+          return rows;
+        }
+        const updateBuilder = {
+          eq(col: string, val: unknown) {
+            updateFilters.push((r) => r[col] === val);
+            return updateBuilder;
+          },
+          is(col: string, val: null) {
+            updateFilters.push((r) => (r[col] ?? null) === val);
+            return updateBuilder;
+          },
+          select(_cols?: string) {
+            return {
+              async single() {
+                const rows = applyUpdate();
+                if (rows.length !== 1)
+                  return { data: null, error: uniqueOrNoRowsError(rows.length) };
+                return { data: rows[0], error: null };
+              },
+              async maybeSingle() {
+                const rows = applyUpdate();
+                if (rows.length > 1) return { data: null, error: uniqueOrNoRowsError(rows.length) };
+                return { data: rows[0] ?? null, error: null };
+              },
+            };
+          },
+          then(
+            resolve: (v: { data: Row[]; error: null }) => unknown,
+            reject?: (e: unknown) => unknown,
+          ) {
+            return Promise.resolve({ data: applyUpdate(), error: null }).then(resolve, reject);
           },
         };
+        return updateBuilder;
       },
       upsert(
         obj: Row,

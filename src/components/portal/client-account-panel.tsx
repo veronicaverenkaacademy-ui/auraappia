@@ -73,6 +73,8 @@ export function ClientAccountPanel({ ownerId }: { ownerId: string }) {
           loading={auth.loading}
           onSubmit={auth.verify}
           onBack={() => auth.setView("phone")}
+          resendAvailableAt={auth.resendAvailableAt}
+          onResend={auth.resendCode}
         />
       )}
       {auth.view === "signup" && (

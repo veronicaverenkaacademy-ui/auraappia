@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -79,19 +80,46 @@ export function PhoneStep({
   );
 }
 
+/** Segundos restantes até `availableAt` (ms, epoch) — 0 quando já pode reenviar. */
+function useCountdown(availableAt: number | null): number {
+  const [secondsLeft, setSecondsLeft] = useState(() =>
+    availableAt ? Math.max(0, Math.ceil((availableAt - Date.now()) / 1000)) : 0,
+  );
+
+  useEffect(() => {
+    if (!availableAt) {
+      setSecondsLeft(0);
+      return;
+    }
+    const tick = () => setSecondsLeft(Math.max(0, Math.ceil((availableAt - Date.now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [availableAt]);
+
+  return secondsLeft;
+}
+
 export function OtpStep({
   code,
   setCode,
   loading,
   onSubmit,
   onBack,
+  resendAvailableAt,
+  onResend,
 }: {
   code: string;
   setCode: (v: string) => void;
   loading: boolean;
   onSubmit: () => void;
   onBack: () => void;
+  /** Epoch ms de quando "Reenviar código" volta a ficar disponível (item 1.7). */
+  resendAvailableAt: number | null;
+  onResend: () => void;
 }) {
+  const secondsLeft = useCountdown(resendAvailableAt);
+
   return (
     <AuthCard title="Digite o código enviado">
       <div className="flex justify-center">
@@ -114,6 +142,13 @@ export function OtpStep({
       >
         {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirmar"}
       </Button>
+      <button
+        onClick={onResend}
+        disabled={loading || secondsLeft > 0}
+        className="w-full text-xs text-muted-foreground hover:text-foreground transition disabled:opacity-50 disabled:hover:text-muted-foreground"
+      >
+        {secondsLeft > 0 ? `Reenviar código (${secondsLeft}s)` : "Reenviar código"}
+      </button>
       <button
         onClick={onBack}
         className="w-full text-xs text-muted-foreground hover:text-foreground transition"

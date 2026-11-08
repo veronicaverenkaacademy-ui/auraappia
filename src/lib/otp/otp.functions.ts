@@ -2,16 +2,12 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { normalizePhoneBR, isValidPhoneBR } from "@/lib/phone";
+import { verifyClientOtpCore } from "@/lib/verify-client-otp.server";
 
 const RATE_LIMIT_MSG = "Por segurança, aguarde alguns minutos antes de tentar novamente.";
 const SEND_FAILED_MSG = "Não conseguimos enviar o código agora. Tente novamente em instantes.";
 const NO_WHATSAPP_MSG =
   "Esse número parece não ter WhatsApp. Confira o número ou fale com o salão.";
-const WRONG_CODE_MSG = "Código incorreto. Verifique e tente novamente.";
-const EXPIRED_MSG = "Este código expirou. Solicite um novo código.";
-const ATTEMPTS_EXCEEDED_MSG =
-  "Você excedeu o número de tentativas para este código. Solicite um novo código.";
-const GENERIC_LOGIN_FAIL_MSG = "Não foi possível concluir o login. Tente novamente.";
 
 const OTP_TTL_MS = 10 * 60 * 1000;
 const COOLDOWN_MS = 60 * 1000;
@@ -154,7 +150,8 @@ const VerifyOtpInput = z.object({
  * define uma senha temporária aleatória e faz login com ela no servidor —
  * devolve os tokens para o navegador ativar via supabase.auth.setSession(...).
  * Dessa forma nada no resto do Portal (RLS, requireSupabaseAuth, CRM) precisa
- * saber que o login não veio do fluxo nativo do Supabase.
+ * saber que o login não veio do fluxo nativo do Supabase. Lógica real em
+ * verify-client-otp.server.ts (verifyClientOtpCore) — testável sem alias "@/".
  */
 export const verifyClientOtp = createServerFn({ method: "POST" })
   .inputValidator((raw: unknown) => VerifyOtpInput.parse(raw))
@@ -165,91 +162,48 @@ export const verifyClientOtp = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { verifyOtpCode, generateRandomPassword } = await import("./otp-crypto.server");
 
-    const { data: row, error: rowErr } = await supabaseAdmin
-      .from("client_otp_codes")
-      .select("id, code_hash, expires_at, attempts, max_attempts, used_at")
-      .eq("phone", phone)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (rowErr) throw new Error(rowErr.message);
+    return verifyClientOtpCore(
+      supabaseAdmin,
+      {
+        verifyOtpCode,
+        generateRandomPassword,
+        createAuthUser: async (phoneForUser) => {
+          const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
+            phone: phoneForUser,
+            phone_confirm: true,
+          });
+          if (createErr || !created.user)
+            throw createErr ?? new Error("createUser sem usuário retornado");
+          return created.user.id;
+        },
+        createSession: async (userId, phoneForUser, tempPassword) => {
+          const { error: pwErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+            password: tempPassword,
+          });
+          if (pwErr) throw pwErr;
 
-    if (!row) throw new Error(WRONG_CODE_MSG);
-    if (row.used_at) throw new Error(EXPIRED_MSG);
-    if (new Date(row.expires_at).getTime() < now.getTime()) throw new Error(EXPIRED_MSG);
-    if (row.attempts >= row.max_attempts) {
-      throw new Error(ATTEMPTS_EXCEEDED_MSG);
-    }
-
-    const matches = await verifyOtpCode(data.code, row.code_hash);
-    if (!matches) {
-      const attempts = row.attempts + 1;
-      await supabaseAdmin.from("client_otp_codes").update({ attempts }).eq("id", row.id);
-      throw new Error(attempts >= row.max_attempts ? ATTEMPTS_EXCEEDED_MSG : WRONG_CODE_MSG);
-    }
-
-    await supabaseAdmin
-      .from("client_otp_codes")
-      .update({ used_at: now.toISOString() })
-      .eq("id", row.id);
-
-    // Resolve o auth.users da cliente: se já existe (vinculada em qualquer
-    // empresa via clients.user_id), reaproveita; senão cria.
-    let userId: string;
-    const { data: existing } = await supabaseAdmin
-      .from("clients")
-      .select("user_id")
-      .eq("phone", phone)
-      .not("user_id", "is", null)
-      .limit(1)
-      .maybeSingle();
-
-    if (existing?.user_id) {
-      userId = existing.user_id;
-    } else {
-      try {
-        const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
-          phone,
-          phone_confirm: true,
-        });
-        if (createErr || !created.user)
-          throw createErr ?? new Error("createUser sem usuário retornado");
-        userId = created.user.id;
-      } catch (e) {
-        console.error("[verifyClientOtp] Falha ao criar/resolver auth.users para telefone", e);
-        throw new Error(GENERIC_LOGIN_FAIL_MSG);
-      }
-    }
-
-    const tempPassword = generateRandomPassword();
-    const { error: pwErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-      password: tempPassword,
-    });
-    if (pwErr) {
-      console.error("[verifyClientOtp] Falha ao definir senha temporária", pwErr);
-      throw new Error(GENERIC_LOGIN_FAIL_MSG);
-    }
-
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
-    if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-      throw new Error(GENERIC_LOGIN_FAIL_MSG);
-    }
-    const { createClient } = await import("@supabase/supabase-js");
-    const throwawayClient = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-      auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
-    });
-    const { data: signIn, error: signInErr } = await throwawayClient.auth.signInWithPassword({
+          const SUPABASE_URL = process.env.SUPABASE_URL;
+          const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
+          if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+            throw new Error("Variáveis do Supabase ausentes no servidor.");
+          }
+          const { createClient } = await import("@supabase/supabase-js");
+          const throwawayClient = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+            auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
+          });
+          const { data: signIn, error: signInErr } = await throwawayClient.auth.signInWithPassword({
+            phone: phoneForUser,
+            password: tempPassword,
+          });
+          if (signInErr || !signIn.session) throw signInErr ?? new Error("Sessão não criada.");
+          return {
+            access_token: signIn.session.access_token,
+            refresh_token: signIn.session.refresh_token,
+          };
+        },
+      },
       phone,
-      password: tempPassword,
-    });
-    if (signInErr || !signIn.session) {
-      console.error("[verifyClientOtp] Falha ao montar sessão emprestada", signInErr);
-      throw new Error(GENERIC_LOGIN_FAIL_MSG);
-    }
-
-    return {
-      access_token: signIn.session.access_token,
-      refresh_token: signIn.session.refresh_token,
-    };
+      data.code,
+      now,
+    );
   });
