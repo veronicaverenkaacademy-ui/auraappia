@@ -184,6 +184,26 @@ test("modo teste ligado + telefone NA lista: não bloqueado (envia)", async () =
   assert.equal(calls.length, 1);
 });
 
+test("formato recomendado pra dona (55+DDD+número, só dígitos, sem '+') é aceito em WHATSAPP_OTP_META_TEST_PHONES", async () => {
+  process.env.WHATSAPP_OTP_META_TEST_MODE = "true";
+  process.env.WHATSAPP_OTP_META_TEST_PHONES = "5547977770000";
+  const calls = stubFetch(() => jsonResponse(200, { messages: [{ id: "wamid.OTP_FORMATO" }] }));
+  const result = await sendOtpViaMeta("+5547977770000", "123456");
+  assert.deepEqual(result, { kind: "enviado" });
+  assert.equal(calls.length, 1);
+});
+
+test("outros formatos na lista também funcionam (com '+', com espaço, com traço/parênteses) — comparação ignora tudo que não é dígito e usa só os últimos 8", async () => {
+  process.env.WHATSAPP_OTP_META_TEST_MODE = "true";
+  for (const listado of ["5547977770000", "+5547977770000", " 5547977770000 ", "(47) 97777-0000"]) {
+    process.env.WHATSAPP_OTP_META_TEST_PHONES = listado;
+    const calls = stubFetch(() => jsonResponse(200, { messages: [{ id: "wamid.OTP_X" }] }));
+    const result = await sendOtpViaMeta("+5547977770000", "123456");
+    assert.deepEqual(result, { kind: "enviado" }, `formato "${listado}" deveria ter sido aceito`);
+    assert.equal(calls.length, 1);
+  }
+});
+
 test("modo teste ligado + telefone FORA da lista: bloqueado, NUNCA chama fetch, resultado 'bloqueado_modo_teste'", async () => {
   process.env.WHATSAPP_OTP_META_TEST_MODE = "true";
   process.env.WHATSAPP_OTP_META_TEST_PHONES = "+5547988880000";
