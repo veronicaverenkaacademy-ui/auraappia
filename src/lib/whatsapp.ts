@@ -1,40 +1,8 @@
-// Mock WhatsApp module data + shared types (frontend-only for now).
-// Real Meta Cloud API / Twilio / 360dialog integration will plug into these
-// same shapes via server functions later.
-
-export type Provider = "meta" | "twilio" | "360dialog" | "gupshup" | "infobip";
-
-export const PROVIDER_LABEL: Record<Provider, string> = {
-  meta: "Meta Cloud API",
-  twilio: "Twilio",
-  "360dialog": "360dialog",
-  gupshup: "Gupshup",
-  infobip: "Infobip",
-};
-
-export type ConnectionStatus = {
-  provider: Provider;
-  phone: string;
-  displayName: string;
-  status: "connected" | "pending" | "error" | "disconnected";
-  qualityRating: "high" | "medium" | "low";
-  messagingLimit: string;
-  templatesApproved: number;
-  templatesTotal: number;
-  lastSyncAt: string;
-};
-
-export const connection: ConnectionStatus = {
-  provider: "meta",
-  phone: "+55 11 98765-4321",
-  displayName: "Studio Verônica",
-  status: "connected",
-  qualityRating: "high",
-  messagingLimit: "1.000 conversas iniciadas / 24h",
-  templatesApproved: 12,
-  templatesTotal: 14,
-  lastSyncAt: "há 2 min",
-};
+// Mock de capacidades da recepcionista IA (frontend-only), usado só pela tela
+// /whatsapp/config. Provider/ConnectionStatus/connection foram removidos na
+// Fase G1 (limpeza do 360dialog) — nunca eram importados por nada: a conexão
+// real de WhatsApp é outro componente (WhatsAppConnectionCard), que já fala
+// com a Meta Cloud API de verdade.
 
 export type AiCapability = {
   id: string;

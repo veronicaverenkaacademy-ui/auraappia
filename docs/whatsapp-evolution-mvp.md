@@ -12,14 +12,15 @@ um novo arquivo implementando essa interface e registrá-lo no mapa de providers
 `src/lib/whatsapp/message-service.server.ts` — nada em agenda, clientes ou notificações
 precisa mudar.
 
-## Separado do Communication Service (Fase 1/Sprint 2)
+## Separado do Communication Service (Fase 1/Sprint 2, removido na Fase G1)
 
-Este MVP **não** reaproveita `src/lib/communication/` (`conversations`, `messages`,
+Este MVP nunca reaproveitou `src/lib/communication/` (`conversations`, `messages`,
 `message_templates`, `communication_provider_config`) — aquela camada foi desenhada para
 BSPs (360dialog/Meta), sem conceito de pareamento de dispositivo por QR Code, que a
-Evolution exige estruturalmente. As tabelas deste MVP (`whatsapp_instances`,
-`notification_jobs`, `whatsapp_messages`) são novas e específicas. Reconciliar as duas
-camadas fica para quando a integração oficial substituir esta.
+Evolution exige estruturalmente. O módulo (e seu único consumidor real, o provedor
+360dialog) nunca chegou a ser usado em produção e foi removido na Fase G1 (11/2026). As
+tabelas deste MVP (`whatsapp_instances`, `notification_jobs`, `whatsapp_messages`) são
+novas e específicas, não dependem daquele módulo.
 
 ## 1. Como configurar a Evolution API
 

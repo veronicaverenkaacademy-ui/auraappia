@@ -2,7 +2,6 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
-import { handle360dialogWebhook } from "./lib/communication/webhook-360dialog.server";
 import { handleEvolutionWebhook } from "./lib/whatsapp/webhook-evolution.server";
 import { handleMetaWhatsappWebhook } from "./lib/whatsapp/webhook-meta.server";
 import { handleWhatsappCronRequest } from "./lib/whatsapp/cron-endpoint.server";
@@ -50,15 +49,13 @@ function isH3SwallowedErrorBody(body: string): boolean {
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
-    // Webhooks de provedores de comunicação (ex: 360dialog) não passam pelo
-    // roteador do TanStack Start — são interceptados aqui, isolados num bloco
-    // próprio, e retornam imediatamente. Qualquer URL que não seja essa cai
-    // direto no bloco original abaixo, sem nenhuma alteração de comportamento.
+    // Webhooks de provedores de comunicação (ex: evolution/meta) não passam
+    // pelo roteador do TanStack Start — são interceptados aqui, isolados num
+    // bloco próprio, e retornam imediatamente. Qualquer URL que não seja essa
+    // cai direto no bloco original abaixo, sem nenhuma alteração de
+    // comportamento.
     try {
       const url = new URL(request.url);
-      if (url.pathname === "/webhooks/360dialog") {
-        return await handle360dialogWebhook(request);
-      }
       if (url.pathname.startsWith("/webhooks/evolution/")) {
         const secretFromPath = url.pathname.slice("/webhooks/evolution/".length);
         return await handleEvolutionWebhook(request, secretFromPath);
