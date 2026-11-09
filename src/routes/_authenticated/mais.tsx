@@ -7,10 +7,34 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Resource } from "@/lib/permissions";
 import { getUnreadNotificationsCount } from "@/lib/notifications.functions";
 import {
-  Users, Calendar, Package, Sparkles, DollarSign, BarChart3, Megaphone, ShoppingBag,
-  FileText, Settings, HelpCircle, MessageCircle, LineChart, Wand2, UsersRound, User,
-  LayoutDashboard, Building2, Palette, Shield, Lock, Plug, Bell, CreditCard, Database,
-  Settings2, LogOut,
+  Users,
+  Calendar,
+  Package,
+  Sparkles,
+  DollarSign,
+  BarChart3,
+  Megaphone,
+  ShoppingBag,
+  FileText,
+  Settings,
+  HelpCircle,
+  MessageCircle,
+  LineChart,
+  Wand2,
+  UsersRound,
+  User,
+  LayoutDashboard,
+  Building2,
+  Palette,
+  Shield,
+  Lock,
+  Plug,
+  Bell,
+  CreditCard,
+  Database,
+  Settings2,
+  LogOut,
+  Image as ImageIcon,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/mais")({
@@ -153,6 +177,13 @@ const settingsItems: Item[] = [
     roles: ["admin"],
   },
   {
+    to: "/personalizar-portal",
+    label: "Personalizar meu portal",
+    icon: ImageIcon,
+    desc: "Fotos, cores, fonte e textos da sua Landing Pública",
+    roles: ["admin"],
+  },
+  {
     to: "/personalizacao",
     label: "Personalização",
     icon: Palette,
@@ -280,7 +311,9 @@ function Mais() {
 
   return (
     <AppShell title="Mais" className="px-4 md:px-8 py-8 md:py-12 max-w-5xl mx-auto pb-24 md:pb-12">
-      <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight mb-2">Tudo em um lugar</h1>
+      <h1 className="text-3xl md:text-4xl font-display font-medium tracking-tight mb-2">
+        Tudo em um lugar
+      </h1>
       <p className="text-sm text-muted-foreground mb-8">Acesse todas as áreas do seu negócio.</p>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -296,7 +329,8 @@ function Mais() {
       <div className="mt-10 p-4 rounded-2xl bg-secondary/40 border border-border/40 flex items-start gap-3">
         <HelpCircle className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
         <p className="text-xs text-muted-foreground leading-relaxed">
-          As funções marcadas como "em breve" serão liberadas nos próximos passos: financeiro completo, relatórios, campanhas automáticas e venda de pacotes.
+          As funções marcadas como "em breve" serão liberadas nos próximos passos: financeiro
+          completo, relatórios, campanhas automáticas e venda de pacotes.
         </p>
       </div>
 
@@ -313,7 +347,9 @@ function Mais() {
         </>
       )}
 
-      <h2 className="text-xs uppercase tracking-[0.18em] text-muted-foreground mt-12 mb-3">Conta</h2>
+      <h2 className="text-xs uppercase tracking-[0.18em] text-muted-foreground mt-12 mb-3">
+        Conta
+      </h2>
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
         <button onClick={signOut} className="block w-full text-left">
           <div className="p-4 rounded-2xl bg-card border border-border/50 hover:border-destructive/50 transition text-left h-full">

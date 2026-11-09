@@ -88,6 +88,38 @@ export type PortalConfigRow = {
   updated_at: string;
   updated_by: string | null;
   created_at: string;
+  previous_published: PortalPublishedSnapshot | null;
+};
+
+/** Forma exata do jsonb que portal_publicar/portal_desfazer_publicacao
+ * constroem em previous_published (ver migração) — mesmos campos
+ * published_*, sem o prefixo. */
+export type PortalPublishedSnapshot = {
+  theme_key: string | null;
+  color_primary: string | null;
+  color_secondary: string | null;
+  color_button: string | null;
+  color_button_text: string | null;
+  color_text: string | null;
+  color_background: string | null;
+  font_key: string | null;
+  cover_title: string | null;
+  cover_subtitle: string | null;
+  banner_text: string | null;
+  important_title: string | null;
+  important_text: string | null;
+  welcome_message: string | null;
+  show_shortcuts: boolean | null;
+  show_banner: boolean | null;
+  show_services: boolean | null;
+  show_important: boolean | null;
+  show_professionals: boolean | null;
+  show_location: boolean | null;
+  show_footer: boolean | null;
+  logo_path: string | null;
+  logo_light_path: string | null;
+  cover_path: string | null;
+  banner_path: string | null;
 };
 
 /** Subconjunto mínimo do cliente supabase-js que este módulo usa — permite

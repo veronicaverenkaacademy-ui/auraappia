@@ -40,6 +40,7 @@ import { Route as AuthenticatedNotificacoesRouteImport } from './routes/_authent
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedPermissoesRouteImport } from './routes/_authenticated/permissoes'
 import { Route as AuthenticatedPersonalizacaoRouteImport } from './routes/_authenticated/personalizacao'
+import { Route as AuthenticatedPersonalizarPortalRouteImport } from './routes/_authenticated/personalizar-portal'
 import { Route as AuthenticatedSegurancaRouteImport } from './routes/_authenticated/seguranca'
 import { Route as AuthenticatedServicosRouteImport } from './routes/_authenticated/servicos'
 import { Route as AuthenticatedSistemaRouteImport } from './routes/_authenticated/sistema'
@@ -231,6 +232,12 @@ const AuthenticatedPersonalizacaoRoute =
   AuthenticatedPersonalizacaoRouteImport.update({
     id: '/personalizacao',
     path: '/personalizacao',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedPersonalizarPortalRoute =
+  AuthenticatedPersonalizarPortalRouteImport.update({
+    id: '/personalizar-portal',
+    path: '/personalizar-portal',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedSegurancaRoute = AuthenticatedSegurancaRouteImport.update({
@@ -455,6 +462,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/permissoes': typeof AuthenticatedPermissoesRoute
   '/personalizacao': typeof AuthenticatedPersonalizacaoRoute
+  '/personalizar-portal': typeof AuthenticatedPersonalizarPortalRoute
   '/seguranca': typeof AuthenticatedSegurancaRoute
   '/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/sistema': typeof AuthenticatedSistemaRoute
@@ -514,6 +522,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/permissoes': typeof AuthenticatedPermissoesRoute
   '/personalizacao': typeof AuthenticatedPersonalizacaoRoute
+  '/personalizar-portal': typeof AuthenticatedPersonalizarPortalRoute
   '/seguranca': typeof AuthenticatedSegurancaRoute
   '/sistema': typeof AuthenticatedSistemaRoute
   '/whatsapp-lembretes': typeof AuthenticatedWhatsappLembretesRoute
@@ -580,6 +589,7 @@ export interface FileRoutesById {
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/permissoes': typeof AuthenticatedPermissoesRoute
   '/_authenticated/personalizacao': typeof AuthenticatedPersonalizacaoRoute
+  '/_authenticated/personalizar-portal': typeof AuthenticatedPersonalizarPortalRoute
   '/_authenticated/seguranca': typeof AuthenticatedSegurancaRoute
   '/_authenticated/servicos': typeof AuthenticatedServicosRouteWithChildren
   '/_authenticated/sistema': typeof AuthenticatedSistemaRoute
@@ -648,6 +658,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/permissoes'
     | '/personalizacao'
+    | '/personalizar-portal'
     | '/seguranca'
     | '/servicos'
     | '/sistema'
@@ -707,6 +718,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/permissoes'
     | '/personalizacao'
+    | '/personalizar-portal'
     | '/seguranca'
     | '/sistema'
     | '/whatsapp-lembretes'
@@ -772,6 +784,7 @@ export interface FileRouteTypes {
     | '/_authenticated/onboarding'
     | '/_authenticated/permissoes'
     | '/_authenticated/personalizacao'
+    | '/_authenticated/personalizar-portal'
     | '/_authenticated/seguranca'
     | '/_authenticated/servicos'
     | '/_authenticated/sistema'
@@ -1038,6 +1051,13 @@ declare module '@tanstack/react-router' {
       path: '/personalizacao'
       fullPath: '/personalizacao'
       preLoaderRoute: typeof AuthenticatedPersonalizacaoRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/personalizar-portal': {
+      id: '/_authenticated/personalizar-portal'
+      path: '/personalizar-portal'
+      fullPath: '/personalizar-portal'
+      preLoaderRoute: typeof AuthenticatedPersonalizarPortalRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/seguranca': {
@@ -1455,6 +1475,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedPermissoesRoute: typeof AuthenticatedPermissoesRoute
   AuthenticatedPersonalizacaoRoute: typeof AuthenticatedPersonalizacaoRoute
+  AuthenticatedPersonalizarPortalRoute: typeof AuthenticatedPersonalizarPortalRoute
   AuthenticatedSegurancaRoute: typeof AuthenticatedSegurancaRoute
   AuthenticatedServicosRoute: typeof AuthenticatedServicosRouteWithChildren
   AuthenticatedSistemaRoute: typeof AuthenticatedSistemaRoute
@@ -1485,6 +1506,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedPermissoesRoute: AuthenticatedPermissoesRoute,
   AuthenticatedPersonalizacaoRoute: AuthenticatedPersonalizacaoRoute,
+  AuthenticatedPersonalizarPortalRoute: AuthenticatedPersonalizarPortalRoute,
   AuthenticatedSegurancaRoute: AuthenticatedSegurancaRoute,
   AuthenticatedServicosRoute: AuthenticatedServicosRouteWithChildren,
   AuthenticatedSistemaRoute: AuthenticatedSistemaRoute,

@@ -70,6 +70,10 @@ export type Service = {
   duration_min: number;
   color: string | null;
   active: boolean;
+  /** Categoria do Portal Público (FASE K1, opcional) — null = sem categoria. */
+  category_id?: string | null;
+  /** Caminho no bucket portal-media (FASE K1, opcional) — atualiza na hora, fora do rascunho/publicação do portal. */
+  image_path?: string | null;
 };
 
 export type Material = {
@@ -95,7 +99,11 @@ export async function listProducts(): Promise<Product[]> {
 
 export async function upsertProduct(input: Partial<Product> & { name: string }): Promise<Product> {
   const owner_id = await uid();
-  const { data, error } = await supabase.from("products").upsert({ ...input, owner_id }).select().single();
+  const { data, error } = await supabase
+    .from("products")
+    .upsert({ ...input, owner_id })
+    .select()
+    .single();
   if (error) throw error;
   return data as Product;
 }
@@ -108,7 +116,11 @@ export async function deleteProduct(id: string) {
 /** Register a purchase: adds stock, updates cost avg + last purchase. */
 export async function registerPurchase(productId: string, qty: number, totalPaid: number) {
   const owner_id = await uid();
-  const { data: p, error: pe } = await supabase.from("products").select("*").eq("id", productId).single();
+  const { data: p, error: pe } = await supabase
+    .from("products")
+    .select("*")
+    .eq("id", productId)
+    .single();
   if (pe) throw pe;
   const prev = p as Product;
   const unitCost = qty > 0 ? totalPaid / qty : 0;
@@ -117,28 +129,47 @@ export async function registerPurchase(productId: string, qty: number, totalPaid
   const prevValue = Number(prev.stock) * Number(prev.cost_per_unit);
   const newValue = prevValue + totalPaid;
   const avgCost = newStock > 0 ? newValue / newStock : unitCost;
-  const { error: ue } = await supabase.from("products").update({
-    stock: newStock,
-    cost_per_unit: avgCost,
-    last_purchase_cost: totalPaid,
-    last_purchase_qty: qty,
-  }).eq("id", productId);
+  const { error: ue } = await supabase
+    .from("products")
+    .update({
+      stock: newStock,
+      cost_per_unit: avgCost,
+      last_purchase_cost: totalPaid,
+      last_purchase_qty: qty,
+    })
+    .eq("id", productId);
   if (ue) throw ue;
   const { error: me } = await supabase.from("stock_movements").insert({
-    owner_id, product_id: productId, kind: "purchase", quantity: qty, unit_cost: unitCost, note: "Compra registrada",
+    owner_id,
+    product_id: productId,
+    kind: "purchase",
+    quantity: qty,
+    unit_cost: unitCost,
+    note: "Compra registrada",
   });
   if (me) throw me;
 }
 
 export async function adjustStock(productId: string, delta: number, note: string) {
   const owner_id = await uid();
-  const { data: p, error: pe } = await supabase.from("products").select("stock").eq("id", productId).single();
+  const { data: p, error: pe } = await supabase
+    .from("products")
+    .select("stock")
+    .eq("id", productId)
+    .single();
   if (pe) throw pe;
   const newStock = Number((p as { stock: number }).stock) + delta;
-  const { error: ue } = await supabase.from("products").update({ stock: newStock }).eq("id", productId);
+  const { error: ue } = await supabase
+    .from("products")
+    .update({ stock: newStock })
+    .eq("id", productId);
   if (ue) throw ue;
   const { error: me } = await supabase.from("stock_movements").insert({
-    owner_id, product_id: productId, kind: "adjustment", quantity: delta, note,
+    owner_id,
+    product_id: productId,
+    kind: "adjustment",
+    quantity: delta,
+    note,
   });
   if (me) throw me;
 }
@@ -158,7 +189,11 @@ export async function getService(id: string): Promise<Service> {
 
 export async function upsertService(input: Partial<Service> & { name: string }): Promise<Service> {
   const owner_id = await uid();
-  const { data, error } = await supabase.from("services").upsert({ ...input, owner_id }).select().single();
+  const { data, error } = await supabase
+    .from("services")
+    .upsert({ ...input, owner_id })
+    .select()
+    .single();
   if (error) throw error;
   return data as Service;
 }
@@ -180,10 +215,12 @@ export async function listMaterials(serviceId: string): Promise<Material[]> {
 
 export async function addMaterial(serviceId: string, productId: string, quantity: number) {
   const owner_id = await uid();
-  const { error } = await supabase.from("service_materials").upsert(
-    { owner_id, service_id: serviceId, product_id: productId, quantity },
-    { onConflict: "service_id,product_id" },
-  );
+  const { error } = await supabase
+    .from("service_materials")
+    .upsert(
+      { owner_id, service_id: serviceId, product_id: productId, quantity },
+      { onConflict: "service_id,product_id" },
+    );
   if (error) throw error;
 }
 
@@ -208,7 +245,10 @@ export function materialCost(m: Material): number {
 }
 
 /** Quantos atendimentos ainda são possíveis com o estoque atual de um produto, dado o quanto cada atendimento consome (na unidade de consumo do produto). */
-export function possibleAppointments(product: Product, quantityPerAppointment: number): number | null {
+export function possibleAppointments(
+  product: Product,
+  quantityPerAppointment: number,
+): number | null {
   if (!quantityPerAppointment || quantityPerAppointment <= 0) return null;
   const ratio = Number(product.consumption_ratio ?? 0);
   const stockInConsumptionUnit = ratio > 0 ? Number(product.stock) * ratio : Number(product.stock);
