@@ -58,6 +58,7 @@ DROP POLICY IF EXISTS "portal_media_own_delete" ON storage.objects;
 DROP POLICY IF EXISTS "portal_media_own_update" ON storage.objects;
 DROP POLICY IF EXISTS "portal_media_own_insert" ON storage.objects;
 DROP POLICY IF EXISTS "portal_media_own_select" ON storage.objects;
+DROP FUNCTION IF EXISTS public.portal_media_quota_ok(text, bigint);
 DROP FUNCTION IF EXISTS public.portal_media_own_folder(text);
 
 -- 2 — company_profiles.portal_media_key

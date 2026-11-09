@@ -149,6 +149,34 @@ AS $$
   );
 $$;
 
+-- Cota por empresa (60 arquivos / 100MB, item 2.9/3.8 da FASE K1). Como o
+-- envio é direto do navegador pro Storage (mesmo padrão já usado em
+-- company-assets — nenhum fluxo de URL assinada existe hoje no projeto),
+-- a forma mais simples e robusta de impor um limite sem inventar um novo
+-- caminho de upload é checar na PRÓPRIA política de INSERT: nega a
+-- gravação da linha antes dela existir, se a empresa já estiver no
+-- limite. Conta/soma só os objetos da PRÓPRIA pasta (mesmo filtro de
+-- portal_media_own_folder). Só entra na política de INSERT — caminhos
+-- aqui são sempre {uuid}.{ext} únicos (nunca reaproveitados), então
+-- "substituir uma foto" é sempre um INSERT novo + DELETE do arquivo
+-- antigo (órfão), nunca um UPDATE em cima do mesmo objeto — não precisa
+-- checar cota de novo no UPDATE.
+CREATE OR REPLACE FUNCTION public.portal_media_quota_ok(p_folder text, p_incoming_size bigint)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT
+    (SELECT count(*) FROM storage.objects WHERE bucket_id = 'portal-media' AND (storage.foldername(name))[1] = p_folder) < 60
+    AND
+    COALESCE(
+      (SELECT sum((metadata ->> 'size')::bigint) FROM storage.objects WHERE bucket_id = 'portal-media' AND (storage.foldername(name))[1] = p_folder),
+      0
+    ) + COALESCE(p_incoming_size, 0) <= 104857600; -- 100 MB
+$$;
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'portal_media_own_select') THEN
@@ -157,7 +185,11 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'portal_media_own_insert') THEN
     CREATE POLICY "portal_media_own_insert" ON storage.objects FOR INSERT TO authenticated
-      WITH CHECK (bucket_id = 'portal-media' AND public.portal_media_own_folder((storage.foldername(name))[1]));
+      WITH CHECK (
+        bucket_id = 'portal-media'
+        AND public.portal_media_own_folder((storage.foldername(name))[1])
+        AND public.portal_media_quota_ok((storage.foldername(name))[1], (metadata ->> 'size')::bigint)
+      );
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'portal_media_own_update') THEN
     CREATE POLICY "portal_media_own_update" ON storage.objects FOR UPDATE TO authenticated

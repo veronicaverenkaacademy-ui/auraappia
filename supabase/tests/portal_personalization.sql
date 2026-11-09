@@ -332,6 +332,158 @@ BEGIN
     format('category=%s', v_category_mark), v_category_mark = 'ZZFX_MARCADOR_INTACTO');
 END $run$;
 
+-- =====================================================================================
+-- Rodada 2 (itens A, B, D do pedido de autorização condicional, 09/11/2026):
+-- cota de storage (contagem + tamanho), prova de que ninguém lista a
+-- pasta de outra empresa nem anon lista nada, admin sem linha em
+-- company_profiles, e o gatilho disparando pelo caminho REAL do app
+-- (INSERT ... ON CONFLICT, a mesma forma que upsertCompanyProfile usa).
+-- =====================================================================================
+DO $setup2$
+DECLARE
+  v_owner_c uuid := gen_random_uuid(); -- cota por quantidade (60 arquivos)
+  v_owner_d uuid := gen_random_uuid(); -- cota por tamanho (100MB)
+  v_owner_e uuid := gen_random_uuid(); -- admin SEM linha em company_profiles (item D)
+  v_owner_f uuid := gen_random_uuid(); -- NUNCA tem company_profiles em setup — só via upsert real (item D)
+BEGIN
+  INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data)
+  VALUES
+    (v_owner_c, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'zz-fixture-'||v_owner_c||'@invalid.test', '', now(), now(), now(), '{}', '{}'::jsonb),
+    (v_owner_d, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'zz-fixture-'||v_owner_d||'@invalid.test', '', now(), now(), now(), '{}', '{}'::jsonb),
+    (v_owner_e, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'zz-fixture-'||v_owner_e||'@invalid.test', '', now(), now(), now(), '{}', '{}'::jsonb),
+    (v_owner_f, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'zz-fixture-'||v_owner_f||'@invalid.test', '', now(), now(), now(), '{}', '{}'::jsonb);
+
+  INSERT INTO public.user_roles (user_id, role) VALUES (v_owner_c, 'admin'), (v_owner_d, 'admin'), (v_owner_e, 'admin'), (v_owner_f, 'admin');
+
+  -- c e d precisam de portal_media_key (ganham company_profiles normal).
+  -- e e f DE PROPÓSITO não ganham nenhuma linha aqui — e nunca vai ganhar
+  -- (é o caso "admin sem empresa"); f só vai ganhar através do teste do
+  -- caminho real do app, mais abaixo.
+  INSERT INTO public.company_profiles (owner_id, slug, display_name) VALUES
+    (v_owner_c, 'zzfx-portal-c', 'ZZFX Portal C'),
+    (v_owner_d, 'zzfx-portal-d', 'ZZFX Portal D');
+
+  INSERT INTO zzfx_ids (k, v) VALUES
+    ('owner_c', v_owner_c), ('owner_d', v_owner_d), ('owner_e', v_owner_e), ('owner_f', v_owner_f);
+END $setup2$;
+
+DO $sentinel2$
+DECLARE n int;
+BEGIN
+  SELECT count(*) INTO n FROM auth.users WHERE email LIKE 'zz-fixture-%@invalid.test';
+  IF n <> 7 THEN RAISE EXCEPTION 'SENTINELA: esperado 7 usuários sintéticos (3 da rodada 1 + 4 da rodada 2), achei %', n; END IF;
+END $sentinel2$;
+
+DO $run2$
+DECLARE
+  v_owner_a uuid := (SELECT v FROM zzfx_ids WHERE k = 'owner_a');
+  v_owner_b uuid := (SELECT v FROM zzfx_ids WHERE k = 'owner_b');
+  v_owner_c uuid := (SELECT v FROM zzfx_ids WHERE k = 'owner_c');
+  v_owner_d uuid := (SELECT v FROM zzfx_ids WHERE k = 'owner_d');
+  v_owner_e uuid := (SELECT v FROM zzfx_ids WHERE k = 'owner_e');
+  v_owner_f uuid := (SELECT v FROM zzfx_ids WHERE k = 'owner_f');
+  v_media_a text; v_media_c text; v_media_d text;
+  r text;
+  i int;
+  v_count int;
+BEGIN
+  SELECT portal_media_key::text INTO v_media_a FROM public.company_profiles WHERE owner_id = v_owner_a;
+  SELECT portal_media_key::text INTO v_media_c FROM public.company_profiles WHERE owner_id = v_owner_c;
+  SELECT portal_media_key::text INTO v_media_d FROM public.company_profiles WHERE owner_id = v_owner_d;
+
+  SET LOCAL ROLE authenticated;
+  PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
+
+  -- ===== A — cota por QUANTIDADE: 60 inserts legítimos passam, o 61º é recusado =====
+  PERFORM set_config('request.jwt.claim.sub', v_owner_c::text, true);
+  FOR i IN 1..60 LOOP
+    INSERT INTO storage.objects (bucket_id, name, owner, metadata) VALUES
+      ('portal-media', v_media_c || '/services/' || gen_random_uuid()::text || '.jpg', v_owner_c, jsonb_build_object('size', 1000));
+  END LOOP;
+  SELECT count(*) INTO v_count FROM storage.objects WHERE bucket_id = 'portal-media' AND (storage.foldername(name))[1] = v_media_c;
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('34_cota_60_arquivos_aceitos', format('count=%s', v_count), v_count = 60);
+
+  BEGIN
+    INSERT INTO storage.objects (bucket_id, name, owner, metadata) VALUES
+      ('portal-media', v_media_c || '/services/' || gen_random_uuid()::text || '.jpg', v_owner_c, jsonb_build_object('size', 1000));
+    INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('35_cota_61_arquivo_recusado', 'PERMITIDO (BUG!)', false);
+  EXCEPTION WHEN insufficient_privilege THEN
+    INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('35_cota_61_arquivo_recusado', 'erro:42501 (esperado)', true);
+  END;
+  SELECT count(*) INTO v_count FROM storage.objects WHERE bucket_id = 'portal-media' AND (storage.foldername(name))[1] = v_media_c;
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('36_cota_total_fica_em_60', format('count=%s', v_count), v_count = 60);
+
+  -- ===== A — cota por TAMANHO: 99MB cabe; +2MB estoura 100MB e é recusado; +500KB cabe =====
+  PERFORM set_config('request.jwt.claim.sub', v_owner_d::text, true);
+  INSERT INTO storage.objects (bucket_id, name, owner, metadata) VALUES
+    ('portal-media', v_media_d || '/cover/' || gen_random_uuid()::text || '.jpg', v_owner_d, jsonb_build_object('size', 99 * 1024 * 1024));
+  SELECT count(*) INTO v_count FROM storage.objects WHERE bucket_id = 'portal-media' AND (storage.foldername(name))[1] = v_media_d;
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('37_cota_tamanho_99mb_aceito', format('count=%s', v_count), v_count = 1);
+
+  BEGIN
+    INSERT INTO storage.objects (bucket_id, name, owner, metadata) VALUES
+      ('portal-media', v_media_d || '/cover/' || gen_random_uuid()::text || '.jpg', v_owner_d, jsonb_build_object('size', 2 * 1024 * 1024));
+    INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('38_cota_tamanho_estoura_recusado', 'PERMITIDO (BUG!)', false);
+  EXCEPTION WHEN insufficient_privilege THEN
+    INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('38_cota_tamanho_estoura_recusado', 'erro:42501 (esperado)', true);
+  END;
+
+  INSERT INTO storage.objects (bucket_id, name, owner, metadata) VALUES
+    ('portal-media', v_media_d || '/cover/' || gen_random_uuid()::text || '.jpg', v_owner_d, jsonb_build_object('size', 500 * 1024));
+  SELECT count(*) INTO v_count FROM storage.objects WHERE bucket_id = 'portal-media' AND (storage.foldername(name))[1] = v_media_d;
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('39_cota_tamanho_dentro_do_limite_aceito', format('count=%s(esperado 2)', v_count), v_count = 2);
+
+  -- ===== B — anon NÃO lista nada no bucket (0 linhas, não erro — anon tem GRANT de tabela no storage.objects, quem nega é a RLS) =====
+  SET LOCAL ROLE anon;
+  SELECT count(*) INTO v_count FROM storage.objects WHERE bucket_id = 'portal-media';
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('40_anon_lista_storage_zero_linhas', format('linhas=%s', v_count), v_count = 0);
+  RESET ROLE;
+
+  -- ===== B — empresa autenticada NÃO lista a pasta de outra (0 linhas), mas lista a própria normalmente =====
+  SET LOCAL ROLE authenticated;
+  PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
+  PERFORM set_config('request.jwt.claim.sub', v_owner_b::text, true);
+  SELECT count(*) INTO v_count FROM storage.objects WHERE bucket_id = 'portal-media' AND (storage.foldername(name))[1] = v_media_a;
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('41_empresa_nao_lista_pasta_de_outra', format('linhas=%s', v_count), v_count = 0);
+
+  PERFORM set_config('request.jwt.claim.sub', v_owner_c::text, true);
+  SELECT count(*) INTO v_count FROM storage.objects WHERE bucket_id = 'portal-media' AND (storage.foldername(name))[1] = v_media_c;
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('42_empresa_lista_a_propria_pasta', format('linhas=%s(esperado 60)', v_count), v_count = 60);
+
+  -- ===== D — admin SEM linha em company_profiles: funções devolvem 'nao_encontrado', nunca erro bruto =====
+  PERFORM set_config('request.jwt.claim.sub', v_owner_e::text, true);
+  r := public.portal_salvar_rascunho('{}'::jsonb, 1);
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('43_admin_sem_empresa_salvar_rascunho_gracioso', format('r=%s', r), r = 'nao_encontrado');
+  r := public.portal_publicar(1);
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('44_admin_sem_empresa_publicar_gracioso', format('r=%s', r), r = 'nao_encontrado');
+  r := public.portal_descartar_rascunho();
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('45_admin_sem_empresa_descartar_gracioso', format('r=%s', r), r = 'nao_encontrado');
+  r := public.portal_desfazer_publicacao();
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('46_admin_sem_empresa_desfazer_gracioso', format('r=%s', r), r = 'nao_encontrado');
+
+  -- ===== D — caminho REAL do app: mesma forma exata que upsertCompanyProfile
+  -- usa (.upsert(row, {onConflict:'owner_id'}) = INSERT ... ON CONFLICT DO UPDATE).
+  -- 1ª vez (empresa nunca existiu) pega o ramo de INSERT de verdade -> dispara
+  -- o gatilho. 2ª vez (mesma empresa, já existe) pega o ramo de UPDATE via
+  -- conflito -> NÃO deve recriar nem duplicar a configuração.
+  PERFORM set_config('request.jwt.claim.sub', v_owner_f::text, true);
+  INSERT INTO public.company_profiles (owner_id, slug, display_name)
+  VALUES (v_owner_f, 'zzfx-portal-f', 'ZZFX Portal F (via upsert real)')
+  ON CONFLICT (owner_id) DO UPDATE SET display_name = EXCLUDED.display_name;
+
+  SELECT count(*) INTO v_count FROM public.portal_configurations WHERE owner_id = v_owner_f;
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('47_trigger_dispara_no_insert_real_via_upsert', format('linhas=%s', v_count), v_count = 1);
+
+  INSERT INTO public.company_profiles (owner_id, slug, display_name)
+  VALUES (v_owner_f, 'zzfx-portal-f', 'ZZFX Portal F (resalvando)')
+  ON CONFLICT (owner_id) DO UPDATE SET display_name = EXCLUDED.display_name;
+
+  SELECT count(*) INTO v_count FROM public.portal_configurations WHERE owner_id = v_owner_f;
+  INSERT INTO zzfx_results (caso, detalhe, passou) VALUES ('48_resalvar_via_upsert_nao_duplica_configuracao', format('linhas=%s', v_count), v_count = 1);
+
+  RESET ROLE;
+END $run2$;
+
 SELECT caso, detalhe, passou FROM zzfx_results ORDER BY ordem;
 
 DO $final_check$
