@@ -1469,11 +1469,13 @@ export type Database = {
       services: {
         Row: {
           active: boolean
+          category_id: string | null
           color: string | null
           created_at: string
           description: string | null
           duration_min: number
           id: string
+          image_path: string | null
           name: string
           owner_id: string
           price: number
@@ -1481,11 +1483,13 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          category_id?: string | null
           color?: string | null
           created_at?: string
           description?: string | null
           duration_min?: number
           id?: string
+          image_path?: string | null
           name: string
           owner_id: string
           price?: number
@@ -1493,17 +1497,27 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          category_id?: string | null
           color?: string | null
           created_at?: string
           description?: string | null
           duration_min?: number
           id?: string
+          image_path?: string | null
           name?: string
           owner_id?: string
           price?: number
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "services_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "portal_service_categories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       stock_movements: {
         Row: {
@@ -1850,6 +1864,7 @@ export type Database = {
           open_hours_text: string | null
           owner_id: string
           phone: string | null
+          portal_media_key: string
           slug: string
           state: string | null
           tiktok: string | null
@@ -1873,6 +1888,7 @@ export type Database = {
           open_hours_text?: string | null
           owner_id: string
           phone?: string | null
+          portal_media_key?: string
           slug: string
           state?: string | null
           tiktok?: string | null
@@ -1896,12 +1912,234 @@ export type Database = {
           open_hours_text?: string | null
           owner_id?: string
           phone?: string | null
+          portal_media_key?: string
           slug?: string
           state?: string | null
           tiktok?: string | null
           timezone?: string
           updated_at?: string
           whatsapp?: string | null
+        }
+        Relationships: []
+      }
+      portal_configurations: {
+        Row: {
+          created_at: string
+          draft_banner_path: string | null
+          draft_banner_text: string | null
+          draft_color_background: string | null
+          draft_color_button: string | null
+          draft_color_button_text: string | null
+          draft_color_primary: string | null
+          draft_color_secondary: string | null
+          draft_color_text: string | null
+          draft_cover_path: string | null
+          draft_cover_subtitle: string | null
+          draft_cover_title: string | null
+          draft_font_key: string
+          draft_important_text: string | null
+          draft_important_title: string | null
+          draft_logo_light_path: string | null
+          draft_logo_path: string | null
+          draft_show_banner: boolean
+          draft_show_footer: boolean
+          draft_show_important: boolean
+          draft_show_location: boolean
+          draft_show_professionals: boolean
+          draft_show_services: boolean
+          draft_show_shortcuts: boolean
+          draft_theme_key: string | null
+          draft_welcome_message: string | null
+          owner_id: string
+          previous_published: Json | null
+          published_at: string | null
+          published_banner_path: string | null
+          published_banner_text: string | null
+          published_by: string | null
+          published_color_background: string | null
+          published_color_button: string | null
+          published_color_button_text: string | null
+          published_color_primary: string | null
+          published_color_secondary: string | null
+          published_color_text: string | null
+          published_cover_path: string | null
+          published_cover_subtitle: string | null
+          published_cover_title: string | null
+          published_font_key: string | null
+          published_important_text: string | null
+          published_important_title: string | null
+          published_logo_light_path: string | null
+          published_logo_path: string | null
+          published_show_banner: boolean | null
+          published_show_footer: boolean | null
+          published_show_important: boolean | null
+          published_show_location: boolean | null
+          published_show_professionals: boolean | null
+          published_show_services: boolean | null
+          published_show_shortcuts: boolean | null
+          published_theme_key: string | null
+          published_welcome_message: string | null
+          updated_at: string
+          updated_by: string | null
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          draft_banner_path?: string | null
+          draft_banner_text?: string | null
+          draft_color_background?: string | null
+          draft_color_button?: string | null
+          draft_color_button_text?: string | null
+          draft_color_primary?: string | null
+          draft_color_secondary?: string | null
+          draft_color_text?: string | null
+          draft_cover_path?: string | null
+          draft_cover_subtitle?: string | null
+          draft_cover_title?: string | null
+          draft_font_key?: string
+          draft_important_text?: string | null
+          draft_important_title?: string | null
+          draft_logo_light_path?: string | null
+          draft_logo_path?: string | null
+          draft_show_banner?: boolean
+          draft_show_footer?: boolean
+          draft_show_important?: boolean
+          draft_show_location?: boolean
+          draft_show_professionals?: boolean
+          draft_show_services?: boolean
+          draft_show_shortcuts?: boolean
+          draft_theme_key?: string | null
+          draft_welcome_message?: string | null
+          owner_id: string
+          previous_published?: Json | null
+          published_at?: string | null
+          published_banner_path?: string | null
+          published_banner_text?: string | null
+          published_by?: string | null
+          published_color_background?: string | null
+          published_color_button?: string | null
+          published_color_button_text?: string | null
+          published_color_primary?: string | null
+          published_color_secondary?: string | null
+          published_color_text?: string | null
+          published_cover_path?: string | null
+          published_cover_subtitle?: string | null
+          published_cover_title?: string | null
+          published_font_key?: string | null
+          published_important_text?: string | null
+          published_important_title?: string | null
+          published_logo_light_path?: string | null
+          published_logo_path?: string | null
+          published_show_banner?: boolean | null
+          published_show_footer?: boolean | null
+          published_show_important?: boolean | null
+          published_show_location?: boolean | null
+          published_show_professionals?: boolean | null
+          published_show_services?: boolean | null
+          published_show_shortcuts?: boolean | null
+          published_theme_key?: string | null
+          published_welcome_message?: string | null
+          updated_at?: string
+          updated_by?: string | null
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          draft_banner_path?: string | null
+          draft_banner_text?: string | null
+          draft_color_background?: string | null
+          draft_color_button?: string | null
+          draft_color_button_text?: string | null
+          draft_color_primary?: string | null
+          draft_color_secondary?: string | null
+          draft_color_text?: string | null
+          draft_cover_path?: string | null
+          draft_cover_subtitle?: string | null
+          draft_cover_title?: string | null
+          draft_font_key?: string
+          draft_important_text?: string | null
+          draft_important_title?: string | null
+          draft_logo_light_path?: string | null
+          draft_logo_path?: string | null
+          draft_show_banner?: boolean
+          draft_show_footer?: boolean
+          draft_show_important?: boolean
+          draft_show_location?: boolean
+          draft_show_professionals?: boolean
+          draft_show_services?: boolean
+          draft_show_shortcuts?: boolean
+          draft_theme_key?: string | null
+          draft_welcome_message?: string | null
+          owner_id?: string
+          previous_published?: Json | null
+          published_at?: string | null
+          published_banner_path?: string | null
+          published_banner_text?: string | null
+          published_by?: string | null
+          published_color_background?: string | null
+          published_color_button?: string | null
+          published_color_button_text?: string | null
+          published_color_primary?: string | null
+          published_color_secondary?: string | null
+          published_color_text?: string | null
+          published_cover_path?: string | null
+          published_cover_subtitle?: string | null
+          published_cover_title?: string | null
+          published_font_key?: string | null
+          published_important_text?: string | null
+          published_important_title?: string | null
+          published_logo_light_path?: string | null
+          published_logo_path?: string | null
+          published_show_banner?: boolean | null
+          published_show_footer?: boolean | null
+          published_show_important?: boolean | null
+          published_show_location?: boolean | null
+          published_show_professionals?: boolean | null
+          published_show_services?: boolean | null
+          published_show_shortcuts?: boolean | null
+          published_theme_key?: string | null
+          published_welcome_message?: string | null
+          updated_at?: string
+          updated_by?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_configurations_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: true
+            referencedRelation: "company_profiles"
+            referencedColumns: ["owner_id"]
+          },
+        ]
+      }
+      portal_service_categories: {
+        Row: {
+          created_at: string
+          id: string
+          image_path: string | null
+          name: string
+          owner_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          image_path?: string | null
+          name: string
+          owner_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          image_path?: string | null
+          name?: string
+          owner_id?: string
+          sort_order?: number
+          updated_at?: string
         }
         Relationships: []
       }
@@ -2560,6 +2798,26 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
+      portal_descartar_rascunho: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      portal_desfazer_publicacao: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      portal_obter_publico: {
+        Args: { p_slug: string }
+        Returns: Json
+      }
+      portal_publicar: {
+        Args: { p_version_esperada: number }
+        Returns: string
+      }
+      portal_salvar_rascunho: {
+        Args: { p_config: Json; p_version_esperada: number }
+        Returns: string
+      }
       reactivate_cancelled_appointment: {
         Args: { p_appointment_id: string }
         Returns: string
