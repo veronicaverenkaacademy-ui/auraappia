@@ -60,6 +60,31 @@ export const listAttentionAppointmentIds = createServerFn({ method: "GET" })
     return Array.from(new Set((data ?? []).map((r) => r.appointment_id as string)));
   });
 
+/**
+ * Item 1.4 da FASE J: marca o agendamento com "Novo" na Agenda até a
+ * profissional abrir o detalhe (que chama markNotificationRead). Devolve o
+ * id da notificação junto (não só do agendamento) porque é ele que precisa
+ * ser passado pra markNotificationRead — a Agenda não tem outro jeito de
+ * descobrir esse id sem uma segunda consulta.
+ */
+export type NewBookingBadge = { notificationId: string; appointmentId: string };
+
+export const listNewBookingNotifications = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<NewBookingBadge[]> => {
+    const { data, error } = await context.supabase
+      .from("app_notifications")
+      .select("id, appointment_id")
+      .is("read_at", null)
+      .eq("kind", "new_booking")
+      .not("appointment_id", "is", null);
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((r) => ({
+      notificationId: r.id,
+      appointmentId: r.appointment_id as string,
+    }));
+  });
+
 const MarkReadInput = z.object({ id: z.string().uuid() });
 
 export const markNotificationRead = createServerFn({ method: "POST" })

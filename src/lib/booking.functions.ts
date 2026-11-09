@@ -3,6 +3,13 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { computeFreeSlots, BOOKING_WINDOW_DAYS, type BusinessHours } from "@/lib/booking-slots";
 import { isValidTimeZone } from "@/lib/timezone";
+import {
+  createBookingNotification,
+  buildNewBookingNotification,
+  buildClientCancelledNotification,
+  buildClientRescheduledNotification,
+  isLateCancel,
+} from "@/lib/booking-notifications.server";
 
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
 
@@ -21,6 +28,16 @@ const AvailabilityInput = z.object({
 type SupabaseAdmin = Awaited<
   typeof import("@/integrations/supabase/client.server")
 >["supabaseAdmin"];
+
+/** Mesma leitura/fallback de fuso já usada em getAvailableSlots (item A1 da FASE H-BIS) — reaproveitada aqui só pra formatar o horário nos avisos (FASE J), nunca pra calcular disponibilidade. */
+async function getCompanyTimeZone(supabaseAdmin: SupabaseAdmin, ownerId: string): Promise<string> {
+  const { data: company } = await supabaseAdmin
+    .from("company_profiles")
+    .select("timezone")
+    .eq("owner_id", ownerId)
+    .maybeSingle();
+  return isValidTimeZone(company?.timezone) ? company.timezone : DEFAULT_TIMEZONE;
+}
 
 async function computeFreeSlotsForProfessional(
   supabaseAdmin: SupabaseAdmin,
@@ -177,7 +194,7 @@ export const createClientAppointment = createServerFn({ method: "POST" })
 
     const { data: clientRow, error: clientErr } = await supabaseAdmin
       .from("clients")
-      .select("id")
+      .select("id, full_name")
       .eq("id", data.client_id)
       .eq("owner_id", data.owner_id)
       .eq("user_id", context.userId)
@@ -223,6 +240,22 @@ export const createClientAppointment = createServerFn({ method: "POST" })
       throw new Error(error.message);
     }
 
+    // Item 1.1 (FASE J): aviso pra profissional/equipe — o agendamento já
+    // foi gravado acima; uma falha aqui nunca desfaz nem bloqueia (item 1.6).
+    const timeZone = await getCompanyTimeZone(supabaseAdmin, data.owner_id);
+    await createBookingNotification(supabaseAdmin, {
+      ownerId: data.owner_id,
+      appointmentId: appointment.id,
+      professionalId: data.professional_id,
+      notif: buildNewBookingNotification({
+        appointmentId: appointment.id,
+        clientFullName: clientRow.full_name,
+        serviceName: service.name,
+        startsAt,
+        timeZone,
+      }),
+    });
+
     return { appointment };
   });
 
@@ -240,7 +273,7 @@ export const rescheduleClientAppointment = createServerFn({ method: "POST" })
 
     const { data: appt, error: apptErr } = await supabaseAdmin
       .from("appointments")
-      .select("id, client_id, service_id, status")
+      .select("id, client_id, service_id, service_name, professional_id, starts_at, status")
       .eq("id", data.appointment_id)
       .eq("owner_id", data.owner_id)
       .maybeSingle();
@@ -289,6 +322,22 @@ export const rescheduleClientAppointment = createServerFn({ method: "POST" })
       throw new Error(error.message);
     }
 
+    // Item 1.3 (FASE J): aviso de remarcação — a mudança já foi gravada
+    // acima; uma falha aqui nunca desfaz nem bloqueia (item 1.6).
+    const timeZoneResched = await getCompanyTimeZone(supabaseAdmin, data.owner_id);
+    await createBookingNotification(supabaseAdmin, {
+      ownerId: data.owner_id,
+      appointmentId: data.appointment_id,
+      professionalId: appt.professional_id,
+      notif: buildClientRescheduledNotification({
+        appointmentId: data.appointment_id,
+        serviceName: appt.service_name,
+        oldStartsAt: new Date(appt.starts_at),
+        newStartsAt: startsAt,
+        timeZone: timeZoneResched,
+      }),
+    });
+
     return { ok: true };
   });
 
@@ -302,7 +351,7 @@ export const cancelClientAppointment = createServerFn({ method: "POST" })
 
     const { data: appt, error: apptErr } = await supabaseAdmin
       .from("appointments")
-      .select("id, client_id, status")
+      .select("id, client_id, service_name, professional_id, starts_at, status")
       .eq("id", data.appointment_id)
       .eq("owner_id", data.owner_id)
       .maybeSingle();
@@ -319,11 +368,33 @@ export const cancelClientAppointment = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!clientRow) throw new Error("Este agendamento não pertence a esta conta.");
 
+    // client_confirmation_status='declined' junto com status='cancelled' é
+    // exatamente a mesma combinação que apply_whatsapp_central_reply já
+    // grava pro cancelamento via WhatsApp (confirmado lendo a função no
+    // banco) — reaproveita o mesmo selo vermelho "Cancelado pela cliente"
+    // que a Agenda já sabe desenhar (agenda-card-style.ts), sem precisar de
+    // coluna nova nem migração (item 0.4/1.2 e 1.4 da FASE J).
     const { error } = await supabaseAdmin
       .from("appointments")
-      .update({ status: "cancelled" })
+      .update({ status: "cancelled", client_confirmation_status: "declined" })
       .eq("id", data.appointment_id);
     if (error) throw new Error(error.message);
+
+    // Item 1.2 (FASE J): aviso de cancelamento — o cancelamento já foi
+    // gravado acima; uma falha aqui nunca desfaz nem bloqueia (item 1.6).
+    const timeZoneCancel = await getCompanyTimeZone(supabaseAdmin, data.owner_id);
+    await createBookingNotification(supabaseAdmin, {
+      ownerId: data.owner_id,
+      appointmentId: data.appointment_id,
+      professionalId: appt.professional_id,
+      notif: buildClientCancelledNotification({
+        appointmentId: data.appointment_id,
+        serviceName: appt.service_name,
+        startsAt: new Date(appt.starts_at),
+        timeZone: timeZoneCancel,
+        isLate: isLateCancel(new Date(appt.starts_at), new Date()),
+      }),
+    });
 
     return { ok: true };
   });

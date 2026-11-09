@@ -19,6 +19,10 @@ export function useUnreadNotificationsCount() {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: UNREAD_NOTIFICATIONS_QUERY_KEY,
     queryFn: () => fetchUnreadCount(),
+    // Item 1.5 da FASE J: mesmo intervalo curto já usado em
+    // whatsapp.index.tsx/whatsapp.$id.tsx — o sino reflete avisos novos
+    // (ex.: agendamento pelo Portal) sem precisar recarregar a tela.
+    refetchInterval: 20_000,
   });
 
   if (isError) {
