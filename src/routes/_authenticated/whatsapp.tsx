@@ -19,15 +19,14 @@ export const Route = createFileRoute("/_authenticated/whatsapp")({
 function WhatsAppLayout() {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const isConfig = pathname.startsWith("/whatsapp/config");
-  const isConversation = /^\/whatsapp\/[^/]+$/.test(pathname) && !isConfig;
-  const isInbox = pathname === "/whatsapp" || isConversation;
+  const isHistory = !isConfig;
 
   return (
     <AppShell title="WhatsApp" className="pb-24 md:pb-12">
       <div className="border-b border-border/50 px-4 md:px-8">
         <nav className="flex gap-1 -mb-px overflow-x-auto no-scrollbar">
-          <Tab to="/whatsapp" active={isInbox}>
-            Conversas
+          <Tab to="/whatsapp" active={isHistory}>
+            Histórico
           </Tab>
           <Tab to="/whatsapp/config" active={isConfig}>
             Conexão &amp; IA
