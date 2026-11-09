@@ -174,3 +174,79 @@ trocar a etapa "Publish to TestFlight" de volta pra usar `--issuer-id`/`--key-id
 `--private-key` (grupo `aura_signing`, que já existe e nunca foi alterado) em vez de
 `--apple-id`/`--password` (`aura_publishing`) — não precisa recriar nada do zero, só
 trocar as flags dessa etapa específica.
+
+## Login de cliente no Portal via OTP por WhatsApp nunca funcionou (migration `client_otp_codes` nunca aplicada, 08/08/2026 → 29/09/2026)
+
+Descoberto em 29/09/2026, investigando a troca do número de WhatsApp da AURA: o
+login de cliente no portal público (`requestClientOtp`/`verifyClientOtp`,
+`src/lib/otp/otp.functions.ts`) depende da tabela `client_otp_codes`
+(`supabase/migrations/20260808130000_client_otp_codes.sql`) — commitada e mergeada em
+08/08/2026, mas **nunca aplicada em produção** até esta data. Mesmo padrão já descrito
+no topo deste arquivo (arquivo de migration ≠ migration aplicada), só que desta vez
+descoberto não por erro reportado pela dona, mas por auditoria: `audit_log` tinha
+**zero linhas** com `resource = 'client_otp'` desde sempre — nem um único sucesso, nem
+uma falha logada — apesar do fluxo estar de fato ligado em telas reais
+(`booking-flow.tsx`, `client-auth-steps.tsx`, `client-account-panel.tsx`).
+
+**Contexto importante que não é sobre o bug em si**: login por telefone/OTP é a
+**única** porta de entrada do cliente no portal — não existe e-mail/senha nem OAuth
+alternativo — e é uma etapa **obrigatória** do funil de agendamento
+(`booking-flow.tsx` força `auth.start()` ao chegar no step de autenticação). Ou seja,
+enquanto essa migration não estava aplicada, **nenhum cliente conseguiu completar um
+agendamento pelo portal público**, silenciosamente, desde 08/08/2026. Quando o envio
+falha (ex.: WhatsApp fora do ar), a tela já mostra um toast genérico
+("Não conseguimos enviar o código agora...") sem vazar erro técnico — mas como não há
+alternativa de login, uma falha aqui bloqueia o agendamento inteiro, não é uma opção
+que dá pra "esconder" sem desligar o booking por completo.
+
+Aplicada e verificada em 29/09/2026 (tabela, colunas, RLS, grants, índice e
+`supabase_migrations.schema_migrations` todos conferidos via `information_schema`/
+`pg_catalog` reais). `types.ts` já tinha o bloco `client_otp_codes` correto por
+coincidência (uma geração anterior já tinha "adivinhado" certo, mesmo com a tabela
+não existindo ainda) — não precisou de patch desta vez.
+
+**Conclusão prática — o portal de agendamento continua bloqueado**: aplicar esta
+migration resolve o erro de banco (`relation "client_otp_codes" does not exist`), mas
+não resolve o envio em si — `requestClientOtp` ainda depende de
+`send-otp-360dialog.server.ts`, o canal que está sendo abandonado (ver decisão de
+trocar pra um número novo direto na Meta, documentada na investigação em andamento
+sobre o número de WhatsApp da AURA). Ou seja: **nenhum cliente consegue completar um
+agendamento pelo portal público até o número novo estar ativo e o código de envio ser
+trocado pra Meta nativa** — a migration tira um bug, mas o bloqueio de fundo
+(depender de um canal 360dialog cujo plano/saldo nunca foi confirmado como ativo)
+continua até aquela outra frente ser concluída.
+
+**Achado lateral da mesma auditoria**: comparando todos os 37 arquivos em
+`supabase/migrations/` contra `supabase_migrations.schema_migrations`, 9 migrations
+não estavam registradas no livro de controle (`20260730130000_agenda_real`,
+`20260811090000_whatsapp_evolution_mvp`, `20260816120000_whatsapp_expected_phone`,
+`20260817160000_whatsapp_appointment_created_notification`,
+`20260817220000_whatsapp_meta_cloud_api_provider`, `20260825120000_access_levels`,
+`20260825140000_staff_access`, `20260901120000_agenda_own_scope`,
+`20260906120000_commission_snapshot`) — mas, diferente do `client_otp_codes`, **todas
+as 9 foram confirmadas como realmente aplicadas** (tabelas/funções/colunas/constraints
+verificadas ao vivo uma a uma, incluindo contagem de políticas/triggers/índices nas
+três migrations com mais objetos — `whatsapp_evolution_mvp`, `access_levels` e
+`staff_access` — todas batendo exatamente com o esperado) — era só uma lacuna de
+registro, não um bug funcional.
+
+**Atualização de 05/10/2026**: as 9 migrations foram registradas em
+`supabase_migrations.schema_migrations` via `INSERT ... ON CONFLICT (version) DO
+NOTHING` (idempotente, sem nenhum DDL), com `created_by` citando a evidência
+específica de aplicação de cada uma. Ponto de partida reconfirmado em tempo real
+antes do INSERT (0 linhas para essas 9 versões) e resultado pós-INSERT confirmado
+com as 9 linhas presentes. Nenhuma migration foi reaplicada — só o registro no
+livro de controle, que estava faltando.
+
+Achado inverso também presente: `20260808030000_company_assets_select_policy.sql`
+estava registrado como aplicado, mas o arquivo não existia no repositório. Recriado
+em PR separado (#78) a partir da definição real da policy em `pg_policies`
+(`roles`/`qual` confirmados batendo exatamente), com `DROP POLICY IF EXISTS` antes
+do `CREATE POLICY` para manter o padrão idempotente do projeto — também sem
+necessidade de reaplicar nada, já estava ativo em produção.
+
+Nenhuma dessas 9 tem relação com `finance_goals`/`finance_settings`/`stock_movements`
+(o bug de CFO/DRE incompleto pra staff, documentado em investigação anterior) — só 5
+migrations tocam essas 3 tabelas, e todas as 5 já estavam registradas e aplicadas
+desde sempre; aquele bug é uma lacuna do desenho original das políticas RLS dessas
+tabelas, não uma migration pendente.
