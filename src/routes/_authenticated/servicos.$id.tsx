@@ -11,23 +11,65 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import {
-  ChevronLeft, Sparkles, MoreHorizontal, Clock, Package, DollarSign,
-  Megaphone, Image as ImageIcon, Wand2, FileText, Camera, ShoppingBag,
-  TrendingUp, Users, Repeat, ArrowRight, MessageCircle, Bell, Star,
-  Pencil, Trash2,
+  ChevronLeft,
+  Sparkles,
+  MoreHorizontal,
+  Clock,
+  Package,
+  DollarSign,
+  Megaphone,
+  Image as ImageIcon,
+  Wand2,
+  FileText,
+  Camera,
+  ShoppingBag,
+  TrendingUp,
+  Users,
+  Repeat,
+  ArrowRight,
+  MessageCircle,
+  Bell,
+  Star,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import {
-  getService, upsertService, deleteService,
-  listMaterials, addMaterial, removeMaterial, listProducts,
-  serviceCost, marginPct, formatBRL, materialCost, materialDisplayUnit, possibleAppointments,
-  type Service, type Material,
+  getService,
+  upsertService,
+  deleteService,
+  listMaterials,
+  addMaterial,
+  removeMaterial,
+  listProducts,
+  serviceCost,
+  marginPct,
+  formatBRL,
+  materialCost,
+  materialDisplayUnit,
+  possibleAppointments,
+  type Service,
+  type Material,
 } from "@/lib/catalog";
+import { listPortalCategories } from "@/lib/portal/portal-categories";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/_authenticated/servicos/$id")({
@@ -35,10 +77,7 @@ export const Route = createFileRoute("/_authenticated/servicos/$id")({
     tab: typeof search.tab === "string" ? search.tab : undefined,
   }),
   head: () => ({
-    meta: [
-      { title: "Protocolo — AURA" },
-      { name: "robots", content: "noindex" },
-    ],
+    meta: [{ title: "Protocolo — AURA" }, { name: "robots", content: "noindex" }],
   }),
   component: ServiceDetail,
 });
@@ -53,13 +92,30 @@ function subtitleOf(s: Service): string {
   return d.includes("·") ? d.split("·").slice(1).join("·").trim() : "";
 }
 function fmtDuration(min: number) {
-  if (min >= 60) return `${Math.floor(min / 60)}h${min % 60 ? String(min % 60).padStart(2, "0") : ""}`;
+  if (min >= 60)
+    return `${Math.floor(min / 60)}h${min % 60 ? String(min % 60).padStart(2, "0") : ""}`;
   return `${min}min`;
 }
 
-const SERVICE_TABS = ["resumo", "info", "protocolo", "estoque", "financeiro", "marketing", "fotos", "ia"] as const;
+const SERVICE_TABS = [
+  "resumo",
+  "info",
+  "protocolo",
+  "estoque",
+  "financeiro",
+  "marketing",
+  "fotos",
+  "ia",
+] as const;
 
-type ApptRow = { id: string; price: number; starts_at: string; ends_at: string; status: string; client_id: string };
+type ApptRow = {
+  id: string;
+  price: number;
+  starts_at: string;
+  ends_at: string;
+  status: string;
+  client_id: string;
+};
 
 async function fetchServiceAppointments(serviceId: string): Promise<ApptRow[]> {
   const { data, error } = await supabase
@@ -77,9 +133,21 @@ function ServiceDetail() {
   const navigate = useNavigate();
   const qc = useQueryClient();
 
-  const { data: service, isLoading, isError, error, refetch } = useQuery({ queryKey: ["service", id], queryFn: () => getService(id) });
-  const { data: materials = [] } = useQuery({ queryKey: ["materials", id], queryFn: () => listMaterials(id) });
-  const { data: appts = [] } = useQuery({ queryKey: ["service-appts", id], queryFn: () => fetchServiceAppointments(id) });
+  const {
+    data: service,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({ queryKey: ["service", id], queryFn: () => getService(id) });
+  const { data: materials = [] } = useQuery({
+    queryKey: ["materials", id],
+    queryFn: () => listMaterials(id),
+  });
+  const { data: appts = [] } = useQuery({
+    queryKey: ["service-appts", id],
+    queryFn: () => fetchServiceAppointments(id),
+  });
 
   const toggleActive = useMutation({
     mutationFn: async (active: boolean) => {
@@ -102,9 +170,15 @@ function ServiceDetail() {
     return (
       <AppShell title="Serviço" className="px-4 md:px-8 py-10 max-w-4xl mx-auto">
         <div className="max-w-xl mx-auto space-y-4 text-center">
-          <div className="text-sm font-medium text-destructive">Não foi possível carregar o serviço</div>
-          <div className="text-sm text-muted-foreground">{error?.message || "Erro desconhecido"}</div>
-          <Button variant="outline" onClick={() => refetch()}>Tentar novamente</Button>
+          <div className="text-sm font-medium text-destructive">
+            Não foi possível carregar o serviço
+          </div>
+          <div className="text-sm text-muted-foreground">
+            {error?.message || "Erro desconhecido"}
+          </div>
+          <Button variant="outline" onClick={() => refetch()}>
+            Tentar novamente
+          </Button>
         </div>
       </AppShell>
     );
@@ -146,7 +220,9 @@ function ServiceDetail() {
       right={
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button size="icon" variant="ghost" className="rounded-full"><MoreHorizontal className="w-4 h-4" /></Button>
+            <Button size="icon" variant="ghost" className="rounded-full">
+              <MoreHorizontal className="w-4 h-4" />
+            </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -168,18 +244,31 @@ function ServiceDetail() {
           <Sparkles className="w-6 h-6 text-muted-foreground" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{categoryOf(service)}</div>
-          <h1 className="text-2xl md:text-3xl font-display font-medium tracking-tight truncate">{service.name}</h1>
-          {subtitleOf(service) && <div className="text-sm text-muted-foreground truncate">{subtitleOf(service)}</div>}
+          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            {categoryOf(service)}
+          </div>
+          <h1 className="text-2xl md:text-3xl font-display font-medium tracking-tight truncate">
+            {service.name}
+          </h1>
+          {subtitleOf(service) && (
+            <div className="text-sm text-muted-foreground truncate">{subtitleOf(service)}</div>
+          )}
         </div>
       </div>
 
       {/* Ativo toggle */}
       <div className="flex items-center justify-between rounded-2xl bg-card border border-border/50 px-4 py-3 mb-6">
         <div className="flex items-center gap-3">
-          <span className={cn("w-2 h-2 rounded-full", service.active ? "bg-emerald-500" : "bg-muted-foreground/40")} />
+          <span
+            className={cn(
+              "w-2 h-2 rounded-full",
+              service.active ? "bg-emerald-500" : "bg-muted-foreground/40",
+            )}
+          />
           <div>
-            <div className="text-sm font-medium">Serviço {service.active ? "ativo" : "pausado"}</div>
+            <div className="text-sm font-medium">
+              Serviço {service.active ? "ativo" : "pausado"}
+            </div>
             <div className="text-[11px] text-muted-foreground">
               {service.active ? "Disponível para agendamento online" : "Oculto para clientes"}
             </div>
@@ -189,7 +278,12 @@ function ServiceDetail() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue={tab && SERVICE_TABS.includes(tab as typeof SERVICE_TABS[number]) ? tab : "resumo"} className="w-full">
+      <Tabs
+        defaultValue={
+          tab && SERVICE_TABS.includes(tab as (typeof SERVICE_TABS)[number]) ? tab : "resumo"
+        }
+        className="w-full"
+      >
         <TabsList className="bg-transparent p-0 h-auto gap-1 mb-6 overflow-x-auto flex-nowrap justify-start w-full no-scrollbar">
           {[
             { v: "resumo", l: "Resumo" },
@@ -214,13 +308,29 @@ function ServiceDetail() {
         {/* RESUMO */}
         <TabsContent value="resumo" className="space-y-4 mt-0">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            <Metric label="Atendimentos" value={String(completed.length)} hint={`${uniqueClients} clientes únicas`} />
+            <Metric
+              label="Atendimentos"
+              value={String(completed.length)}
+              hint={`${uniqueClients} clientes únicas`}
+            />
             <Metric label="Faturamento" value={formatBRL(revenue)} hint="acumulado" />
-            <Metric label="Lucro estimado" value={formatBRL(profitTotal)} hint={`margem ${margin.toFixed(0)}%`} />
+            <Metric
+              label="Lucro estimado"
+              value={formatBRL(profitTotal)}
+              hint={`margem ${margin.toFixed(0)}%`}
+            />
             <Metric label="Ticket médio" value={formatBRL(ticket)} hint="por atendimento" />
-            <Metric label="Tempo médio" value={fmtDuration(service.duration_min)} hint="conforme protocolo" />
+            <Metric
+              label="Tempo médio"
+              value={fmtDuration(service.duration_min)}
+              hint="conforme protocolo"
+            />
             <Metric label="Retorno médio" value={`${returnDays} dias`} hint="frequência ideal" />
-            <Metric label="Taxa de recompra" value={`${Math.round(rebook)}%`} hint={`${returning} clientes recorrentes`} />
+            <Metric
+              label="Taxa de recompra"
+              value={`${Math.round(rebook)}%`}
+              hint={`${returning} clientes recorrentes`}
+            />
             <Metric label="Avaliação" value="—" hint="em breve" />
             <Metric label="Clientes ativas" value={String(uniqueClients)} hint="últimos 90 dias" />
           </div>
@@ -270,8 +380,12 @@ function ServiceDetail() {
         {/* IA */}
         <TabsContent value="ia" className="mt-0">
           <AiTab
-            service={service} ticket={ticket} margin={margin} rebook={rebook}
-            appointments={completed.length} returnDays={returnDays}
+            service={service}
+            ticket={ticket}
+            margin={margin}
+            rebook={rebook}
+            appointments={completed.length}
+            returnDays={returnDays}
           />
         </TabsContent>
       </Tabs>
@@ -283,7 +397,9 @@ function ServiceDetail() {
 function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-2xl bg-card border border-border/50 p-4">
-      <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">{label}</div>
+      <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">
+        {label}
+      </div>
       <div className="text-xl font-display font-medium tracking-tight tabular-nums">{value}</div>
       {hint && <div className="text-[11px] text-muted-foreground mt-1">{hint}</div>}
     </div>
@@ -291,7 +407,11 @@ function Metric({ label, value, hint }: { label: string; value: string; hint?: s
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-3">{children}</div>;
+  return (
+    <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-3">
+      {children}
+    </div>
+  );
 }
 
 function Row({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
@@ -303,7 +423,15 @@ function Row({ label, value, mono }: { label: string; value: React.ReactNode; mo
   );
 }
 
-function AuraInsight({ title, lines, actions }: { title: string; lines: string[]; actions?: { label: string; onClick?: () => void }[] }) {
+function AuraInsight({
+  title,
+  lines,
+  actions,
+}: {
+  title: string;
+  lines: string[];
+  actions?: { label: string; onClick?: () => void }[];
+}) {
   return (
     <div className="rounded-3xl p-5 md:p-6 bg-neutral-950 text-neutral-100 dark:bg-neutral-900 border border-neutral-900 relative overflow-hidden">
       <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-white/5 blur-3xl" />
@@ -316,15 +444,19 @@ function AuraInsight({ title, lines, actions }: { title: string; lines: string[]
       <ul className="space-y-2">
         {lines.map((l, i) => (
           <li key={i} className="text-sm leading-relaxed opacity-90 flex gap-2">
-            <span className="opacity-50">·</span><span>{l}</span>
+            <span className="opacity-50">·</span>
+            <span>{l}</span>
           </li>
         ))}
       </ul>
       {actions && actions.length > 0 && (
         <div className="flex flex-wrap gap-2 mt-4">
           {actions.map((a) => (
-            <button key={a.label} onClick={a.onClick}
-              className="text-xs px-3 h-8 rounded-full bg-white/10 hover:bg-white/15 transition inline-flex items-center gap-1.5">
+            <button
+              key={a.label}
+              onClick={a.onClick}
+              className="text-xs px-3 h-8 rounded-full bg-white/10 hover:bg-white/15 transition inline-flex items-center gap-1.5"
+            >
               {a.label} <ArrowRight className="w-3 h-3" />
             </button>
           ))}
@@ -337,12 +469,17 @@ function AuraInsight({ title, lines, actions }: { title: string; lines: string[]
 // -------- Info tab (editable basics) --------
 function InfoTab({ service }: { service: Service }) {
   const qc = useQueryClient();
+  const { data: portalCategories = [] } = useQuery({
+    queryKey: ["portal-categories"],
+    queryFn: listPortalCategories,
+  });
   const [form, setForm] = useState({
     name: service.name,
     category: categoryOf(service),
     subtitle: subtitleOf(service),
     price: Number(service.price),
     duration_min: service.duration_min,
+    category_id: service.category_id ?? null,
   });
   const save = useMutation({
     mutationFn: async () => {
@@ -354,6 +491,7 @@ function InfoTab({ service }: { service: Service }) {
         price: Number(form.price) || 0,
         duration_min: Number(form.duration_min) || 60,
         active: service.active,
+        category_id: form.category_id,
       });
     },
     onSuccess: () => {
@@ -366,27 +504,86 @@ function InfoTab({ service }: { service: Service }) {
     <div className="space-y-5">
       <div className="rounded-2xl bg-card border border-border/50 p-5 space-y-4">
         <SectionTitle>Identidade</SectionTitle>
-        <div><Label>Nome</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-        <div className="grid grid-cols-2 gap-3">
-          <div><Label>Categoria</Label><Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} /></div>
-          <div><Label>Subcategoria</Label><Input value={form.subtitle} onChange={(e) => setForm({ ...form, subtitle: e.target.value })} /></div>
+        <div>
+          <Label>Nome</Label>
+          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <div><Label>Preço padrão (R$)</Label>
-            <DecimalInput value={form.price} onChange={(v) => setForm({ ...form, price: v })} /></div>
-          <div><Label>Duração (min)</Label>
-            <Input type="number" value={form.duration_min || ""} onChange={(e) => setForm({ ...form, duration_min: Number(e.target.value) })} /></div>
+          <div>
+            <Label>Categoria (interna)</Label>
+            <Input
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label>Subcategoria</Label>
+            <Input
+              value={form.subtitle}
+              onChange={(e) => setForm({ ...form, subtitle: e.target.value })}
+            />
+          </div>
         </div>
-        <Button onClick={() => save.mutate()} disabled={save.isPending}>Salvar alterações</Button>
+        <div>
+          <Label>Categoria do Portal Público</Label>
+          <Select
+            value={form.category_id ?? "none"}
+            onValueChange={(v) => setForm({ ...form, category_id: v === "none" ? null : v })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Sem categoria" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Sem categoria</SelectItem>
+              {portalCategories.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Opcional — criadas em Mais → Personalizar meu portal → Imagens.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label>Preço padrão (R$)</Label>
+            <DecimalInput value={form.price} onChange={(v) => setForm({ ...form, price: v })} />
+          </div>
+          <div>
+            <Label>Duração (min)</Label>
+            <Input
+              type="number"
+              value={form.duration_min || ""}
+              onChange={(e) => setForm({ ...form, duration_min: Number(e.target.value) })}
+            />
+          </div>
+        </div>
+        <Button onClick={() => save.mutate()} disabled={save.isPending}>
+          Salvar alterações
+        </Button>
       </div>
 
       <div className="rounded-2xl bg-card border border-border/50 p-5">
         <SectionTitle>Preços avançados</SectionTitle>
-        <Row label="Preço promocional" value={<span className="text-muted-foreground">definir</span>} />
+        <Row
+          label="Preço promocional"
+          value={<span className="text-muted-foreground">definir</span>}
+        />
         <Row label="Preço VIP" value={<span className="text-muted-foreground">definir</span>} />
-        <Row label="Preço manutenção" value={<span className="text-muted-foreground">definir</span>} />
-        <Row label="Preço em pacote" value={<span className="text-muted-foreground">definir</span>} />
-        <p className="text-[11px] text-muted-foreground mt-3">Variações de preço serão aplicadas automaticamente conforme perfil da cliente e regra de campanha.</p>
+        <Row
+          label="Preço manutenção"
+          value={<span className="text-muted-foreground">definir</span>}
+        />
+        <Row
+          label="Preço em pacote"
+          value={<span className="text-muted-foreground">definir</span>}
+        />
+        <p className="text-[11px] text-muted-foreground mt-3">
+          Variações de preço serão aplicadas automaticamente conforme perfil da cliente e regra de
+          campanha.
+        </p>
       </div>
     </div>
   );
@@ -400,8 +597,18 @@ function ProtocolTab({ service, materials }: { service: Service; materials: Mate
   const dry = Math.max(3, Math.round(total * 0.05));
   const application = Math.max(10, total - prep - clean - dry);
   const steps = [
-    { n: 1, title: "Higienização e mapping", min: Math.min(15, prep + 5), note: "Limpeza dos fios naturais + desenho do design" },
-    { n: 2, title: "Aplicação principal", min: application, note: "Execução conforme protocolo técnico" },
+    {
+      n: 1,
+      title: "Higienização e mapping",
+      min: Math.min(15, prep + 5),
+      note: "Limpeza dos fios naturais + desenho do design",
+    },
+    {
+      n: 2,
+      title: "Aplicação principal",
+      min: application,
+      note: "Execução conforme protocolo técnico",
+    },
     { n: 3, title: "Finalização", min: dry, note: "Ajuste final + orientações pós-procedimento" },
   ];
   return (
@@ -412,7 +619,11 @@ function ProtocolTab({ service, materials }: { service: Service; materials: Mate
         <Row label="Aplicação" value={fmtDuration(application)} mono />
         <Row label="Secagem" value={`${dry} min`} mono />
         <Row label="Limpeza da maca" value={`${clean} min`} mono />
-        <Row label="Tempo total" value={<span className="font-medium">{fmtDuration(total)}</span>} mono />
+        <Row
+          label="Tempo total"
+          value={<span className="font-medium">{fmtDuration(total)}</span>}
+          mono
+        />
       </div>
 
       <div>
@@ -420,11 +631,15 @@ function ProtocolTab({ service, materials }: { service: Service; materials: Mate
         <ol className="space-y-3">
           {steps.map((s) => (
             <li key={s.n} className="rounded-2xl bg-card border border-border/50 p-4 flex gap-4">
-              <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-sm font-medium shrink-0">{s.n}</div>
+              <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-sm font-medium shrink-0">
+                {s.n}
+              </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline justify-between gap-3">
                   <div className="text-sm font-medium">{s.title}</div>
-                  <div className="text-xs text-muted-foreground tabular-nums shrink-0">{s.min} min</div>
+                  <div className="text-xs text-muted-foreground tabular-nums shrink-0">
+                    {s.min} min
+                  </div>
                 </div>
                 <div className="text-xs text-muted-foreground mt-0.5">{s.note}</div>
               </div>
@@ -435,24 +650,43 @@ function ProtocolTab({ service, materials }: { service: Service; materials: Mate
 
       <div className="rounded-2xl bg-card border border-border/50 p-5">
         <SectionTitle>Orientações</SectionTitle>
-        <Row label="Pré-procedimento" value={<span className="text-muted-foreground">Chegar sem maquiagem na região</span>} />
-        <Row label="Pós-procedimento" value={<span className="text-muted-foreground">Evitar água e vapor por 24h</span>} />
-        <Row label="Contraindicações" value={<span className="text-muted-foreground">Gestação, alergia a adesivo</span>} />
+        <Row
+          label="Pré-procedimento"
+          value={<span className="text-muted-foreground">Chegar sem maquiagem na região</span>}
+        />
+        <Row
+          label="Pós-procedimento"
+          value={<span className="text-muted-foreground">Evitar água e vapor por 24h</span>}
+        />
+        <Row
+          label="Contraindicações"
+          value={<span className="text-muted-foreground">Gestação, alergia a adesivo</span>}
+        />
         <Row label="Manutenção" value={<span className="text-muted-foreground">21 dias</span>} />
-        <p className="text-[11px] text-muted-foreground mt-3">Enviado automaticamente à cliente na confirmação e no pós-atendimento.</p>
+        <p className="text-[11px] text-muted-foreground mt-3">
+          Enviado automaticamente à cliente na confirmação e no pós-atendimento.
+        </p>
       </div>
 
       <div className="rounded-2xl bg-card border border-border/50 p-5">
         <SectionTitle>Ficha técnica</SectionTitle>
         {materials.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhum material vinculado. Configure na aba <span className="text-foreground">Estoque</span>.</p>
+          <p className="text-sm text-muted-foreground">
+            Nenhum material vinculado. Configure na aba{" "}
+            <span className="text-foreground">Estoque</span>.
+          </p>
         ) : (
           <div>
             {materials.map((m) => (
               <Row
                 key={m.id}
                 label={m.product?.name ?? "—"}
-                value={<span className="tabular-nums">{Number(m.quantity)} {materialDisplayUnit(m.product)} · {formatBRL(materialCost(m))}</span>}
+                value={
+                  <span className="tabular-nums">
+                    {Number(m.quantity)} {materialDisplayUnit(m.product)} ·{" "}
+                    {formatBRL(materialCost(m))}
+                  </span>
+                }
               />
             ))}
           </div>
@@ -473,7 +707,11 @@ function StockTab({ serviceId, materials }: { serviceId: string; materials: Mate
       if (!prodId || qty <= 0) throw new Error("Escolha produto e quantidade");
       await addMaterial(serviceId, prodId, qty);
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["materials", serviceId] }); setProdId(""); setQty(1); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["materials", serviceId] });
+      setProdId("");
+      setQty(1);
+    },
     onError: (e: Error) => toast.error(e.message),
   });
   const totalCost = serviceCost(materials);
@@ -492,15 +730,21 @@ function StockTab({ serviceId, materials }: { serviceId: string; materials: Mate
     <div className="space-y-5">
       <div className="rounded-3xl p-5 border border-emerald-500/20 bg-emerald-500/5">
         <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 mb-1">
-          <Package className="w-4 h-4" /><span className="text-[11px] uppercase tracking-[0.18em]">Consumo automático</span>
+          <Package className="w-4 h-4" />
+          <span className="text-[11px] uppercase tracking-[0.18em]">Consumo automático</span>
         </div>
-        <p className="text-sm text-foreground">Ao concluir cada atendimento deste serviço, o AURA desconta os materiais abaixo do estoque — sem intervenção manual.</p>
+        <p className="text-sm text-foreground">
+          Ao concluir cada atendimento deste serviço, o AURA desconta os materiais abaixo do estoque
+          — sem intervenção manual.
+        </p>
       </div>
 
       <div className="rounded-2xl bg-card border border-border/50 p-5">
         <div className="flex items-center justify-between mb-3">
           <SectionTitle>Materiais</SectionTitle>
-          <span className="text-xs text-muted-foreground tabular-nums">custo: {formatBRL(totalCost)}</span>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            custo: {formatBRL(totalCost)}
+          </span>
         </div>
         {materials.length === 0 && (
           <p className="text-sm text-muted-foreground">Nenhum material adicionado.</p>
@@ -522,16 +766,29 @@ function StockTab({ serviceId, materials }: { serviceId: string; materials: Mate
 
         {products.length === 0 ? (
           <p className="text-xs text-muted-foreground pt-4">
-            <Link to="/estoque" className="underline">Cadastre produtos em Estoque</Link> para montar a ficha técnica.
+            <Link to="/estoque" className="underline">
+              Cadastre produtos em Estoque
+            </Link>{" "}
+            para montar a ficha técnica.
           </p>
         ) : (
           <div className="flex flex-col md:flex-row gap-2 pt-4 mt-2 border-t border-border/50">
             <Select value={prodId} onValueChange={setProdId}>
-              <SelectTrigger className="flex-1"><SelectValue placeholder="Adicionar produto" /></SelectTrigger>
-              <SelectContent>{products.map((p) => <SelectItem key={p.id} value={p.id}>{p.name} ({materialDisplayUnit(p)})</SelectItem>)}</SelectContent>
+              <SelectTrigger className="flex-1">
+                <SelectValue placeholder="Adicionar produto" />
+              </SelectTrigger>
+              <SelectContent>
+                {products.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name} ({materialDisplayUnit(p)})
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
             <DecimalInput className="md:w-24" value={qty} onChange={setQty} placeholder="Qtd" />
-            <Button onClick={() => add.mutate()} disabled={add.isPending}>Adicionar</Button>
+            <Button onClick={() => add.mutate()} disabled={add.isPending}>
+              Adicionar
+            </Button>
           </div>
         )}
       </div>
@@ -539,8 +796,16 @@ function StockTab({ serviceId, materials }: { serviceId: string; materials: Mate
   );
 }
 
-function MaterialRow({ material, saving, onSave, onRemove }: {
-  material: Material; saving: boolean; onSave: (quantity: number) => void; onRemove: () => void;
+function MaterialRow({
+  material,
+  saving,
+  onSave,
+  onRemove,
+}: {
+  material: Material;
+  saving: boolean;
+  onSave: (quantity: number) => void;
+  onRemove: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [qty, setQty] = useState<number>(Number(material.quantity));
@@ -563,12 +828,17 @@ function MaterialRow({ material, saving, onSave, onRemove }: {
         </div>
         <button
           type="button"
-          onClick={() => { setQty(Number(material.quantity)); setEditing(true); }}
+          onClick={() => {
+            setQty(Number(material.quantity));
+            setEditing(true);
+          }}
           className="text-xs text-muted-foreground tabular-nums shrink-0 hover:text-foreground hover:underline transition"
         >
           {Number(material.quantity)} {displayUnit} · {formatBRL(materialCost(material))}
         </button>
-        <Button size="icon" variant="ghost" onClick={onRemove}><Trash2 className="w-4 h-4" /></Button>
+        <Button size="icon" variant="ghost" onClick={onRemove}>
+          <Trash2 className="w-4 h-4" />
+        </Button>
       </div>
     );
   }
@@ -584,11 +854,16 @@ function MaterialRow({ material, saving, onSave, onRemove }: {
       <Button
         size="sm"
         disabled={saving}
-        onClick={() => { onSave(qty); setEditing(false); }}
+        onClick={() => {
+          onSave(qty);
+          setEditing(false);
+        }}
       >
         Salvar
       </Button>
-      <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancelar</Button>
+      <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+        Cancelar
+      </Button>
     </div>
   );
 }
@@ -613,17 +888,30 @@ function FinanceTab({ service, materials }: { service: Service; materials: Mater
         <Row label="Custo de material" value={formatBRL(matCost)} mono />
         <Row label="Comissão profissional" value={formatBRL(commission)} mono />
         <Row label="Custo operacional" value={formatBRL(opCost)} mono />
-        <Row label={<span className="text-foreground font-medium">Lucro líquido</span> as unknown as string} value={<span className="font-medium">{formatBRL(profit)}</span>} mono />
+        <Row
+          label={
+            (
+              <span className="text-foreground font-medium">Lucro líquido</span>
+            ) as unknown as string
+          }
+          value={<span className="font-medium">{formatBRL(profit)}</span>}
+          mono
+        />
       </div>
 
       <div className="rounded-2xl bg-card border border-border/50 p-5">
         <SectionTitle>Margem de rentabilidade</SectionTitle>
         <div className="flex items-baseline gap-2">
-          <div className="text-3xl font-display font-medium tabular-nums">{marginNet.toFixed(0)}%</div>
+          <div className="text-3xl font-display font-medium tabular-nums">
+            {marginNet.toFixed(0)}%
+          </div>
           <div className="text-xs text-muted-foreground">margem líquida</div>
         </div>
         <div className="h-2 rounded-full bg-secondary overflow-hidden mt-3">
-          <div className="h-full bg-foreground" style={{ width: `${Math.min(100, Math.max(0, marginNet))}%` }} />
+          <div
+            className="h-full bg-foreground"
+            style={{ width: `${Math.min(100, Math.max(0, marginNet))}%` }}
+          />
         </div>
         <div className="flex justify-between text-[11px] text-muted-foreground mt-2">
           <span>Sobre material: {marginMat.toFixed(0)}%</span>
@@ -635,7 +923,10 @@ function FinanceTab({ service, materials }: { service: Service; materials: Mater
         <SectionTitle>Comissão</SectionTitle>
         <Row label="Tipo" value="Percentual" />
         <Row label="Valor" value={`${commissionPct}%`} mono />
-        <Row label="Por profissional" value={<span className="text-muted-foreground">a definir</span>} />
+        <Row
+          label="Por profissional"
+          value={<span className="text-muted-foreground">a definir</span>}
+        />
       </div>
     </div>
   );
@@ -644,11 +935,36 @@ function FinanceTab({ service, materials }: { service: Service; materials: Mater
 // -------- Marketing tab --------
 function MarketingTab({ service, returnDays }: { service: Service; returnDays: number }) {
   const messages = [
-    { key: "confirm", icon: <MessageCircle className="w-3.5 h-3.5" />, title: "Confirmação", body: `Oi {cliente}! Confirmando seu ${service.name} em {data} às {hora}. Responda SIM para confirmar.` },
-    { key: "remind", icon: <Bell className="w-3.5 h-3.5" />, title: "Lembrete (24h antes)", body: `{cliente}, seu ${service.name} é amanhã às {hora}. Chegue 5 min antes ✨` },
-    { key: "post", icon: <Star className="w-3.5 h-3.5" />, title: "Pós-atendimento", body: `Foi ótimo te atender hoje! Cuide bem: {cuidados}. Qualquer coisa me chama.` },
-    { key: "maint", icon: <Repeat className="w-3.5 h-3.5" />, title: `Manutenção (${returnDays} dias)`, body: `{cliente}, já se passaram ${returnDays} dias — bora agendar sua manutenção de ${service.name}? 💗` },
-    { key: "camp", icon: <Megaphone className="w-3.5 h-3.5" />, title: "Campanha", body: `Semana promocional de ${service.name}: 15% off nas primeiras 10 vagas.` },
+    {
+      key: "confirm",
+      icon: <MessageCircle className="w-3.5 h-3.5" />,
+      title: "Confirmação",
+      body: `Oi {cliente}! Confirmando seu ${service.name} em {data} às {hora}. Responda SIM para confirmar.`,
+    },
+    {
+      key: "remind",
+      icon: <Bell className="w-3.5 h-3.5" />,
+      title: "Lembrete (24h antes)",
+      body: `{cliente}, seu ${service.name} é amanhã às {hora}. Chegue 5 min antes ✨`,
+    },
+    {
+      key: "post",
+      icon: <Star className="w-3.5 h-3.5" />,
+      title: "Pós-atendimento",
+      body: `Foi ótimo te atender hoje! Cuide bem: {cuidados}. Qualquer coisa me chama.`,
+    },
+    {
+      key: "maint",
+      icon: <Repeat className="w-3.5 h-3.5" />,
+      title: `Manutenção (${returnDays} dias)`,
+      body: `{cliente}, já se passaram ${returnDays} dias — bora agendar sua manutenção de ${service.name}? 💗`,
+    },
+    {
+      key: "camp",
+      icon: <Megaphone className="w-3.5 h-3.5" />,
+      title: "Campanha",
+      body: `Semana promocional de ${service.name}: 15% off nas primeiras 10 vagas.`,
+    },
   ];
   return (
     <div className="space-y-5">
@@ -657,7 +973,9 @@ function MarketingTab({ service, returnDays }: { service: Service; returnDays: n
         <Row label="Retorno ideal" value={`${returnDays} dias`} mono />
         <Row label="Retorno mínimo" value={`${Math.max(7, returnDays - 7)} dias`} mono />
         <Row label="Retorno máximo" value={`${returnDays + 14} dias`} mono />
-        <p className="text-[11px] text-muted-foreground mt-3">A AURA IA usa essa cadência para disparar campanhas automáticas de recuperação.</p>
+        <p className="text-[11px] text-muted-foreground mt-3">
+          A AURA IA usa essa cadência para disparar campanhas automáticas de recuperação.
+        </p>
       </div>
 
       <div>
@@ -666,7 +984,9 @@ function MarketingTab({ service, returnDays }: { service: Service; returnDays: n
           {messages.map((m) => (
             <div key={m.key} className="rounded-2xl bg-card border border-border/50 p-4">
               <div className="flex items-center gap-2 mb-1.5">
-                <div className="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-muted-foreground">{m.icon}</div>
+                <div className="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-muted-foreground">
+                  {m.icon}
+                </div>
                 <div className="text-sm font-medium">{m.title}</div>
                 <button className="ml-auto text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
                   <Pencil className="w-3 h-3" /> editar
@@ -688,7 +1008,10 @@ function PhotosTab() {
     <div className="space-y-5">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {slots.map((s) => (
-          <button key={s} className="aspect-square rounded-2xl bg-secondary/60 border border-dashed border-border/60 flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-foreground hover:border-border transition">
+          <button
+            key={s}
+            className="aspect-square rounded-2xl bg-secondary/60 border border-dashed border-border/60 flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-foreground hover:border-border transition"
+          >
             <Camera className="w-5 h-5" />
             <span className="text-xs">{s}</span>
           </button>
@@ -696,24 +1019,54 @@ function PhotosTab() {
       </div>
       <div className="rounded-2xl bg-card border border-border/50 p-4 flex items-center gap-3">
         <ImageIcon className="w-4 h-4 text-muted-foreground" />
-        <p className="text-xs text-muted-foreground flex-1">A AURA IA sugere automaticamente as melhores imagens para campanhas e o link público de agendamento.</p>
+        <p className="text-xs text-muted-foreground flex-1">
+          A AURA IA sugere automaticamente as melhores imagens para campanhas e o link público de
+          agendamento.
+        </p>
       </div>
     </div>
   );
 }
 
 // -------- AI tab: Inteligência Evolutiva --------
-function AiTab({ service, ticket, margin, rebook, appointments, returnDays }: {
-  service: Service; ticket: number; margin: number; rebook: number; appointments: number; returnDays: number;
+function AiTab({
+  service,
+  ticket,
+  margin,
+  rebook,
+  appointments,
+  returnDays,
+}: {
+  service: Service;
+  ticket: number;
+  margin: number;
+  rebook: number;
+  appointments: number;
+  returnDays: number;
 }) {
   const insights = useMemo(() => {
     const arr: string[] = [];
-    arr.push(`Tempo médio configurado: ${fmtDuration(service.duration_min)}. A IA ajustará automaticamente conforme o real dos próximos atendimentos.`);
-    arr.push(`Margem estimada de ${margin.toFixed(0)}% e ticket de ${formatBRL(ticket)} — ${margin >= 65 ? "excelente rentabilidade." : margin >= 45 ? "boa rentabilidade, há espaço para reajuste." : "margem apertada, revisar custos ou preço."}`);
-    arr.push(`Retorno médio previsto em ${returnDays} dias. ${rebook < 40 ? "Recompra baixa: bom candidato a programa de fidelidade." : "Boa recompra — considere pacote fechado."}`);
-    if (appointments === 0) arr.push("Sem histórico ainda — assim que você concluir 5 atendimentos, a IA começa a calibrar tempo real, desperdício de material e sazonalidade.");
-    else if (appointments < 10) arr.push(`Base ainda pequena (${appointments} atendimentos). Precisão dos insights aumenta a partir de 20 atendimentos.`);
-    else arr.push(`Base sólida de ${appointments} atendimentos — previsões de faturamento e sazonalidade já estão calibradas.`);
+    arr.push(
+      `Tempo médio configurado: ${fmtDuration(service.duration_min)}. A IA ajustará automaticamente conforme o real dos próximos atendimentos.`,
+    );
+    arr.push(
+      `Margem estimada de ${margin.toFixed(0)}% e ticket de ${formatBRL(ticket)} — ${margin >= 65 ? "excelente rentabilidade." : margin >= 45 ? "boa rentabilidade, há espaço para reajuste." : "margem apertada, revisar custos ou preço."}`,
+    );
+    arr.push(
+      `Retorno médio previsto em ${returnDays} dias. ${rebook < 40 ? "Recompra baixa: bom candidato a programa de fidelidade." : "Boa recompra — considere pacote fechado."}`,
+    );
+    if (appointments === 0)
+      arr.push(
+        "Sem histórico ainda — assim que você concluir 5 atendimentos, a IA começa a calibrar tempo real, desperdício de material e sazonalidade.",
+      );
+    else if (appointments < 10)
+      arr.push(
+        `Base ainda pequena (${appointments} atendimentos). Precisão dos insights aumenta a partir de 20 atendimentos.`,
+      );
+    else
+      arr.push(
+        `Base sólida de ${appointments} atendimentos — previsões de faturamento e sazonalidade já estão calibradas.`,
+      );
     return arr;
   }, [service.duration_min, margin, ticket, rebook, appointments, returnDays]);
 
@@ -741,12 +1094,29 @@ function AiTab({ service, ticket, margin, rebook, appointments, returnDays }: {
       <div className="rounded-2xl bg-card border border-border/50 p-5">
         <SectionTitle>O que a IA está aprendendo</SectionTitle>
         <ul className="space-y-2 text-sm text-muted-foreground">
-          <li className="flex gap-2"><Wand2 className="w-4 h-4 mt-0.5 shrink-0" /> Tempo real do procedimento vs. tempo configurado</li>
-          <li className="flex gap-2"><ShoppingBag className="w-4 h-4 mt-0.5 shrink-0" /> Consumo real de materiais vs. ficha técnica</li>
-          <li className="flex gap-2"><Users className="w-4 h-4 mt-0.5 shrink-0" /> Perfil das clientes que mais retornam</li>
-          <li className="flex gap-2"><TrendingUp className="w-4 h-4 mt-0.5 shrink-0" /> Melhor faixa de preço e período do mês</li>
-          <li className="flex gap-2"><DollarSign className="w-4 h-4 mt-0.5 shrink-0" /> Impacto de reajustes na taxa de ocupação</li>
-          <li className="flex gap-2"><FileText className="w-4 h-4 mt-0.5 shrink-0" /> Padrões de anamnese que aumentam risco de reação</li>
+          <li className="flex gap-2">
+            <Wand2 className="w-4 h-4 mt-0.5 shrink-0" /> Tempo real do procedimento vs. tempo
+            configurado
+          </li>
+          <li className="flex gap-2">
+            <ShoppingBag className="w-4 h-4 mt-0.5 shrink-0" /> Consumo real de materiais vs. ficha
+            técnica
+          </li>
+          <li className="flex gap-2">
+            <Users className="w-4 h-4 mt-0.5 shrink-0" /> Perfil das clientes que mais retornam
+          </li>
+          <li className="flex gap-2">
+            <TrendingUp className="w-4 h-4 mt-0.5 shrink-0" /> Melhor faixa de preço e período do
+            mês
+          </li>
+          <li className="flex gap-2">
+            <DollarSign className="w-4 h-4 mt-0.5 shrink-0" /> Impacto de reajustes na taxa de
+            ocupação
+          </li>
+          <li className="flex gap-2">
+            <FileText className="w-4 h-4 mt-0.5 shrink-0" /> Padrões de anamnese que aumentam risco
+            de reação
+          </li>
         </ul>
       </div>
     </div>

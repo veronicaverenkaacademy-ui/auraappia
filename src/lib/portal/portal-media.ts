@@ -38,6 +38,29 @@ const KIND_RE = PORTAL_MEDIA_KINDS.join("|");
 // Mesma regex de portal_media_path_valid (extensões jpg|jpeg|png|webp).
 const MEDIA_PATH_RE = new RegExp(`^${UUID_RE}/(${KIND_RE})/${UUID_RE}\\.(jpg|jpeg|png|webp)$`);
 
+/** Dimensão máxima (lado maior) recomendada por tipo de imagem, usada pela
+ * compressão no navegador (K1b) — só reduz, nunca aumenta uma imagem menor. */
+export function maxDimensionForKind(kind: PortalMediaKind): number {
+  switch (kind) {
+    case "logo":
+    case "logo-light":
+      return 512;
+    case "cover":
+    case "banner":
+      return 1600;
+    case "services":
+    case "professionals":
+    case "categories":
+      return 800;
+  }
+}
+
+/** Só as logos preservam PNG (transparência importa pra elas); todo o
+ * resto vira WEBP (se o navegador gerar de verdade) ou JPEG. */
+export function preferPngForKind(kind: PortalMediaKind): boolean {
+  return kind === "logo" || kind === "logo-light";
+}
+
 export function extensionForMimeType(mime: string): "jpg" | "png" | "webp" | null {
   switch (mime) {
     case "image/jpeg":

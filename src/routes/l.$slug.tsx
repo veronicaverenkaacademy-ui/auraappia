@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Instagram,
@@ -18,6 +18,8 @@ import { fetchPublicServices, fetchPublicProfessionals } from "@/lib/booking";
 import { initials } from "@/lib/clients";
 import { BookingFlow } from "@/components/portal/booking-flow";
 import { ClientAccountPanel } from "@/components/portal/client-account-panel";
+import { fetchPortalPublicConfig } from "@/lib/portal/portal-public";
+import { resolvePortalRenderData, type PortalRenderData } from "@/lib/portal/portal-render-data";
 
 export const Route = createFileRoute("/l/$slug")({
   ssr: false,
@@ -43,6 +45,13 @@ function CompanyLanding() {
   const { data: company, isLoading } = useQuery({
     queryKey: ["public-company", slug],
     queryFn: () => fetchCompanyProfileBySlug(slug),
+  });
+  // Lida fora da existência da empresa (não depende de `company` já ter
+  // chegado) — se a empresa nunca publicou nada, devolve null, e o portal
+  // renderiza exatamente como sempre (ver resolvePortalRenderData).
+  const { data: publicConfig } = useQuery({
+    queryKey: ["public-portal-config", slug],
+    queryFn: () => fetchPortalPublicConfig(slug),
   });
   const [bookingOpen, setBookingOpen] = useState(false);
 
@@ -76,31 +85,60 @@ function CompanyLanding() {
     );
   }
 
+  // GARANTIA: sem publicação, renderData.themeVars é null e nada abaixo
+  // recebe style/className extra — o <div> raiz e o <Hero> ficam
+  // byte-a-byte como antes desta fase (ver resolvePortalRenderData e seu
+  // teste, que prova isso sem depender de renderização real).
+  const renderData = resolvePortalRenderData(
+    { logo_url: company.logo_url, cover_image_url: company.cover_image_url },
+    publicConfig ?? null,
+  );
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div
+      className="min-h-screen bg-background text-foreground"
+      style={
+        renderData.themeVars
+          ? ({
+              ...renderData.themeVars,
+              fontFamily: renderData.fontFamily ?? undefined,
+            } as CSSProperties)
+          : undefined
+      }
+    >
       <div className="mx-auto w-full max-w-2xl px-6 pt-4 flex justify-end">
         <ClientAccountPanel ownerId={company.owner_id} />
       </div>
-      <Hero company={company} onBook={() => setBookingOpen(true)} />
+      <Hero company={company} renderData={renderData} onBook={() => setBookingOpen(true)} />
       <div className="mx-auto w-full max-w-2xl px-6">
         <AboutSection company={company} />
-        <ServicesSection ownerId={company.owner_id} />
-        <ProfessionalsSection ownerId={company.owner_id} />
-        <LocationSection company={company} />
+        {renderData.showServices && <ServicesSection ownerId={company.owner_id} />}
+        {renderData.showProfessionals && <ProfessionalsSection ownerId={company.owner_id} />}
+        {renderData.showLocation && <LocationSection company={company} />}
         <SocialSection company={company} />
       </div>
-      <Footer company={company} />
+      {renderData.showFooter && <Footer company={company} />}
       {bookingOpen && <BookingFlow company={company} onClose={() => setBookingOpen(false)} />}
     </div>
   );
 }
 
-function Hero({ company, onBook }: { company: CompanyProfile; onBook: () => void }) {
+function Hero({
+  company,
+  renderData,
+  onBook,
+}: {
+  company: CompanyProfile;
+  renderData: PortalRenderData;
+  onBook: () => void;
+}) {
+  const coverUrl = renderData.coverUrl;
+  const logoUrl = renderData.logoUrl;
   return (
     <header className="relative">
-      {company.cover_image_url ? (
+      {coverUrl ? (
         <div className="h-48 md:h-64 w-full overflow-hidden">
-          <img src={company.cover_image_url} alt="" className="h-full w-full object-cover" />
+          <img src={coverUrl} alt="" className="h-full w-full object-cover" />
         </div>
       ) : (
         <div
@@ -110,9 +148,9 @@ function Hero({ company, onBook }: { company: CompanyProfile; onBook: () => void
       )}
 
       <div className="mx-auto w-full max-w-2xl px-6">
-        <div className={company.cover_image_url ? "-mt-14 md:-mt-16" : "-mt-10"}>
+        <div className={coverUrl ? "-mt-14 md:-mt-16" : "-mt-10"}>
           <Avatar className="w-28 h-28 md:w-32 md:h-32 border-4 border-background shadow-sm">
-            <AvatarImage src={company.logo_url ?? undefined} alt="" />
+            <AvatarImage src={logoUrl ?? undefined} alt="" />
             <AvatarFallback className="text-2xl">{initials(company.display_name)}</AvatarFallback>
           </Avatar>
         </div>
