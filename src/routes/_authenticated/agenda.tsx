@@ -1,11 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { z } from "zod";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { NotificationBellButton } from "@/components/notification-bell-button";
-import { listAttentionAppointmentIds } from "@/lib/notifications.functions";
+import {
+  listAttentionAppointmentIds,
+  listNewBookingNotifications,
+  markNotificationRead,
+} from "@/lib/notifications.functions";
 import {
   Ban,
   Check,
@@ -72,6 +77,7 @@ import {
   formatBRL,
   getCompletionPreview,
   getRevertPreview,
+  getAppointment,
   listAppointmentsRange,
   listBlocksRange,
   reactivateCancelledAppointment,
@@ -88,6 +94,15 @@ import { listClients, upsertClient, type Client } from "@/lib/clients";
 import { listServices, type Service } from "@/lib/catalog";
 import { listTeamMembers, type TeamMember } from "@/lib/team";
 import { normalizePhoneBR } from "@/lib/phone";
+import { UNREAD_NOTIFICATIONS_QUERY_KEY } from "@/hooks/use-unread-notifications-count";
+
+// Item 1.1 da FASE J: um aviso na tela /avisos pode levar direto ao
+// agendamento ("tocar abre o detalhe"). `notification` é opcional — só vem
+// preenchido quando o aviso ainda não foi lido, pra marcar como lida ao abrir.
+const AgendaSearchSchema = z.object({
+  appointment: z.string().uuid().optional(),
+  notification: z.string().uuid().optional(),
+});
 
 export const Route = createFileRoute("/_authenticated/agenda")({
   head: () => ({
@@ -97,6 +112,7 @@ export const Route = createFileRoute("/_authenticated/agenda")({
       { name: "robots", content: "noindex" },
     ],
   }),
+  validateSearch: AgendaSearchSchema,
   component: Agenda,
 });
 
@@ -132,6 +148,9 @@ type Selection = { type: "appointment"; data: Appointment } | { type: "block"; d
 type FormOpen = { mode: "create" | "edit"; appointment?: Appointment; prefillStart?: Date } | null;
 
 function Agenda() {
+  const qc = useQueryClient();
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
   const [view, setView] = useState<ViewMode>("day");
   const [dayOffset, setDayOffset] = useState(0);
   const [weekOffset, setWeekOffset] = useState(0);
@@ -170,12 +189,82 @@ function Agenda() {
   // com pedido de reagendamento/mensagem sem resposta. O sino em si foi
   // extraído para NotificationBellButton (compartilhado com a tela
   // inicial) — mesmo comportamento de antes, só não vive mais aqui.
+  // Item 1.5 da FASE J: intervalo curto de 20s (mesmo padrão já usado em
+  // whatsapp.index.tsx/whatsapp.$id.tsx) pra refletir avisos novos sem
+  // precisar trocar de aba/app (o que já recarrega por padrão) nem recarregar
+  // a página — nenhuma infraestrutura nova, só reaproveita refetchInterval.
   const fetchAttentionIds = useServerFn(listAttentionAppointmentIds);
   const { data: attentionIdsList = [] } = useQuery({
     queryKey: ["agenda-attention-ids"],
     queryFn: () => fetchAttentionIds(),
+    refetchInterval: 20_000,
   });
   const attentionIds = useMemo(() => new Set(attentionIdsList), [attentionIdsList]);
+
+  // Item 1.1/1.4 da FASE J: agendamento novo vindo do Portal da Cliente —
+  // marca "Novo" no cartão até a profissional abrir o detalhe (que chama
+  // markNotificationRead, ver handleSelectAppt).
+  const fetchNewBookingNotifications = useServerFn(listNewBookingNotifications);
+  const markReadFn = useServerFn(markNotificationRead);
+  const { data: newBookingList = [] } = useQuery({
+    queryKey: ["agenda-new-booking-notifications"],
+    queryFn: () => fetchNewBookingNotifications(),
+    refetchInterval: 20_000,
+  });
+  const newBookingMap = useMemo(
+    () => new Map(newBookingList.map((n) => [n.appointmentId, n.notificationId])),
+    [newBookingList],
+  );
+
+  const markBookingNotificationsSeen = (appointmentId: string) => {
+    const notificationId = newBookingMap.get(appointmentId);
+    if (!notificationId) return;
+    markReadFn({ data: { id: notificationId } })
+      .then(() => {
+        qc.invalidateQueries({ queryKey: ["agenda-new-booking-notifications"] });
+        qc.invalidateQueries({ queryKey: UNREAD_NOTIFICATIONS_QUERY_KEY });
+      })
+      .catch((e) => {
+        // Nunca quebra a tela por isso — o selo "Novo" só continua
+        // aparecendo, sem nenhum efeito sobre o agendamento em si.
+        console.error("[agenda] Falha ao marcar aviso de novo agendamento como lido", e);
+      });
+  };
+
+  const handleSelectAppt = (a: Appointment) => {
+    setSelection({ type: "appointment", data: a });
+    markBookingNotificationsSeen(a.id);
+  };
+
+  // Item 1.1 da FASE J: tocar num aviso de "Novo agendamento" em /avisos
+  // leva pra cá com ?appointment=<id>&notification=<id> — pula pro dia
+  // certo, abre o detalhe e marca a notificação como lida. getAppointment
+  // (src/lib/agenda.ts) já existe e respeita a mesma RLS de sempre.
+  const { data: deepLinkedAppt } = useQuery({
+    queryKey: ["agenda-deep-link-appointment", search.appointment],
+    queryFn: () => getAppointment(search.appointment as string),
+    enabled: !!search.appointment,
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (!search.appointment || !deepLinkedAppt) return;
+    setDayOffset(daysBetween(new Date(), new Date(deepLinkedAppt.starts_at)));
+    setView("day");
+    setSelection({ type: "appointment", data: deepLinkedAppt });
+    if (search.notification) {
+      markReadFn({ data: { id: search.notification } })
+        .then(() => {
+          qc.invalidateQueries({ queryKey: ["agenda-new-booking-notifications"] });
+          qc.invalidateQueries({ queryKey: ["agenda-attention-ids"] });
+          qc.invalidateQueries({ queryKey: UNREAD_NOTIFICATIONS_QUERY_KEY });
+        })
+        .catch((e) => console.error("[agenda] Falha ao marcar aviso como lido (deep link)", e));
+    }
+    // Limpa os parâmetros pra não reabrir ao navegar de volta/recarregar.
+    navigate({ search: {}, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkedAppt]);
 
   const activeAppts = dayAppts.filter((a) => a.status !== "cancelled");
   const revenueToday = activeAppts.reduce((s, a) => s + Number(a.price), 0);
@@ -321,7 +410,8 @@ function Agenda() {
             loading={loadingDay}
             baseDate={dayDate}
             attentionIds={attentionIds}
-            onSelectAppt={(a) => setSelection({ type: "appointment", data: a })}
+            newBookingIds={new Set(newBookingMap.keys())}
+            onSelectAppt={handleSelectAppt}
             onSelectBlock={(b) => setSelection({ type: "block", data: b })}
             onCreateAt={(d) => openCreate(d)}
           />
@@ -331,15 +421,15 @@ function Agenda() {
             weekOffset={weekOffset}
             setWeekOffset={setWeekOffset}
             todayIdx={todayIdx}
-            onSelectAppt={(a) => setSelection({ type: "appointment", data: a })}
+            onSelectAppt={handleSelectAppt}
             onSelectDay={openDayFromWeek}
           />
         )}
         {view === "list" && (
-          <ListView appts={dayAppts} blocks={dayBlocks} onSelectAppt={(a) => setSelection({ type: "appointment", data: a })} onSelectBlock={(b) => setSelection({ type: "block", data: b })} />
+          <ListView appts={dayAppts} blocks={dayBlocks} onSelectAppt={handleSelectAppt} onSelectBlock={(b) => setSelection({ type: "block", data: b })} />
         )}
         {view === "timeline" && (
-          <ListView appts={dayAppts} blocks={dayBlocks} onSelectAppt={(a) => setSelection({ type: "appointment", data: a })} onSelectBlock={(b) => setSelection({ type: "block", data: b })} dense />
+          <ListView appts={dayAppts} blocks={dayBlocks} onSelectAppt={handleSelectAppt} onSelectBlock={(b) => setSelection({ type: "block", data: b })} dense />
         )}
 
         <div className="mt-6">
@@ -391,6 +481,7 @@ function DayView({
   loading,
   baseDate,
   attentionIds,
+  newBookingIds,
   onSelectAppt,
   onSelectBlock,
   onCreateAt,
@@ -402,6 +493,8 @@ function DayView({
   loading: boolean;
   baseDate: Date;
   attentionIds?: Set<string>;
+  /** Item 1.1/1.4 da FASE J: agendamentos criados pelo Portal da Cliente, ainda não abertos pela profissional. */
+  newBookingIds?: Set<string>;
   onSelectAppt: (a: Appointment) => void;
   onSelectBlock: (b: AgendaBlock) => void;
   onCreateAt: (d: Date) => void;
@@ -473,6 +566,7 @@ function DayView({
               key={a.id}
               a={a}
               needsAttention={attentionIds?.has(a.id)}
+              isNew={newBookingIds?.has(a.id)}
               onSelect={onSelectAppt}
               lane={lanes.get(a.id)}
             />
@@ -486,11 +580,14 @@ function DayView({
 function ApptCard({
   a,
   needsAttention,
+  isNew,
   onSelect,
   lane,
 }: {
   a: Appointment;
   needsAttention?: boolean;
+  /** Item 1.1/1.4 da FASE J: agendado pelo Portal da Cliente, ainda não aberto pela profissional. */
+  isNew?: boolean;
   onSelect: (a: Appointment) => void;
   lane?: LaneAssignment;
 }) {
@@ -534,6 +631,11 @@ function ApptCard({
         <span className="text-[10px] font-medium tabular-nums text-muted-foreground">
           {fmtHour(start)} · {Math.round((end - start) * 60)}min
         </span>
+        {isNew && (
+          <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground">
+            Novo
+          </span>
+        )}
         {a.professional?.full_name && (
           <span className="ml-auto text-[10px] text-muted-foreground truncate max-w-[90px]">{a.professional.full_name}</span>
         )}

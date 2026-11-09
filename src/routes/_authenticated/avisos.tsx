@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { ChevronLeft, Bell, CheckCircle2 } from "lucide-react";
@@ -33,6 +33,7 @@ function timeAgo(iso: string): string {
 
 function Avisos() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const fetchNotifications = useServerFn(listNotifications);
   const markReadFn = useServerFn(markNotificationRead);
 
@@ -86,36 +87,64 @@ function Avisos() {
           </div>
         ) : (
           <div className="space-y-2">
-            {notifications.map((n) => (
-              <div
-                key={n.id}
-                className={
-                  "rounded-2xl border p-4 flex items-start gap-3 " +
-                  (n.read_at ? "border-border/40 opacity-60" : "border-border/60 bg-card")
-                }
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{n.title}</span>
-                    <span className="text-[10px] text-muted-foreground tabular-nums">
-                      {timeAgo(n.created_at)}
-                    </span>
+            {notifications.map((n) => {
+              // Item 1.1 da FASE J: tocar num aviso com agendamento ligado
+              // abre o detalhe dele direto na Agenda — notification só vai
+              // na URL se ainda não foi lido (a Agenda marca como lido ao abrir).
+              const openInAgenda = n.appointment_id
+                ? () =>
+                    navigate({
+                      to: "/agenda",
+                      search: n.read_at
+                        ? { appointment: n.appointment_id! }
+                        : { appointment: n.appointment_id!, notification: n.id },
+                    })
+                : undefined;
+              return (
+                <div
+                  key={n.id}
+                  role={openInAgenda ? "button" : undefined}
+                  tabIndex={openInAgenda ? 0 : undefined}
+                  onClick={openInAgenda}
+                  onKeyDown={
+                    openInAgenda
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") openInAgenda();
+                        }
+                      : undefined
+                  }
+                  className={
+                    "rounded-2xl border p-4 flex items-start gap-3 " +
+                    (n.read_at ? "border-border/40 opacity-60" : "border-border/60 bg-card") +
+                    (openInAgenda ? " cursor-pointer" : "")
+                  }
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{n.title}</span>
+                      <span className="text-[10px] text-muted-foreground tabular-nums">
+                        {timeAgo(n.created_at)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{n.body}</p>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{n.body}</p>
+                  {!n.read_at && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="rounded-full h-8 w-8 shrink-0"
+                      title="Marcar como resolvido"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMarkRead(n.id);
+                      }}
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                    </Button>
+                  )}
                 </div>
-                {!n.read_at && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="rounded-full h-8 w-8 shrink-0"
-                    title="Marcar como resolvido"
-                    onClick={() => handleMarkRead(n.id)}
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                  </Button>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
