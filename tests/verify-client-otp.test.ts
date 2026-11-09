@@ -1,9 +1,12 @@
-// Testes do núcleo de verifyClientOtp (FASE G6.2-E, 08/11/2026) — cobre:
-// usuário de autenticação existente/inexistente, falha interna DEPOIS do
-// código validado (não pode queimar o código sem sessão — item 1.5), replay
-// do mesmo código após sucesso (deve falhar), código de outro telefone, e
-// enumeração (mesma mensagem pra "código errado" e "telefone nunca pediu
-// código").
+// Testes do núcleo de verifyClientOtp (FASE G6.2-E e G6.2-F, 08/11/2026) —
+// cobre: usuário de autenticação existente/inexistente, usuário pré-existente
+// SOLTO (telefone já tinha conta órfã de uma tentativa anterior — reaproveita
+// em vez de falhar), conta de equipe pré-existente (recusa com mensagem
+// neutra, nunca liga o login do portal a ela), falha na atualização de
+// senha, falha ao criar sessão, falha genérica ao criar usuário (ex.: um
+// gatilho do banco), falha interna DEPOIS do código validado (não pode
+// queimar o código sem sessão — item 1.5), replay do mesmo código após
+// sucesso (deve falhar), código de outro telefone, e enumeração.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -11,6 +14,7 @@ import {
   WRONG_CODE_MSG,
   USED_OR_SUPERSEDED_MSG,
   GENERIC_LOGIN_FAIL_MSG,
+  TEAM_ACCOUNT_MSG,
   type VerifyClientOtpDeps,
 } from "../src/lib/verify-client-otp.server.ts";
 import { FakeSupabaseAdmin } from "./helpers/fake-supabase.ts";
@@ -37,13 +41,19 @@ function baseDeps(overrides: Partial<VerifyClientOtpDeps> = {}): VerifyClientOtp
   return {
     verifyOtpCode: async (code) => code === "123456",
     generateRandomPassword: () => "senha-temp-de-teste",
-    createAuthUser: async () => "novo-user-id",
+    createAuthUser: async () => ({ ok: true, userId: "novo-user-id" }),
+    findExistingUserByPhone: async () => null,
     createSession: async () => ({
+      ok: true,
       access_token: "token-de-teste",
       refresh_token: "refresh-de-teste",
     }),
     ...overrides,
   };
+}
+
+function assertSupportCode(message: string, base: string, code: string) {
+  assert.equal(message, `${base} Código de suporte: ${code}.`);
 }
 
 test("usuário de autenticação INEXISTENTE: cria conta nova (createAuthUser chamado)", async () => {
@@ -53,7 +63,7 @@ test("usuário de autenticação INEXISTENTE: cria conta nova (createAuthUser ch
     createAuthUser: async (phone) => {
       createAuthUserCalled = true;
       assert.equal(phone, PHONE);
-      return "user-criado";
+      return { ok: true, userId: "user-criado" };
     },
   });
   const result = await verifyClientOtpCore(db as never, deps, PHONE, "123456", NOW);
@@ -72,7 +82,7 @@ test("usuário de autenticação EXISTENTE (já vinculado via clients.user_id): 
   const deps = baseDeps({
     createAuthUser: async () => {
       createAuthUserCalled = true;
-      return "nao-deveria";
+      return { ok: true, userId: "nao-deveria" };
     },
   });
   const result = await verifyClientOtpCore(db as never, deps, PHONE, "123456", NOW);
@@ -84,18 +94,124 @@ test("usuário de autenticação EXISTENTE (já vinculado via clients.user_id): 
   assert.equal(result.access_token, "token-de-teste");
 });
 
-test("DEFEITO EVITADO (item 1.5): falha interna DEPOIS do código validado devolve o código pra tentativa nova, não fica 'gasto' sem sessão", async () => {
+test("DEFEITO CORRIGIDO (FASE G6.2-F): usuário de autenticação pré-existente SOLTO (sem vínculo em clients) é reaproveitado, não falha", async () => {
   const db = new FakeSupabaseAdmin({ tables: { client_otp_codes: [seedOtpRow()], clients: [] } });
+  let findCalled = false;
   const deps = baseDeps({
+    // Simula o createUser real recusando porque o telefone já tem conta
+    // (deixada por uma tentativa anterior que validou o código mas nunca
+    // chegou a vincular em `clients` — exatamente o caso real investigado).
+    createAuthUser: async () => ({ ok: false, reason: "phone_exists" }),
+    findExistingUserByPhone: async (phone) => {
+      findCalled = true;
+      assert.equal(phone, PHONE);
+      return { userId: "user-orfao-existente", hasEmail: false };
+    },
+  });
+  const result = await verifyClientOtpCore(db as never, deps, PHONE, "123456", NOW);
+  assert.ok(findCalled, "deveria ter procurado a conta existente");
+  assert.equal(result.access_token, "token-de-teste");
+});
+
+test("DEFEITO EVITADO (item 1.2): conta de equipe/dona pré-existente (tem e-mail) é RECUSADA, nunca ligada ao login do portal", async () => {
+  const db = new FakeSupabaseAdmin({ tables: { client_otp_codes: [seedOtpRow()], clients: [] } });
+  let createSessionCalled = false;
+  const deps = baseDeps({
+    createAuthUser: async () => ({ ok: false, reason: "phone_exists" }),
+    findExistingUserByPhone: async () => ({ userId: "user-da-equipe", hasEmail: true }),
     createSession: async () => {
-      throw new Error("falha de rede simulada ao assinar sessão");
+      createSessionCalled = true;
+      return { ok: true, access_token: "nao-deveria", refresh_token: "nao-deveria" };
     },
   });
   await assert.rejects(
     () => verifyClientOtpCore(db as never, deps, PHONE, "123456", NOW),
     (err: unknown) => {
       assert.ok(err instanceof Error);
-      assert.equal(err.message, GENERIC_LOGIN_FAIL_MSG);
+      assert.equal(err.message, TEAM_ACCOUNT_MSG);
+      assert.ok(!err.message.includes("equipe da"), "mensagem neutra, sem revelar detalhes");
+      return true;
+    },
+  );
+  assert.equal(createSessionCalled, false, "nunca deveria criar sessão pra conta de equipe");
+});
+
+test("falha genérica ao criar usuário (ex.: gatilho do banco) — código de suporte L03", async () => {
+  const db = new FakeSupabaseAdmin({ tables: { client_otp_codes: [seedOtpRow()], clients: [] } });
+  const deps = baseDeps({
+    createAuthUser: async () => ({
+      ok: false,
+      reason: "other",
+      error: new Error("Database error creating new user"),
+    }),
+  });
+  await assert.rejects(
+    () => verifyClientOtpCore(db as never, deps, PHONE, "123456", NOW),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assertSupportCode(err.message, GENERIC_LOGIN_FAIL_MSG, "L03");
+      assert.ok(!err.message.includes("Database error"), "nunca expor o erro técnico real");
+      return true;
+    },
+  );
+  const row = db.tables.client_otp_codes.find((r) => r.id === "otp-1");
+  assert.equal(row?.used_at, null, "código devolvido pra nova tentativa");
+});
+
+test("falha na atualização de senha temporária — código de suporte L05", async () => {
+  const db = new FakeSupabaseAdmin({ tables: { client_otp_codes: [seedOtpRow()], clients: [] } });
+  const deps = baseDeps({
+    createSession: async () => ({
+      ok: false,
+      step: "update_password",
+      error: new Error("falha simulada ao atualizar senha"),
+    }),
+  });
+  await assert.rejects(
+    () => verifyClientOtpCore(db as never, deps, PHONE, "123456", NOW),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assertSupportCode(err.message, GENERIC_LOGIN_FAIL_MSG, "L05");
+      return true;
+    },
+  );
+});
+
+test("falha ao criar sessão (sign-in) — código de suporte L06", async () => {
+  const db = new FakeSupabaseAdmin({ tables: { client_otp_codes: [seedOtpRow()], clients: [] } });
+  const deps = baseDeps({
+    createSession: async () => ({
+      ok: false,
+      step: "sign_in",
+      error: new Error("falha simulada ao assinar sessão"),
+    }),
+  });
+  await assert.rejects(
+    () => verifyClientOtpCore(db as never, deps, PHONE, "123456", NOW),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assertSupportCode(err.message, GENERIC_LOGIN_FAIL_MSG, "L06");
+      return true;
+    },
+  );
+  const row = db.tables.client_otp_codes.find((r) => r.id === "otp-1");
+  assert.equal(row?.used_at, null, "código devolvido pra nova tentativa");
+});
+
+test("DEFEITO EVITADO (item 1.5): falha interna DEPOIS do código validado devolve o código pra tentativa nova, não fica 'gasto' sem sessão", async () => {
+  const db = new FakeSupabaseAdmin({ tables: { client_otp_codes: [seedOtpRow()], clients: [] } });
+  const deps = baseDeps({
+    createSession: async () => ({
+      ok: false,
+      step: "sign_in",
+      error: new Error("falha de rede simulada ao assinar sessão"),
+    }),
+  });
+  await assert.rejects(
+    () => verifyClientOtpCore(db as never, deps, PHONE, "123456", NOW),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assertSupportCode(err.message, GENERIC_LOGIN_FAIL_MSG, "L06");
       assert.ok(!err.message.includes("rede"), "nunca expor o erro técnico real");
       return true;
     },
@@ -115,9 +231,13 @@ test("depois do rollback por falha interna, a MESMA requisição (nova tentativa
     createSession: async () => {
       if (primeiraVez) {
         primeiraVez = false;
-        throw new Error("falha simulada só na primeira tentativa");
+        return {
+          ok: false,
+          step: "sign_in",
+          error: new Error("falha simulada só na primeira tentativa"),
+        };
       }
-      return { access_token: "token-ok", refresh_token: "refresh-ok" };
+      return { ok: true, access_token: "token-ok", refresh_token: "refresh-ok" };
     },
   });
   await assert.rejects(() => verifyClientOtpCore(db as never, deps, PHONE, "123456", NOW));

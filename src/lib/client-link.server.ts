@@ -3,6 +3,8 @@
 // "@/...", inviável de importar direto num `node --test` sem bundler) — só
 // imports relativos aqui, mesmo padrão já usado pelos outros arquivos
 // *.server.ts testáveis deste projeto (ex.: central-reminder-scheduler.server.ts).
+import { LOGIN_STEP, failWithSupportCode } from "./login-support-code.server.ts";
+
 type SupabaseAdmin = Awaited<
   typeof import("../integrations/supabase/client.server")
 >["supabaseAdmin"];
@@ -38,12 +40,12 @@ export type LinkClientAccountDeps = {
 // Item 1.6 da FASE G6.2-E: nunca repassar `error.message` do PostgREST/banco
 // pro toast da cliente (é assim que o erro técnico "JSON object requested,
 // multiple (or no) rows returned" chegava crua na tela). Detalhe completo só
-// no console do servidor, sem telefone/código.
+// no console do servidor, sem telefone/código. Item 1.1 da FASE G6.2-F: toda
+// falha deste passo ("vincular cliente") leva o mesmo código de suporte L07.
 const GENERIC_FAIL_MSG = "Não foi possível concluir agora. Tente de novo em instantes.";
 
-function failInternal(context: string, error: unknown): never {
-  console.error(`[clientPortal] ${context}`, error);
-  throw new Error(GENERIC_FAIL_MSG);
+function failInternal(_context: string, error: unknown): never {
+  failWithSupportCode(GENERIC_FAIL_MSG, LOGIN_STEP.CLIENT_LINK, error);
 }
 
 /**
