@@ -112,6 +112,8 @@ export function ImageCard({
       }
       onDeleted();
       toast.success("Imagem excluída.");
+    } catch {
+      toast.error("Não foi possível excluir a imagem. Tente novamente em alguns instantes.");
     } finally {
       setBusy(false);
     }

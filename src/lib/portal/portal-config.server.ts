@@ -21,6 +21,7 @@ import {
   friendlyPortalDraftError,
   type PortalDraftPatch,
 } from "./portal-config.schema.ts";
+import { PortalFriendlyError } from "./portal-server-error.ts";
 import { z } from "zod";
 
 export const PERMISSION_DENIED_MESSAGE =
@@ -145,7 +146,7 @@ async function isOwnerAdmin(db: PortalConfigDb, userId: string): Promise<boolean
 
 async function requireOwnerAdmin(db: PortalConfigDb, userId: string): Promise<void> {
   if (!(await isOwnerAdmin(db, userId))) {
-    throw new Error(PERMISSION_DENIED_MESSAGE);
+    throw new PortalFriendlyError(PERMISSION_DENIED_MESSAGE);
   }
 }
 
@@ -207,7 +208,7 @@ export async function salvarRascunhoCore(
     p_version_esperada: version,
   });
   if (error) throw new Error((error as Error).message ?? "Não foi possível salvar.");
-  if (result !== "ok") throw new Error(friendlyPortalFunctionError(result as string));
+  if (result !== "ok") throw new PortalFriendlyError(friendlyPortalFunctionError(result as string));
   return { ok: true };
 }
 
@@ -221,7 +222,7 @@ export async function publicarCore(
     p_version_esperada: version,
   });
   if (error) throw new Error((error as Error).message ?? "Não foi possível publicar.");
-  if (result !== "ok") throw new Error(friendlyPortalFunctionError(result as string));
+  if (result !== "ok") throw new PortalFriendlyError(friendlyPortalFunctionError(result as string));
   return { ok: true };
 }
 
@@ -232,7 +233,7 @@ export async function descartarRascunhoCore(
   await requireOwnerAdmin(db, userId);
   const { data: result, error } = await db.rpc("portal_descartar_rascunho", {});
   if (error) throw new Error((error as Error).message ?? "Não foi possível descartar.");
-  if (result !== "ok") throw new Error(friendlyPortalFunctionError(result as string));
+  if (result !== "ok") throw new PortalFriendlyError(friendlyPortalFunctionError(result as string));
   return { ok: true };
 }
 
@@ -247,7 +248,7 @@ export async function desfazerPublicacaoCore(
   const { data: result, error } = await db.rpc("portal_desfazer_publicacao", {});
   if (error) throw new Error((error as Error).message ?? "Não foi possível desfazer.");
   if (result !== "ok" && result !== "nada_para_desfazer") {
-    throw new Error(friendlyPortalFunctionError(result as string));
+    throw new PortalFriendlyError(friendlyPortalFunctionError(result as string));
   }
   return { ok: true, result: result as "ok" | "nada_para_desfazer" };
 }
