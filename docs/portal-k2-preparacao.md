@@ -17,10 +17,10 @@ camada de dados (TypeScript, testada, **não usada** por nenhuma tela ainda).
 
 | Elemento do modelo | De onde vem hoje | O que falta |
 |---|---|---|
-| Logo largo no topo | **Não existe.** Hoje só existem `logo_path`/`logo_light_path` (quadrados, `portal_configurations`) e o `company_profiles.logo_url` antigo (também tratado como quadrado/avatar). | Precisa de um tipo de imagem novo ("logo largo") — decisão a tomar (ver seção 6). |
+| Logo largo no topo | **Não existe.** Hoje só existem `logo_path`/`logo_light_path` (quadrados, `portal_configurations`) e o `company_profiles.logo_url` antigo (também tratado como quadrado/avatar). | **Decidido**: sim, como tipo de imagem próprio — mas **exige migração separada** (nova coluna + função SQL atualizada, ver Parte 4), fora do escopo desta fase e da K2b por enquanto. |
 | Botão de menu (hambúrguer) | Não existe (não há menu lateral no portal hoje). | É só UI/navegação (K2b) — não depende de dado novo. |
 | Capa/hero **vertical (4:5)** com título e subtítulo sobre a foto | `cover_path` (imagem), `cover_title`/`cover_subtitle` (texto) já existem em `portal_configurations` e já voltam em `portal_obter_publico()`. Hoje a capa é renderizada **horizontal** (`l.$slug.tsx`, `Hero`, `h-48 md:h-64 w-full`), sem usar `cover_title`/`cover_subtitle` (usa `company.display_name`/`description` em texto puro). | O dado já existe — é troca de proporção/layout (K2b), não de schema. |
-| Cartão com 4 atalhos (Agendar, Meus Agendamentos, Benefícios, Ajuda) | Não existe nenhum desses hoje como seção. "Agendar" e "Meus Agendamentos" já têm destino (abrir o `BookingFlow`/`ClientAccountPanel`); "Benefícios" e "Ajuda" não têm nada por trás ainda. | Navegação/UI (K2b) — "Benefícios" fica **escondido** por decisão já tomada nesta fase (ver Parte 4). "Ajuda" precisa de um destino a decidir (ver seção 6). |
+| Cartão com 4 atalhos (Agendar, Meus Agendamentos, Benefícios, Ajuda) | Não existe nenhum desses hoje como seção. "Agendar" e "Meus Agendamentos" já têm destino (abrir o `BookingFlow`/`ClientAccountPanel`). | Navegação/UI (K2b) — **decidido**: "Benefícios" fica escondido; "Ajuda" abre o WhatsApp da empresa (já público, ver Parte 4). |
 | Botão grande "Agendar agora" | Já existe (`Hero`, botão "Agendar Agora"). | Nada — só reestilizar. |
 | Faixa de destaque (ícone + frase + imagem de fundo) | `banner_path`/`banner_text`/`show_banner` já existem em `portal_configurations` — a própria tela de edição já avisa "preparado para a próxima fase" nesse campo. Nunca renderizado em `l.$slug.tsx` hoje. | O dado já existe — só falta ligar ao render (K2b), exatamente como o texto já anunciava. |
 | "Nossos Serviços" (título + seta) com tiles de categoria/serviço com foto | Hoje é uma lista simples de linhas (nome + duração + preço), sem foto, sem categoria (`ServicesSection`, `l.$slug.tsx`). `services.description`/`price`/`duration_min` já existem e já são públicos (`public_services`). `services.image_path`/`category_id` **existem no banco, mas não são expostos na view pública** — é exatamente o que a migração desta fase (não aplicada) resolve. | Migração (Parte 2, não aplicada) + troca de layout pra tiles (K2b). |
@@ -31,7 +31,7 @@ camada de dados (TypeScript, testada, **não usada** por nenhuma tela ainda).
 
 | Elemento do modelo | De onde vem hoje | O que falta |
 |---|---|---|
-| Cabeçalho (logo, voltar, fechar) | Botão fechar já existe (`BookingFlow`, `X`). Logo: mesma situação do logo largo da Home — não existe ainda. "Voltar" não existe no passo 1 (é o primeiro passo). | Logo largo (mesma decisão da Home). |
+| Cabeçalho (logo, voltar, fechar) | Botão fechar já existe (`BookingFlow`, `X`). Logo: mesma situação do logo largo da Home — não existe ainda. "Voltar" não existe no passo 1 (é o primeiro passo). | Logo largo — mesma decisão da Home (decidido, mas depende da migração separada). |
 | Indicador de 3 passos (Serviço, Agenda, Confirmação) | Hoje o fluxo tem 6 estados internos (`service`→`professional`→`slot`→`auth`→`confirm`→`done`), sem indicador visual de progresso. | Só UI (K2b) — os 3 passos do modelo agrupam os 6 estados internos (ex.: "Agenda" cobre profissional+horário); não muda a lógica de agendamento. |
 | Título e subtítulo | Não existe texto configurável específico pra essa tela hoje. | Hardcoded na tela (K2b) — ex.: "Escolha seu procedimento" (já definido na Parte 4), não precisa de campo novo no banco. |
 | Busca | Não existe hoje (a lista de serviços não tem busca). | Só UI/filtro client-side (K2b) sobre a lista já carregada — não precisa de dado novo. |
@@ -52,6 +52,46 @@ camada de dados (TypeScript, testada, **não usada** por nenhuma tela ainda).
 
 Ordem sugerida dos componentes e como cada um lê a configuração publicada:
 
+### Decisões já tomadas (11/2026, depois do mapa acima)
+
+1. **Logo largo**: SIM, como tipo de imagem próprio (não um redimensionamento
+   do logo quadrado atual). **Exige migração** — confirmado em leitura (ver
+   quadro abaixo) — por isso fica **fora desta fase (K2a)** e **fora da
+   K2b** também, até uma fase separada ser autorizada especificamente para
+   essa migração (não é a mesma migração de
+   `20261111173000_portal_k2_public_service_media.sql`, que é só sobre
+   serviços/categorias). Enquanto isso não existir, a K2b usa o fallback já
+   previsto (nome do estúdio em texto) também para esse espaço — não tenta
+   simular logo largo redimensionando o logo quadrado, pra não entregar algo
+   que pareça "pela metade".
+2. **Atalho "Ajuda"**: abre o WhatsApp da empresa (`company_profiles.whatsapp`,
+   já público via `public_company_profiles`) — mesmo link que `SocialSection`
+   já monta hoje (`https://wa.me/{whatsapp sem caracteres não-numéricos}`).
+   Não precisa de nada novo no banco.
+3. **"Benefícios"**: confirmado — continua escondido na K2b, sem destino
+   definido.
+
+**Por que "logo largo" exige migração** (lido direto no banco, nada alterado):
+- `portal_media_path_valid()` (função SQL que toda CHECK de caminho de
+  imagem usa) tem a lista de "espaços" válidos **fixa dentro da própria
+  regex**: `(logo|logo-light|cover|banner|services|professionals|categories)`
+  — um kind novo (`logo-wide`, por exemplo) seria rejeitado por essa função
+  até ela ser recriada (`CREATE OR REPLACE FUNCTION`) incluindo o novo nome.
+- O logo largo precisa de um lugar pra morar no rascunho/publicado — hoje
+  cada imagem do tema é uma coluna própria em `portal_configurations`
+  (`draft_logo_path`, `draft_cover_path` etc.); um logo largo de verdade (não
+  um substituto do logo quadrado) precisaria de colunas novas
+  (`draft_logo_wide_path`/`published_logo_wide_path`), o que por sua vez
+  exige atualizar `portal_salvar_rascunho`, `portal_publicar`,
+  `portal_desfazer_publicacao` e `portal_obter_publico` (todas já tratam
+  cada campo de imagem individualmente, mesmo padrão dos outros 4) e as
+  CHECK constraints de formato da tabela.
+- Nada disso foi escrito nesta sessão — é só a confirmação, lida no banco,
+  de que uma migração nova (separada da de serviços/categorias) seria
+  necessária, exatamente como pedido antes de prosseguir.
+
+### Componentes, em ordem
+
 1. **`PortalThemeProvider`** (escopo, não um componente visual) — aplica as
    variáveis CSS (`--portal-color-primary`, `--portal-color-secondary`,
    `--portal-color-button`, `--portal-color-button-text`,
@@ -60,13 +100,16 @@ Ordem sugerida dos componentes e como cada um lê a configuração publicada:
    cuidado já provado em `portal-preview-isolation-guard.test.ts`, K1b-A).
    Fontes via `@fontsource` (já instaladas em K1b-A: Playfair Display,
    Poppins, Inter) — nenhuma requisição externa nova.
-2. **`PortalHeader`** — logo largo (`logo_path`, kind novo a decidir) ou nome
-   em texto se não houver; botão de menu.
+2. **`PortalHeader`** — logo largo (**fora do escopo até a migração
+   separada ser autorizada**, ver decisão acima) ou nome em texto como
+   fallback, usado desde já enquanto esse campo não existir; botão de menu.
 3. **`PortalHero`** — capa vertical 4:5 (`cover_path`); `cover_title`/
    `cover_subtitle` sobre a foto, com camada escura/degradê por baixo do
    texto (contraste ≥ 4,5:1, igual ao que `portal-colors.ts` já calcula hoje
    pra Cores — reaproveitar `contrastRatio`/`autoFixTextContrast`).
-4. **`PortalShortcuts`** — 4 atalhos; "Benefícios" escondido (ver abaixo).
+4. **`PortalShortcuts`** — 4 atalhos: Agendar, Meus Agendamentos, Benefícios
+   (escondido, ver abaixo) e Ajuda (abre o WhatsApp da empresa — decisão já
+   tomada, ver acima).
 5. **`PortalBanner`** — `banner_path`/`banner_text`, só se `show_banner`.
 6. **`PortalServicesSection`** — chips de categoria
    (`public_portal_categories`, escondidos se a lista vier vazia) + tiles de
@@ -119,8 +162,9 @@ Ordem sugerida dos componentes e como cada um lê a configuração publicada:
 
 ### Riscos
 
-- Logo largo e destino de "Ajuda" são decisões pendentes (ver seção 6 da
-  conversa) — sem elas, a K2b não tem como desenhar esses 2 pontos.
+- Logo largo fica de fora até uma fase separada aplicar a migração que ele
+  exige (ver "Decisões já tomadas" acima) — a K2b entrega com o fallback de
+  texto nesse espaço, não com o logo largo funcionando.
 - Texto legível sobre foto depende de a dona escolher uma foto de capa
   muito clara ou muito escura — o degradê ajuda, mas não resolve 100% dos
   casos extremos; vale medir contraste real na foto, não só confiar no
