@@ -57,6 +57,9 @@ export type PortalConfigRow = {
   draft_show_footer: boolean;
   draft_logo_path: string | null;
   draft_logo_light_path: string | null;
+  /** Ausente do objeto (não `null`) enquanto a migração FASE K2c não tiver
+   * sido aplicada em produção — ver getPortalConfigCore/supportsLogoWide. */
+  draft_logo_wide_path?: string | null;
   draft_cover_path: string | null;
   draft_banner_path: string | null;
   published_theme_key: string | null;
@@ -82,6 +85,9 @@ export type PortalConfigRow = {
   published_show_footer: boolean | null;
   published_logo_path: string | null;
   published_logo_light_path: string | null;
+  /** Mesmo caso de draft_logo_wide_path acima — ausente, não `null`, antes
+   * da migração existir. */
+  published_logo_wide_path?: string | null;
   published_cover_path: string | null;
   published_banner_path: string | null;
   published_at: string | null;
@@ -119,6 +125,7 @@ export type PortalPublishedSnapshot = {
   show_footer: boolean | null;
   logo_path: string | null;
   logo_light_path: string | null;
+  logo_wide_path?: string | null;
   cover_path: string | null;
   banner_path: string | null;
 };
@@ -174,12 +181,23 @@ export function friendlyPortalFunctionError(code: string): string {
 }
 
 /** Leitura — nunca lança para quem não é dona: devolve canEdit=false, mesmo
- * padrão de getGoogleReviewUrl (companyProfile.functions.ts). */
+ * padrão de getGoogleReviewUrl (companyProfile.functions.ts).
+ *
+ * `supportsLogoWide` (FASE K2c): detecta, SEM query extra, se a migração do
+ * logo largo já foi aplicada em produção — `select("*")` do PostgREST só
+ * inclui no objeto as colunas que de fato existem na tabela, então uma
+ * coluna ainda não migrada fica AUSENTE da resposta (não `null`). A tela só
+ * mostra o cartão "Logo largo" quando isto é `true` — modo seguro: nenhuma
+ * tentativa de salvar um campo que o `portal_salvar_rascunho` antigo
+ * ignoraria silenciosamente (ver portal-config.schema.ts/K2c). Com
+ * `config === null` (empresa sem linha ainda) o resultado é `false` por
+ * segurança — mesmo critério conservador. */
 export async function getPortalConfigCore(
   db: PortalConfigDb,
   userId: string,
-): Promise<{ config: PortalConfigRow | null; canEdit: boolean }> {
-  if (!(await isOwnerAdmin(db, userId))) return { config: null, canEdit: false };
+): Promise<{ config: PortalConfigRow | null; canEdit: boolean; supportsLogoWide: boolean }> {
+  if (!(await isOwnerAdmin(db, userId)))
+    return { config: null, canEdit: false, supportsLogoWide: false };
 
   const { data, error } = await db
     .from("portal_configurations")
@@ -187,7 +205,9 @@ export async function getPortalConfigCore(
     .eq("owner_id", userId)
     .maybeSingle();
   if (error) throw new Error((error as Error).message ?? "Erro ao buscar configuração.");
-  return { config: (data as PortalConfigRow | null) ?? null, canEdit: true };
+  const supportsLogoWide =
+    data != null && Object.prototype.hasOwnProperty.call(data, "draft_logo_wide_path");
+  return { config: (data as PortalConfigRow | null) ?? null, canEdit: true, supportsLogoWide };
 }
 
 export function parsePortalDraftPatch(raw: unknown): PortalDraftPatch {

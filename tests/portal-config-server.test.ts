@@ -63,7 +63,7 @@ function makeFakeDb(opts: {
 test("getPortalConfigCore: equipe não é dona -> canEdit=false, config=null, NUNCA lança", async () => {
   const { db } = makeFakeDb({ isAdmin: false });
   const result = await getPortalConfigCore(db, STAFF_USER_ID);
-  assert.deepEqual(result, { config: null, canEdit: false });
+  assert.deepEqual(result, { config: null, canEdit: false, supportsLogoWide: false });
 });
 
 test("getPortalConfigCore: dona -> canEdit=true, devolve a linha", async () => {
@@ -71,6 +71,51 @@ test("getPortalConfigCore: dona -> canEdit=true, devolve a linha", async () => {
   const result = await getPortalConfigCore(db, OWNER_USER_ID);
   assert.equal(result.canEdit, true);
   assert.deepEqual(result.config, { owner_id: OWNER_USER_ID, version: 1 });
+});
+
+// ---------------------------------------------------------------------------
+// FASE K2c: supportsLogoWide — detecção "modo seguro" de migração ainda não
+// aplicada, SEM depender de capturar um erro do Postgres (ver comentário em
+// portal-config.server.ts). A tela só mostra o cartão "Logo largo" quando
+// isto é true.
+// ---------------------------------------------------------------------------
+
+test("supportsLogoWide=false quando a coluna draft_logo_wide_path está AUSENTE da linha (migração K2c ainda não aplicada)", async () => {
+  const { db } = makeFakeDb({
+    isAdmin: true,
+    configRow: { owner_id: OWNER_USER_ID, version: 1, draft_logo_path: null },
+  });
+  const result = await getPortalConfigCore(db, OWNER_USER_ID);
+  assert.equal(result.supportsLogoWide, false);
+});
+
+test("supportsLogoWide=true quando a coluna draft_logo_wide_path está presente, mesmo que seja null", async () => {
+  const { db } = makeFakeDb({
+    isAdmin: true,
+    configRow: { owner_id: OWNER_USER_ID, version: 1, draft_logo_wide_path: null },
+  });
+  const result = await getPortalConfigCore(db, OWNER_USER_ID);
+  assert.equal(result.supportsLogoWide, true);
+});
+
+test("supportsLogoWide=true quando draft_logo_wide_path já tem um valor de verdade", async () => {
+  const { db } = makeFakeDb({
+    isAdmin: true,
+    configRow: {
+      owner_id: OWNER_USER_ID,
+      version: 1,
+      draft_logo_wide_path: "a/logo-wide/x.png",
+    },
+  });
+  const result = await getPortalConfigCore(db, OWNER_USER_ID);
+  assert.equal(result.supportsLogoWide, true);
+});
+
+test("supportsLogoWide=false quando a empresa ainda não tem nenhuma linha em portal_configurations (config=null) — padrão conservador", async () => {
+  const { db } = makeFakeDb({ isAdmin: true, configRow: null });
+  const result = await getPortalConfigCore(db, OWNER_USER_ID);
+  assert.equal(result.config, null);
+  assert.equal(result.supportsLogoWide, false);
 });
 
 test("salvarRascunhoCore: equipe é negada ANTES de chamar a função SQL de escrita, mensagem neutra", async () => {

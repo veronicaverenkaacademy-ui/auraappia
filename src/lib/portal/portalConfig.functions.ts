@@ -23,11 +23,19 @@ import { withPortalErrorBoundary } from "@/lib/portal/portal-server-error";
 
 export const getPortalConfig = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<{ config: PortalConfigRow | null; canEdit: boolean }> => {
-    return withPortalErrorBoundary("K01", () =>
-      getPortalConfigCore(context.supabase as unknown as PortalConfigDb, context.userId),
-    );
-  });
+  .handler(
+    async ({
+      context,
+    }): Promise<{
+      config: PortalConfigRow | null;
+      canEdit: boolean;
+      supportsLogoWide: boolean;
+    }> => {
+      return withPortalErrorBoundary("K01", () =>
+        getPortalConfigCore(context.supabase as unknown as PortalConfigDb, context.userId),
+      );
+    },
+  );
 
 const SalvarRascunhoInput = z.object({
   patch: z.unknown(),

@@ -66,6 +66,7 @@ export const PortalDraftPatchSchema = z
     show_footer: z.boolean().optional(),
     logo_path: mediaPath().nullish(),
     logo_light_path: mediaPath().nullish(),
+    logo_wide_path: mediaPath().nullish(),
     cover_path: mediaPath().nullish(),
     banner_path: mediaPath().nullish(),
   })
@@ -101,6 +102,7 @@ const FIELD_META: Record<string, { section: string | null; label: string }> = {
   show_footer: { section: "Seções", label: "Rodapé" },
   logo_path: { section: "Imagens", label: "Logo" },
   logo_light_path: { section: "Imagens", label: "Logo (versão clara)" },
+  logo_wide_path: { section: "Imagens", label: "Logo largo" },
   cover_path: { section: "Imagens", label: "Imagem de capa" },
   banner_path: { section: "Imagens", label: "Imagem do aviso" },
 };

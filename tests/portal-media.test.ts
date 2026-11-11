@@ -47,6 +47,7 @@ test("isValidMediaPathFormat aceita todo caminho que buildMediaPath monta, para 
   for (const kind of [
     "logo",
     "logo-light",
+    "logo-wide",
     "cover",
     "banner",
     "services",
@@ -65,6 +66,22 @@ test("isValidMediaPathFormat rejeita tentativa de escapar da pasta (../) e kind 
   assert.equal(isValidMediaPathFormat(`${MEDIA_KEY}/avatar/${FILE_ID}.png`), false);
   assert.equal(isValidMediaPathFormat(`${MEDIA_KEY}/logo/nao-e-uuid.png`), false);
   assert.equal(isValidMediaPathFormat(`${MEDIA_KEY}/logo/${FILE_ID}.svg`), false);
+});
+
+// ---------------------------------------------------------------------------
+// FASE K2c — logo-wide (novo kind)
+// ---------------------------------------------------------------------------
+
+test("logo-wide: caminho válido é aceito; kind parecido mas inexistente ('logo-wide-fake') é rejeitado", () => {
+  const path = buildMediaPath({
+    mediaKey: MEDIA_KEY,
+    kind: "logo-wide",
+    fileId: FILE_ID,
+    mimeType: "image/png",
+  });
+  assert.equal(path, `${MEDIA_KEY}/logo-wide/${FILE_ID}.png`);
+  assert.equal(isValidMediaPathFormat(path), true);
+  assert.equal(isValidMediaPathFormat(`${MEDIA_KEY}/logo-wide-fake/${FILE_ID}.png`), false);
 });
 
 test("pathBelongsToMediaKey confere só o primeiro segmento", () => {

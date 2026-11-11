@@ -27,6 +27,7 @@ export type PortalDraftForm = {
   show_footer: boolean;
   logo_path: string | null;
   logo_light_path: string | null;
+  logo_wide_path: string | null;
   cover_path: string | null;
   banner_path: string | null;
 };
@@ -61,6 +62,7 @@ export const EMPTY_FORM: PortalDraftForm = {
   show_footer: true,
   logo_path: null,
   logo_light_path: null,
+  logo_wide_path: null,
   cover_path: null,
   banner_path: null,
 };
@@ -90,6 +92,9 @@ export function draftFormFromRow(row: PortalConfigRow): PortalDraftForm {
     show_footer: row.draft_show_footer,
     logo_path: row.draft_logo_path,
     logo_light_path: row.draft_logo_light_path,
+    // `?? null`: antes da migração K2c existir, a coluna fica ausente do
+    // objeto (undefined), nunca deve virar undefined aqui (ver EMPTY_FORM).
+    logo_wide_path: row.draft_logo_wide_path ?? null,
     cover_path: row.draft_cover_path,
     banner_path: row.draft_banner_path,
   };

@@ -11,7 +11,13 @@
  * gravação ter acontecido (corrida entre abas, por exemplo).
  */
 
-const CONFIG_PATH_FIELDS = ["logo_path", "logo_light_path", "cover_path", "banner_path"] as const;
+const CONFIG_PATH_FIELDS = [
+  "logo_path",
+  "logo_light_path",
+  "logo_wide_path",
+  "cover_path",
+  "banner_path",
+] as const;
 
 type PathHolder = Record<string, unknown>;
 

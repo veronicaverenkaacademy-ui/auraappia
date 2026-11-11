@@ -319,6 +319,7 @@ function PersonalizarPortalPage() {
                 usage={mediaInfo?.usage ?? { fileCount: 0, totalBytes: 0 }}
                 onUsageChanged={() => qc.invalidateQueries({ queryKey: ["portal-media-info"] })}
                 companyDisplayName={profile?.display_name ?? ""}
+                supportsLogoWide={configResult?.supportsLogoWide ?? false}
               />
             </TabsContent>
             <TabsContent value="cores" className="mt-0">
