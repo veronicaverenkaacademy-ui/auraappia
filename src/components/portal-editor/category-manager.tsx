@@ -17,12 +17,16 @@ import type { QuotaUsage } from "@/lib/portal/portal-media";
 export function CategoryManager({
   categories,
   mediaKey,
+  mediaKeyLoading = false,
+  mediaKeyErrorMessage = null,
   usage,
   protectedPaths,
   onChanged,
 }: {
   categories: PortalServiceCategory[];
   mediaKey: string | null;
+  mediaKeyLoading?: boolean;
+  mediaKeyErrorMessage?: string | null;
   usage: QuotaUsage;
   protectedPaths: ReadonlySet<string>;
   onChanged: () => void;
@@ -80,6 +84,8 @@ export function CategoryManager({
               recommended="Quadrada"
               kind="categories"
               mediaKey={mediaKey}
+              mediaKeyLoading={mediaKeyLoading}
+              mediaKeyErrorMessage={mediaKeyErrorMessage}
               usage={usage}
               currentPath={cat.image_path}
               isProtected={protectedPaths.has(cat.image_path ?? "")}

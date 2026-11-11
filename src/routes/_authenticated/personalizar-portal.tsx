@@ -91,7 +91,11 @@ function PersonalizarPortalPage() {
     queryKey: ["portal-config"],
     queryFn: () => getConfigFn(),
   });
-  const { data: mediaInfo } = useQuery({
+  const {
+    data: mediaInfo,
+    isLoading: mediaInfoLoading,
+    error: mediaInfoError,
+  } = useQuery({
     queryKey: ["portal-media-info"],
     queryFn: () => getMediaInfoFn(),
   });
@@ -315,6 +319,10 @@ function PersonalizarPortalPage() {
                 patchForm={patchForm}
                 configRow={configResult?.config ?? null}
                 mediaKey={mediaInfo?.mediaKey ?? null}
+                mediaKeyLoading={mediaInfoLoading}
+                mediaKeyErrorMessage={
+                  mediaInfoError instanceof Error ? mediaInfoError.message : null
+                }
                 usage={mediaInfo?.usage ?? { fileCount: 0, totalBytes: 0 }}
                 onUsageChanged={() => qc.invalidateQueries({ queryKey: ["portal-media-info"] })}
                 companyDisplayName={profile?.display_name ?? ""}
