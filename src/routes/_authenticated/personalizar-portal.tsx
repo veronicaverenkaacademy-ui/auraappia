@@ -23,7 +23,12 @@ import {
 import { getPortalMediaInfo } from "@/lib/portal/portal-media.functions";
 import { listServices } from "@/lib/catalog";
 import { listTeamMembers } from "@/lib/team";
-import { draftFormFromRow, type PortalDraftForm } from "@/lib/portal/portal-draft-form";
+import { draftFormFromRow, EMPTY_FORM, type PortalDraftForm } from "@/lib/portal/portal-draft-form";
+import {
+  PortalDraftPatchSchema,
+  friendlyPortalDraftError,
+  tabForFirstDraftIssue,
+} from "@/lib/portal/portal-config.schema";
 import { ImagesSection } from "@/components/portal-editor/images-section";
 import { ColorsSection } from "@/components/portal-editor/colors-section";
 import { FontSection } from "@/components/portal-editor/font-section";
@@ -41,34 +46,6 @@ export const Route = createFileRoute("/_authenticated/personalizar-portal")({
   }),
   component: PersonalizarPortalPage,
 });
-
-const EMPTY_FORM: PortalDraftForm = {
-  theme_key: null,
-  color_primary: null,
-  color_secondary: null,
-  color_button: null,
-  color_button_text: null,
-  color_text: null,
-  color_background: null,
-  font_key: "system",
-  cover_title: null,
-  cover_subtitle: null,
-  banner_text: null,
-  important_title: null,
-  important_text: null,
-  welcome_message: null,
-  show_shortcuts: true,
-  show_banner: true,
-  show_services: true,
-  show_important: true,
-  show_professionals: true,
-  show_location: true,
-  show_footer: true,
-  logo_path: null,
-  logo_light_path: null,
-  cover_path: null,
-  banner_path: null,
-};
 
 function PersonalizarPortalPage() {
   const isMobile = useIsMobile();
@@ -109,6 +86,7 @@ function PersonalizarPortalPage() {
   const [hydrated, setHydrated] = useState(false);
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("imagens");
 
   useEffect(() => {
     if (!loadingConfig && !hydrated && configResult?.config) {
@@ -135,9 +113,23 @@ function PersonalizarPortalPage() {
 
   const refetchConfig = () => qc.invalidateQueries({ queryKey: ["portal-config"] });
 
+  // Mesmo esquema Zod do servidor (portal-config.schema.ts) — valida ANTES
+  // de chamar o servidor, pra já levar a dona até a aba com o problema
+  // (não dá pra saber isso só com a mensagem que volta do servidor, que não
+  // carrega o caminho técnico do campo — nem deveria). O servidor continua
+  // validando de novo (defesa em profundidade); isto aqui é só pra UX.
+  const validateDraftBeforeSave = () => {
+    const result = PortalDraftPatchSchema.safeParse(form);
+    if (result.success) return;
+    const tab = tabForFirstDraftIssue(result.error);
+    if (tab) setActiveTab(tab);
+    throw friendlyPortalDraftError(result.error);
+  };
+
   const save = useMutation({
     mutationFn: () => {
       if (!configResult?.config) throw new Error("Configuração não carregada ainda.");
+      validateDraftBeforeSave();
       return salvarFn({ data: { patch: form, version: configResult.config.version } });
     },
     onSuccess: () => {
@@ -157,6 +149,7 @@ function PersonalizarPortalPage() {
       // Publicar sempre a partir do que está salvo — evita publicar um
       // rascunho que a dona ainda não confirmou que quer salvar.
       if (isDirty) {
+        validateDraftBeforeSave();
         await salvarFn({ data: { patch: form, version: configResult.config.version } });
       }
       return publicarFn({ data: { version: configResult.config.version + (isDirty ? 1 : 0) } });
@@ -294,7 +287,7 @@ function PersonalizarPortalPage() {
         {loadingConfig || !hydrated ? (
           <div className="text-sm text-muted-foreground py-10 text-center">Carregando…</div>
         ) : (
-          <Tabs defaultValue="imagens">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="bg-transparent p-0 h-auto gap-1 mb-4 overflow-x-auto flex-nowrap justify-start w-full no-scrollbar">
               {[
                 { v: "imagens", l: "Imagens" },

@@ -31,6 +31,40 @@ export type PortalDraftForm = {
   banner_path: string | null;
 };
 
+/** Forma inicial da tela quando a empresa nunca salvou nada ainda — nenhum
+ * campo opcional tem valor de verdade, então todos ficam `null` (nunca
+ * ausentes: a tela sempre manda o form inteiro, ver nota em
+ * portal-config.schema.ts sobre `.nullish()`). Única fonte da verdade,
+ * compartilhada entre a tela e os testes (FASE K1b-C) — pra não poder
+ * divergir de novo. */
+export const EMPTY_FORM: PortalDraftForm = {
+  theme_key: null,
+  color_primary: null,
+  color_secondary: null,
+  color_button: null,
+  color_button_text: null,
+  color_text: null,
+  color_background: null,
+  font_key: "system",
+  cover_title: null,
+  cover_subtitle: null,
+  banner_text: null,
+  important_title: null,
+  important_text: null,
+  welcome_message: null,
+  show_shortcuts: true,
+  show_banner: true,
+  show_services: true,
+  show_important: true,
+  show_professionals: true,
+  show_location: true,
+  show_footer: true,
+  logo_path: null,
+  logo_light_path: null,
+  cover_path: null,
+  banner_path: null,
+};
+
 export function draftFormFromRow(row: PortalConfigRow): PortalDraftForm {
   return {
     theme_key: row.draft_theme_key,
