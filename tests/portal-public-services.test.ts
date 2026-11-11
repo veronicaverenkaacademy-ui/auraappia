@@ -6,8 +6,11 @@ import {
   groupServicesByCategory,
   categoryChipLabels,
   isMissingColumnError,
+  fetchPublicServicesWithMediaCore,
+  fetchPublicPortalCategoriesCore,
   type PublicServiceMedia,
   type PublicServiceCategoryMedia,
+  type PublicServicesDb,
 } from "../src/lib/portal/portal-public-services.ts";
 
 const VALID_PATH =
@@ -196,4 +199,233 @@ test("categoryChipLabels: mantém a ordem das categorias depois de Todos", () =>
     [catB, catA],
   );
   assert.deepEqual(categoryChipLabels(groups), ["Todos", "A", "B"]);
+});
+
+// ---------------------------------------------------------------------------
+// fetchPublicServicesWithMediaCore / fetchPublicPortalCategoriesCore — os
+// DOIS estados do banco (revisão K2a/K2c pedida pela dona), com um dublê de
+// PublicServicesDb (nunca rede real). O estado "migração NÃO aplicada" e o
+// estado "aplicada e depois desfeita por rollback" chegam aqui como o MESMO
+// erro do PostgREST (coluna/relação ausente) — por isso um único dublê de
+// erro cobre os dois casos; não há como (nem precisa) distinguir um do
+// outro no código de leitura, e é exatamente isso que estes testes provam.
+// ---------------------------------------------------------------------------
+
+function makeFakeDb(
+  resultByTable: Record<
+    string,
+    { data: unknown; error: { code?: string; message?: string } | null }
+  >,
+): PublicServicesDb {
+  return {
+    from(table: string) {
+      return {
+        select(_cols: string) {
+          return {
+            eq(_col: string, _val: string) {
+              return {
+                async order(_orderCol: string) {
+                  return resultByTable[table] ?? { data: [], error: null };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+}
+
+test("fetchPublicServicesWithMediaCore: migração APLICADA — devolve image_path/category_id direto, sem fallback", async () => {
+  const db = makeFakeDb({
+    public_services: {
+      data: [
+        {
+          id: "s1",
+          owner_id: "owner-1",
+          name: "Corte",
+          description: null,
+          price: 100,
+          duration_min: 30,
+          color: null,
+          image_path: VALID_PATH,
+          category_id: "c1",
+        },
+      ],
+      error: null,
+    },
+  });
+  const result = await fetchPublicServicesWithMediaCore(db, "owner-1");
+  assert.deepEqual(result, [
+    {
+      id: "s1",
+      owner_id: "owner-1",
+      name: "Corte",
+      description: null,
+      price: 100,
+      duration_min: 30,
+      color: null,
+      image_path: VALID_PATH,
+      category_id: "c1",
+    },
+  ]);
+});
+
+test("fetchPublicServicesWithMediaCore: migração NÃO aplicada ainda (coluna ausente, erro 42703) — cai no fallback, nunca quebra", async () => {
+  // `calls` precisa viver FORA de `from()` — fetchPublicServicesWithMediaCore
+  // chama `db.from("public_services")` duas vezes (consulta principal +
+  // fallback), cada uma um invocação separada de `from`; um contador
+  // declarado dentro de `from()` reiniciaria a cada chamada e nunca
+  // alcançaria a 2ª resposta (bug já pego e corrigido aqui, ao rodar o
+  // teste: as duas chamadas "viam" calls=1 e o fallback nunca era exercido).
+  let calls = 0;
+  const dbComFallback: PublicServicesDb = {
+    from(table: string) {
+      if (table !== "public_services") throw new Error(`tabela inesperada no dublê: ${table}`);
+      return {
+        select(_cols: string) {
+          return {
+            eq(_col: string, _val: string) {
+              return {
+                async order(_orderCol: string) {
+                  calls += 1;
+                  if (calls === 1) {
+                    return {
+                      data: null,
+                      error: {
+                        code: "42703",
+                        message: "column services.image_path does not exist",
+                      },
+                    };
+                  }
+                  return {
+                    data: [
+                      {
+                        id: "s1",
+                        owner_id: "owner-1",
+                        name: "Corte",
+                        description: null,
+                        price: 100,
+                        duration_min: 30,
+                        color: null,
+                      },
+                    ],
+                    error: null,
+                  };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+  const result = await fetchPublicServicesWithMediaCore(dbComFallback, "owner-1");
+  assert.deepEqual(result, [
+    {
+      id: "s1",
+      owner_id: "owner-1",
+      name: "Corte",
+      description: null,
+      price: 100,
+      duration_min: 30,
+      color: null,
+      image_path: null,
+      category_id: null,
+    },
+  ]);
+});
+
+test('fetchPublicServicesWithMediaCore: migração aplicada e DEPOIS DESFEITA por rollback — mesmo erro "coluna ausente" do caso anterior; como o rollback só remove as 2 colunas NOVAS (as 7 originais nunca saem da tabela), o fallback com as colunas básicas funciona normalmente, igual ao caso "nunca migrado"', async () => {
+  // Deliberadamente o MESMO erro 42703 do teste "não aplicada ainda" —
+  // PostgREST não tem como (nem precisa) distinguir "essa coluna nunca
+  // existiu" de "essa coluna foi removida por um rollback"; os dois
+  // cenários de produção caem exatamente aqui, no mesmo código.
+  const err = { code: "42703", message: "column services.image_path does not exist" };
+  assert.equal(isMissingColumnError(err), true);
+  let calls = 0;
+  const dbPosRollback: PublicServicesDb = {
+    from(_table: string) {
+      return {
+        select(_cols: string) {
+          return {
+            eq(_col: string, _val: string) {
+              return {
+                async order(_orderCol: string) {
+                  calls += 1;
+                  // 1ª chamada (colunas novas): erro, igual a antes do rollback
+                  // existir. 2ª chamada (fallback, só colunas básicas): sucesso
+                  // de verdade — essas colunas nunca foram removidas.
+                  if (calls === 1) return { data: null, error: err };
+                  return {
+                    data: [
+                      {
+                        id: "s1",
+                        owner_id: "owner-1",
+                        name: "Corte",
+                        description: null,
+                        price: 100,
+                        duration_min: 30,
+                        color: null,
+                      },
+                    ],
+                    error: null,
+                  };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+  const result = await fetchPublicServicesWithMediaCore(dbPosRollback, "owner-1");
+  assert.deepEqual(result, [
+    {
+      id: "s1",
+      owner_id: "owner-1",
+      name: "Corte",
+      description: null,
+      price: 100,
+      duration_min: 30,
+      color: null,
+      image_path: null,
+      category_id: null,
+    },
+  ]);
+});
+
+test("fetchPublicPortalCategoriesCore: migração APLICADA — devolve categorias direto", async () => {
+  const db = makeFakeDb({
+    public_portal_categories: {
+      data: [{ id: "c1", name: "Cílios", image_path: null, sort_order: 0 }],
+      error: null,
+    },
+  });
+  const result = await fetchPublicPortalCategoriesCore(db, "owner-1");
+  assert.deepEqual(result, [{ id: "c1", name: "Cílios", image_path: null, sort_order: 0 }]);
+});
+
+test("fetchPublicPortalCategoriesCore: migração NÃO aplicada (relação ausente, 42P01) — trata como sem categorias, nunca quebra", async () => {
+  const db = makeFakeDb({
+    public_portal_categories: {
+      data: null,
+      error: {
+        code: "42P01",
+        message: 'relation "public.public_portal_categories" does not exist',
+      },
+    },
+  });
+  const result = await fetchPublicPortalCategoriesCore(db, "owner-1");
+  assert.deepEqual(result, []);
+});
+
+test('fetchPublicPortalCategoriesCore: migração aplicada e DEPOIS DESFEITA por rollback — mesmo erro "relação ausente" do caso anterior, mesmo resultado seguro (lista vazia)', async () => {
+  const err = {
+    code: "42P01",
+    message: 'relation "public.public_portal_categories" does not exist',
+  };
+  const db = makeFakeDb({ public_portal_categories: { data: null, error: err } });
+  const result = await fetchPublicPortalCategoriesCore(db, "owner-1");
+  assert.deepEqual(result, []);
 });

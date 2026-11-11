@@ -1,6 +1,8 @@
 import { supabase } from "@/integrations/supabase/client";
 import {
-  isMissingColumnError,
+  fetchPublicServicesWithMediaCore,
+  fetchPublicPortalCategoriesCore,
+  type PublicServicesDb,
   type PublicServiceMedia,
   type PublicServiceCategoryMedia,
 } from "@/lib/portal/portal-public-services";
@@ -35,22 +37,14 @@ export type PublicProfessional = {
  * (`context.supabase as unknown as {...}`) pra descrever só a forma mínima
  * que esta função usa, sem fingir que o schema inteiro mudou. Quando a
  * migração for aplicada e `types.ts` regenerado, este cast deixa de ser
- * necessário (mas continua funcionando, não precisa apagar às pressas). */
-type UntypedPublicQuery = {
-  select: (cols: string) => {
-    eq: (
-      col: string,
-      val: string,
-    ) => {
-      order: (
-        col: string,
-      ) => Promise<{ data: unknown; error: { code?: string; message?: string } | null }>;
-    };
-  };
-};
-const untypedFrom = supabase.from.bind(supabase) as unknown as (
-  table: string,
-) => UntypedPublicQuery;
+ * necessário (mas continua funcionando, não precisa apagar às pressas).
+ *
+ * A lógica de leitura (incluindo o fallback seguro se a migração não
+ * existir/for desfeita) mora em portal-public-services.ts
+ * (fetchPublicServicesWithMediaCore/fetchPublicPortalCategoriesCore) — só
+ * import relativo lá, testável com `node --test` sem bundler; aqui só a
+ * fiação com o cliente supabase-js real. */
+const untypedFrom = supabase.from.bind(supabase) as unknown as PublicServicesDb["from"];
 
 export async function fetchPublicServices(ownerId: string): Promise<PublicService[]> {
   const { data, error } = await supabase
@@ -89,52 +83,22 @@ export async function fetchPublicProfessionals(ownerId: string): Promise<PublicP
  * FASE K2a — mesma leitura de fetchPublicServices, mas já pedindo
  * image_path/category_id (visual novo do portal, K2b). Ainda não usada por
  * nenhuma tela — preparada pra quando a migração
- * 20261111173000_portal_k2_public_service_media.sql for aplicada.
- *
- * Comportamento seguro ENQUANTO a migração não existir: a consulta com as
- * colunas novas falha com "coluna não existe" (isMissingColumnError) — cai
- * de volta pra fetchPublicServices (sem foto/categoria) em vez de quebrar a
- * tela. Nunca lança; pior caso é a mesma lista de hoje, sem foto/categoria.
+ * 20261111173000_portal_k2_public_service_media.sql for aplicada. Lógica
+ * real (incluindo o fallback seguro) em
+ * portal-public-services.ts#fetchPublicServicesWithMediaCore — aqui só a
+ * fiação com o cliente supabase-js real.
  */
 export async function fetchPublicServicesWithMedia(ownerId: string): Promise<PublicServiceMedia[]> {
-  const { data, error } = await untypedFrom("public_services")
-    .select("id, owner_id, name, description, price, duration_min, color, image_path, category_id")
-    .eq("owner_id", ownerId)
-    .order("name");
-  if (error) {
-    if (isMissingColumnError(error)) {
-      console.error(
-        "[booking] public_services ainda sem image_path/category_id (migração K2a pendente) — usando fallback sem foto/categoria",
-        error,
-      );
-      const basic = await fetchPublicServices(ownerId);
-      return basic.map((s) => ({ ...s, image_path: null, category_id: null }));
-    }
-    console.error("[booking] Falha ao buscar serviços públicos (com foto/categoria)", error);
-    return [];
-  }
-  return (data ?? []) as PublicServiceMedia[];
+  return fetchPublicServicesWithMediaCore({ from: untypedFrom }, ownerId);
 }
 
 /**
  * FASE K2a — categorias públicas de serviço (chips da tela de agendar,
- * K2b). Mesmo cuidado: se a view ainda não existir (migração pendente),
- * PostgREST devolve "relação não existe" (42P01) — trata como lista vazia,
- * nunca quebra (sem categorias = chips escondidos, ver portal-public-services.ts).
+ * K2b). Lógica real em
+ * portal-public-services.ts#fetchPublicPortalCategoriesCore.
  */
 export async function fetchPublicPortalCategories(
   ownerId: string,
 ): Promise<PublicServiceCategoryMedia[]> {
-  const { data, error } = await untypedFrom("public_portal_categories")
-    .select("id, name, image_path, sort_order")
-    .eq("owner_id", ownerId)
-    .order("sort_order");
-  if (error) {
-    console.error(
-      "[booking] public_portal_categories indisponível (migração K2a pendente, ou falha real) — tratando como sem categorias",
-      error,
-    );
-    return [];
-  }
-  return (data ?? []) as PublicServiceCategoryMedia[];
+  return fetchPublicPortalCategoriesCore({ from: untypedFrom }, ownerId);
 }

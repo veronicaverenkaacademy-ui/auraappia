@@ -115,3 +115,113 @@ export function categoryChipLabels(groups: readonly ServiceCategoryGroup[]): str
   const withServices = groups.filter((g) => g.category && g.services.length > 0);
   return ["Todos", ...withServices.map((g) => g.category!.name)];
 }
+
+// ===========================================================================
+// Leitura (núcleo testável, injeção de dependência) — extraído de booking.ts
+// pra poder testar os DOIS estados do banco (migração não aplicada/aplicada
+// e, depois da revisão pedida pela dona: o estado pós-ROLLBACK, que se
+// manifesta EXATAMENTE igual ao "nunca migrado" — coluna/relação ausente —
+// e por isso é coberto pelo MESMO caminho de fallback, sem precisar
+// distinguir um do outro) sem precisar simular o cliente supabase-js
+// inteiro. booking.ts só fornece o `db` real (ver untypedFrom lá).
+// ===========================================================================
+
+/** Subconjunto mínimo do cliente supabase-js que estas funções usam. */
+export type PublicServicesDb = {
+  from: (table: string) => {
+    select: (cols: string) => {
+      eq: (
+        col: string,
+        val: string,
+      ) => {
+        order: (
+          col: string,
+        ) => Promise<{ data: unknown; error: { code?: string; message?: string } | null }>;
+      };
+    };
+  };
+};
+
+type PublicServiceBasic = Omit<PublicServiceMedia, "image_path" | "category_id">;
+
+/** Leitura básica (sem foto/categoria) — mesma consulta que fetchPublicServices
+ * (booking.ts) sempre fez, usada aqui como fallback de
+ * fetchPublicServicesWithMediaCore. */
+export async function fetchPublicServicesBasicCore(
+  db: PublicServicesDb,
+  ownerId: string,
+): Promise<PublicServiceBasic[]> {
+  const { data, error } = await db
+    .from("public_services")
+    .select("id, owner_id, name, description, price, duration_min, color")
+    .eq("owner_id", ownerId)
+    .order("name");
+  if (error) {
+    console.error("[portal-public-services] Falha ao buscar serviços públicos", error);
+    return [];
+  }
+  return (data ?? []) as PublicServiceBasic[];
+}
+
+/**
+ * Serviços públicos já com foto/categoria (visual novo do portal, K2b).
+ *
+ * Comportamento seguro nos dois estados em que a migração
+ * 20261111173000_portal_k2_public_service_media.sql pode NÃO estar
+ * aplicada — antes dela existir, OU depois de um rollback (os dois casos
+ * chegam aqui como o MESMO erro "coluna não existe", via isMissingColumnError
+ * — PostgREST não distingue "nunca existiu" de "existiu e foi desfeita"):
+ * cai pro fallback sem foto/categoria em vez de quebrar a tela. Nunca
+ * lança; pior caso é a mesma lista de sempre, sem foto/categoria.
+ */
+export async function fetchPublicServicesWithMediaCore(
+  db: PublicServicesDb,
+  ownerId: string,
+): Promise<PublicServiceMedia[]> {
+  const { data, error } = await db
+    .from("public_services")
+    .select("id, owner_id, name, description, price, duration_min, color, image_path, category_id")
+    .eq("owner_id", ownerId)
+    .order("name");
+  if (error) {
+    if (isMissingColumnError(error)) {
+      console.error(
+        "[portal-public-services] public_services ainda sem image_path/category_id (migração K2a não aplicada, ou desfeita por rollback) — usando fallback sem foto/categoria",
+        error,
+      );
+      const basic = await fetchPublicServicesBasicCore(db, ownerId);
+      return basic.map((s) => ({ ...s, image_path: null, category_id: null }));
+    }
+    console.error(
+      "[portal-public-services] Falha ao buscar serviços públicos (com foto/categoria)",
+      error,
+    );
+    return [];
+  }
+  return (data ?? []) as PublicServiceMedia[];
+}
+
+/**
+ * Categorias públicas de serviço (chips da tela de agendar, K2b). Mesmo
+ * cuidado: se a view ainda não existir — migração não aplicada OU desfeita
+ * por rollback, mesmo erro "relação não existe" (42P01) nos dois casos —
+ * trata como lista vazia, nunca quebra (sem categorias = chips escondidos).
+ */
+export async function fetchPublicPortalCategoriesCore(
+  db: PublicServicesDb,
+  ownerId: string,
+): Promise<PublicServiceCategoryMedia[]> {
+  const { data, error } = await db
+    .from("public_portal_categories")
+    .select("id, name, image_path, sort_order")
+    .eq("owner_id", ownerId)
+    .order("sort_order");
+  if (error) {
+    console.error(
+      "[portal-public-services] public_portal_categories indisponível (migração K2a não aplicada, desfeita por rollback, ou falha real) — tratando como sem categorias",
+      error,
+    );
+    return [];
+  }
+  return (data ?? []) as PublicServiceCategoryMedia[];
+}
