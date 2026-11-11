@@ -21,6 +21,8 @@ export function ImageCard({
   recommended,
   kind,
   mediaKey,
+  mediaKeyLoading = false,
+  mediaKeyErrorMessage = null,
   usage,
   currentPath,
   isProtected,
@@ -34,6 +36,14 @@ export function ImageCard({
   recommended: string;
   kind: PortalMediaKind;
   mediaKey: string | null;
+  /** A leitura de portal_media_key (getPortalMediaInfo) ainda não voltou —
+   * nesse instante mediaKey já chega aqui como null mesmo pra quem TEM
+   * cadastro, por isso o cartão fica bloqueado (não mostra o aviso de
+   * "complete o cadastro", que é só pra quem de fato não tem chave). */
+  mediaKeyLoading?: boolean;
+  /** Mensagem amigável (com código de suporte) quando a leitura falhou de
+   * verdade — distinta de "não tem cadastro" (ver portal-media-info.server.ts). */
+  mediaKeyErrorMessage?: string | null;
   usage: QuotaUsage;
   currentPath: string | null;
   isProtected: boolean;
@@ -45,8 +55,14 @@ export function ImageCard({
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const url = currentPath ? getPortalMediaPublicUrl(currentPath) : null;
+  const blocked = busy || mediaKeyLoading;
 
   const handleFile = async (file: File) => {
+    if (mediaKeyLoading) return;
+    if (mediaKeyErrorMessage) {
+      toast.error(mediaKeyErrorMessage);
+      return;
+    }
     if (!mediaKey) {
       toast.error("Complete o cadastro da empresa antes de enviar imagens do portal.");
       return;
@@ -119,7 +135,7 @@ export function ImageCard({
             <span className="text-[10px] text-center px-2">Enviar imagem</span>
           </div>
         )}
-        {busy && (
+        {blocked && (
           <div className="absolute inset-0 bg-background/70 flex items-center justify-center">
             <Loader2 className="w-4 h-4 animate-spin" />
           </div>
@@ -127,11 +143,11 @@ export function ImageCard({
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          disabled={busy}
+          disabled={blocked}
           className="absolute inset-0"
           aria-label={url ? `Trocar ${label.toLowerCase()}` : `Enviar ${label.toLowerCase()}`}
         />
-        {url && !busy && (
+        {url && !blocked && (
           <div className="absolute top-1.5 right-1.5 flex gap-1">
             <button
               type="button"

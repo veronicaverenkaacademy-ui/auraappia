@@ -16,6 +16,8 @@ export function ImagesSection({
   patchForm,
   configRow,
   mediaKey,
+  mediaKeyLoading = false,
+  mediaKeyErrorMessage = null,
   usage,
   onUsageChanged,
   companyDisplayName,
@@ -24,6 +26,8 @@ export function ImagesSection({
   patchForm: (p: Partial<PortalDraftForm>) => void;
   configRow: PortalConfigRow | null;
   mediaKey: string | null;
+  mediaKeyLoading?: boolean;
+  mediaKeyErrorMessage?: string | null;
   usage: QuotaUsage;
   onUsageChanged: () => void;
   companyDisplayName: string;
@@ -74,6 +78,8 @@ export function ImagesSection({
             recommended="Quadrada, 512×512px"
             kind="logo"
             mediaKey={mediaKey}
+            mediaKeyLoading={mediaKeyLoading}
+            mediaKeyErrorMessage={mediaKeyErrorMessage}
             usage={usage}
             currentPath={form.logo_path}
             isProtected={isPathProtected(form.logo_path ?? "", protectedPaths)}
@@ -86,6 +92,8 @@ export function ImagesSection({
             recommended="Quadrada, fundo transparente"
             kind="logo-light"
             mediaKey={mediaKey}
+            mediaKeyLoading={mediaKeyLoading}
+            mediaKeyErrorMessage={mediaKeyErrorMessage}
             usage={usage}
             currentPath={form.logo_light_path}
             isProtected={isPathProtected(form.logo_light_path ?? "", protectedPaths)}
@@ -98,6 +106,8 @@ export function ImagesSection({
             recommended="Larga, 1600×500px"
             kind="cover"
             mediaKey={mediaKey}
+            mediaKeyLoading={mediaKeyLoading}
+            mediaKeyErrorMessage={mediaKeyErrorMessage}
             usage={usage}
             currentPath={form.cover_path}
             isProtected={isPathProtected(form.cover_path ?? "", protectedPaths)}
@@ -112,6 +122,8 @@ export function ImagesSection({
             hint="preparado para a próxima fase"
             kind="banner"
             mediaKey={mediaKey}
+            mediaKeyLoading={mediaKeyLoading}
+            mediaKeyErrorMessage={mediaKeyErrorMessage}
             usage={usage}
             currentPath={form.banner_path}
             isProtected={isPathProtected(form.banner_path ?? "", protectedPaths)}
@@ -139,6 +151,8 @@ export function ImagesSection({
                   recommended="Quadrada"
                   kind="services"
                   mediaKey={mediaKey}
+                  mediaKeyLoading={mediaKeyLoading}
+                  mediaKeyErrorMessage={mediaKeyErrorMessage}
                   usage={usage}
                   currentPath={svc.image_path ?? null}
                   isProtected={isPathProtected(svc.image_path ?? "", protectedPaths)}
@@ -172,6 +186,8 @@ export function ImagesSection({
                   recommended="Quadrada"
                   kind="professionals"
                   mediaKey={mediaKey}
+                  mediaKeyLoading={mediaKeyLoading}
+                  mediaKeyErrorMessage={mediaKeyErrorMessage}
                   usage={usage}
                   currentPath={isValidMediaPathFormat(pro.avatar_url ?? "") ? pro.avatar_url : null}
                   isProtected={isPathProtected(pro.avatar_url ?? "", protectedPaths)}
@@ -196,6 +212,8 @@ export function ImagesSection({
         <CategoryManager
           categories={categories}
           mediaKey={mediaKey}
+          mediaKeyLoading={mediaKeyLoading}
+          mediaKeyErrorMessage={mediaKeyErrorMessage}
           usage={usage}
           protectedPaths={protectedPaths}
           onChanged={changed}
