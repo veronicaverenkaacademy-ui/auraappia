@@ -11,6 +11,7 @@ import {
   deleteIfNotProtected,
   type StorageLike,
 } from "@/lib/portal/portal-media-replace";
+import { buildPortalMediaStorageAdapter } from "@/lib/portal/portal-media-storage-adapter";
 import { friendlyQuotaMessage } from "@/lib/portal/portal-media";
 
 /**
@@ -65,11 +66,7 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number)
 }
 
 function storageAdapter(): StorageLike {
-  const bucket = supabase.storage.from("portal-media");
-  return {
-    upload: (path, file, opts) => bucket.upload(path, file, { contentType: opts.contentType }),
-    remove: (paths) => bucket.remove(paths),
-  };
+  return buildPortalMediaStorageAdapter(supabase.storage.from("portal-media"));
 }
 
 export function getPortalMediaPublicUrl(path: string): string {

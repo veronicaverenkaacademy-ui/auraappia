@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isValidHexColor } from "./portal-colors.ts";
 import { isValidMediaPathFormat } from "./portal-media.ts";
+import { PortalFriendlyError } from "./portal-server-error.ts";
 
 /**
  * Esquema de validação do rascunho de personalização do Portal — espelha
@@ -83,12 +84,12 @@ const FIELD_LABELS: Record<string, string> = {
 
 /** Nunca o despejo técnico do Zod — só o nome do campo, mesmo padrão de
  * friendlyUpsertError (companyProfile.schema.ts). */
-export function friendlyPortalDraftError(error: z.ZodError): Error {
+export function friendlyPortalDraftError(error: z.ZodError): PortalFriendlyError {
   console.error("[portal] Falha de validação ao salvar rascunho:", error.issues);
   const fields = [
     ...new Set(error.issues.map((i) => FIELD_LABELS[String(i.path[0])] ?? String(i.path[0]))),
   ];
-  return new Error(
+  return new PortalFriendlyError(
     fields.length > 0
       ? `Não foi possível salvar. Confira o campo: ${fields.join(", ")}.`
       : "Não foi possível salvar. Confira os dados informados.",

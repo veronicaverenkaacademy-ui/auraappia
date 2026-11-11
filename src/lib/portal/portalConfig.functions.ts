@@ -11,6 +11,7 @@ import {
   type PortalConfigRow,
   type PortalConfigDb,
 } from "@/lib/portal/portal-config.server";
+import { withPortalErrorBoundary } from "@/lib/portal/portal-server-error";
 
 /**
  * Camada de servidor da personalização do Portal (K1a-2) — só conecta o
@@ -23,7 +24,9 @@ import {
 export const getPortalConfig = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<{ config: PortalConfigRow | null; canEdit: boolean }> => {
-    return getPortalConfigCore(context.supabase as unknown as PortalConfigDb, context.userId);
+    return withPortalErrorBoundary("K01", () =>
+      getPortalConfigCore(context.supabase as unknown as PortalConfigDb, context.userId),
+    );
   });
 
 const SalvarRascunhoInput = z.object({
@@ -35,13 +38,15 @@ export const salvarRascunhoPortal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((raw: unknown) => SalvarRascunhoInput.parse(raw))
   .handler(async ({ data, context }): Promise<{ ok: true }> => {
-    const patch = parsePortalDraftPatch(data.patch);
-    return salvarRascunhoCore(
-      context.supabase as unknown as PortalConfigDb,
-      context.userId,
-      patch,
-      data.version,
-    );
+    return withPortalErrorBoundary("K02", () => {
+      const patch = parsePortalDraftPatch(data.patch);
+      return salvarRascunhoCore(
+        context.supabase as unknown as PortalConfigDb,
+        context.userId,
+        patch,
+        data.version,
+      );
+    });
   });
 
 const VersionInput = z.object({ version: z.number().int().positive() });
@@ -50,21 +55,23 @@ export const publicarPortal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((raw: unknown) => VersionInput.parse(raw))
   .handler(async ({ data, context }): Promise<{ ok: true }> => {
-    return publicarCore(
-      context.supabase as unknown as PortalConfigDb,
-      context.userId,
-      data.version,
+    return withPortalErrorBoundary("K03", () =>
+      publicarCore(context.supabase as unknown as PortalConfigDb, context.userId, data.version),
     );
   });
 
 export const descartarRascunhoPortal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<{ ok: true }> => {
-    return descartarRascunhoCore(context.supabase as unknown as PortalConfigDb, context.userId);
+    return withPortalErrorBoundary("K04", () =>
+      descartarRascunhoCore(context.supabase as unknown as PortalConfigDb, context.userId),
+    );
   });
 
 export const desfazerPublicacaoPortal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<{ ok: true; result: "ok" | "nada_para_desfazer" }> => {
-    return desfazerPublicacaoCore(context.supabase as unknown as PortalConfigDb, context.userId);
+    return withPortalErrorBoundary("K05", () =>
+      desfazerPublicacaoCore(context.supabase as unknown as PortalConfigDb, context.userId),
+    );
   });

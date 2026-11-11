@@ -1,6 +1,7 @@
 // Núcleo testável de getPortalMediaInfo — mesma separação de
 // portal-config.server.ts (relative imports, sem @tanstack/@/ aliases).
 import { PORTAL_MEDIA_KINDS, type QuotaUsage } from "./portal-media.ts";
+import { PortalFriendlyError } from "./portal-server-error.ts";
 
 export type StorageListEntry = { id: string | null; metadata: { size?: number } | null };
 
@@ -31,7 +32,7 @@ const MEDIA_INFO_STEP = { IS_ADMIN: "M01", COMPANY_LOOKUP: "M02" } as const;
 
 function failMediaInfo(step: string, error: unknown): never {
   console.error(`[portal-media-info] falha no passo ${step}`, error);
-  throw new Error(
+  throw new PortalFriendlyError(
     `Não foi possível preparar o envio agora. Tente novamente. Código de suporte: ${step}.`,
   );
 }
@@ -52,6 +53,36 @@ export async function sumMediaUsage(db: PortalMediaInfoDb, mediaKey: string): Pr
     }
   }
   return { fileCount, totalBytes };
+}
+
+/** Monta o PortalMediaInfoDb a partir do cliente supabase-js real recebido
+ * pelo wrapper (`context.supabase` em portal-media.functions.ts) — extraído
+ * aqui (núcleo testável, só import relativo) porque foi exatamente essa
+ * fiação que causou o bug de produção: chamar `supabase.rpc(fn, args)`/
+ * `supabase.from(table)` DIRETO no objeto original, nunca extrair o método
+ * à parte (`rpc: supabase.rpc`) — isso perde o `this` interno da
+ * implementação real do supabase-js (`this.rest.rpc(...)`) e explode com
+ * "Cannot read properties of undefined (reading 'rpc')" assim que alguém
+ * chama. Um dublê de teste comum (objeto simples, sem depender de `this`)
+ * nunca reproduz isso — por isso o teste de contrato usa um dublê que IMITA
+ * essa dependência (ver tests/portal-server-wiring-contract.test.ts). */
+export function buildMediaInfoDbFromSupabase(supabase: {
+  rpc: PortalMediaInfoDb["rpc"];
+  from: PortalMediaInfoDb["from"];
+  storage: {
+    from: (bucket: string) => {
+      list: (
+        prefix: string,
+        opts: { limit: number },
+      ) => ReturnType<PortalMediaInfoDb["storageList"]>;
+    };
+  };
+}): PortalMediaInfoDb {
+  return {
+    rpc: (fn, args) => supabase.rpc(fn, args),
+    from: (table) => supabase.from(table),
+    storageList: (prefix) => supabase.storage.from("portal-media").list(prefix, { limit: 1000 }),
+  };
 }
 
 export async function getPortalMediaInfoCore(
