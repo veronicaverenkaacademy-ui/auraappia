@@ -187,7 +187,11 @@ BEGIN
   SELECT valor INTO v_image_path FROM zzfx_k2a_ids WHERE chave = 'image_path';
 
   -- ===== 1: colunas antigas inalteradas, na mesma ordem (1ª-7ª posição) =====
-  SELECT array_agg(column_name ORDER BY ordinal_position) = ARRAY['id','owner_id','name','description','price','duration_min','color']
+  -- column_name é do tipo information_schema.sql_identifier, não text — sem
+  -- o cast explícito, a comparação com ARRAY[...] (text[]) falha em tempo de
+  -- execução (42883: operator does not exist), erro só pego ao rodar de
+  -- verdade (bug pré-existente nesta suíte, nunca executada até agora).
+  SELECT array_agg(column_name::text ORDER BY ordinal_position) = ARRAY['id','owner_id','name','description','price','duration_min','color']
   INTO v_cols_ok FROM (
     SELECT column_name, ordinal_position FROM information_schema.columns
     WHERE table_schema='public' AND table_name='public_services' AND ordinal_position <= 7
