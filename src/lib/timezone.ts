@@ -73,3 +73,12 @@ export function addCalendarDays(date: CalendarDate, days: number): CalendarDate 
 export function calendarWeekday(date: CalendarDate): number {
   return new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
 }
+
+/** Diferença em dias de calendário entre duas datas (b - a), sem depender de
+ * fuso (mesma aritmética em UTC "neutro" de addCalendarDays). Usado pela
+ * FASE C2 para achar em qual dia da janela de agendamento um horário cai. */
+export function calendarDaysBetween(a: CalendarDate, b: CalendarDate): number {
+  const msA = Date.UTC(a.year, a.month - 1, a.day);
+  const msB = Date.UTC(b.year, b.month - 1, b.day);
+  return Math.round((msB - msA) / 86400000);
+}
