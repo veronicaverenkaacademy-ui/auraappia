@@ -56,3 +56,21 @@ test("uma execução que nunca chama finishCronRun fica com finished_at ausente 
   await startCronRun({ supabaseAdmin: db as never, now: NOW });
   assert.equal(db.tables.whatsapp_cron_runs[0].finished_at, undefined);
 });
+
+test("FASE LEMBRETES-1 (ajuste): startCronRun grava a origem do gatilho (github|db), nunca o valor do segredo", async () => {
+  const db = new FakeSupabaseAdmin({ tables: { whatsapp_cron_runs: [] } });
+  await startCronRun({ supabaseAdmin: db as never, now: NOW, triggerSource: "db" });
+  assert.equal(db.tables.whatsapp_cron_runs[0].trigger_source, "db");
+});
+
+test("FASE LEMBRETES-1 (ajuste): finishCronRun grava uncertainExpired na coluna uncertain_expired", async () => {
+  const db = new FakeSupabaseAdmin({ tables: { whatsapp_cron_runs: [] } });
+  const id = await startCronRun({ supabaseAdmin: db as never, now: NOW, triggerSource: "github" });
+  await finishCronRun(
+    id,
+    { ok: true, uncertainExpired: 2 },
+    { supabaseAdmin: db as never, now: NOW },
+  );
+  assert.equal(db.tables.whatsapp_cron_runs[0].uncertain_expired, 2);
+  assert.equal(db.tables.whatsapp_cron_runs[0].trigger_source, "github");
+});

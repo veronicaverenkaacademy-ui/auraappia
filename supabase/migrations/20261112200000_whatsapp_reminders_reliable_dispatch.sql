@@ -26,7 +26,7 @@
 --
 -- Esta migration NÃO reescreve nada do pipeline de envio (continua 100%
 -- em TypeScript, central-reminder-scheduler.server.ts e vizinhos, provado e
--- testado) — só prepara, no banco, as três peças que faltam pra tornar o
+-- testado) — só prepara, no banco, as peças que faltam pra tornar o
 -- disparo confiável, nenhuma delas ligada por si só:
 --   A) pg_cron + pg_net (disponíveis nesta instância, confirmados por
 --      consulta a pg_available_extensions em 12/11/2026, mas nunca
@@ -39,13 +39,44 @@
 --      verdade — ver central-webhook-handler.server.ts:389-402).
 --   C) whatsapp_cron_runs — histórico mínimo de execuções (hoje só existe
 --      como log efêmero do GitHub Actions; nenhuma tabela registra isso).
---   D) recover_stuck_notification_jobs() — nenhuma rotina hoje recupera um
+--   D) whatsapp_messages ganha o status 'incerto_expirado' — ver SEÇÃO E.
+--   E) recover_stuck_notification_jobs() — nenhuma rotina hoje recupera um
 --      job que ficou 'processing' pra sempre (processo anterior
 --      travou/caiu no meio) — claim_notification_jobs só pega 'pending'.
 --
+-- AJUSTES (revisão da dona, 12/11/2026, mesma branch/PR #115 — antes de
+-- qualquer aplicação):
+--   1. Segredo do agendador: GitHub Actions não permite LER de volta um
+--      secret já salvo — "copiar o mesmo valor de CRON_SECRET pro Vault"
+--      era inviável. Substituído por dois segredos INDEPENDENTES
+--      (CRON_SECRET do GitHub, CRON_SECRET_DB novo, pro pg_net) — o
+--      endpoint aceita qualquer um dos dois, comparação em tempo constante
+--      nos dois (ver central-cron-auth.ts, TypeScript, não SQL). Por isso
+--      whatsapp_cron_runs ganhou a coluna trigger_source (SEÇÃO C) — só
+--      registra qual ORIGEM autenticou (github|db), nunca o valor.
+--   2. Job em 'incerto' que nunca resolve: antes, ficava preso em
+--      'processing' pra sempre sem nenhum prazo. Agora, depois de 24h sem
+--      confirmação (UNCERTAIN_EXPIRY_HOURS), recover_stuck_notification_jobs
+--      marca a mensagem como 'incerto_expirado' (status novo, SEÇÃO D) e o
+--      job como 'failed' — terminal, nunca reenviado sozinho. O aviso no
+--      sino e a contagem (whatsapp_cron_runs.uncertain_expired, SEÇÃO C)
+--      ficam a cargo do wrapper TypeScript (central-stuck-job-recovery.server.ts),
+--      pelo mesmo motivo de apply_whatsapp_central_reply nunca escrever em
+--      app_notifications direto do SQL (confirmado lendo essa função: só
+--      devolve um código, quem decide notificar é a camada de cima).
+--   3. net._http_response (tabela interna do pg_net) NÃO cresce sem limite
+--      nesta instância — confirmado via `select * from pg_settings where
+--      name='pg_net.ttl'` (12/11/2026): já está configurado para 6 horas,
+--      a própria extensão limpa sozinha. Por isso NENHUMA limpeza extra foi
+--      adicionada aqui — ver comentário equivalente em
+--      20261112210000_whatsapp_cron_schedule.sql, com a evidência completa.
+--
 -- Aditiva e retrocompatível: nenhuma tabela/coluna/função/política
--- existente é alterada ou removida. Idempotente (CREATE EXTENSION/TABLE/
--- INDEX IF NOT EXISTS, CREATE OR REPLACE FUNCTION) — seguro reaplicar.
+-- existente é removida; a única alteração a algo pré-existente é o CHECK
+-- de whatsapp_messages.status (SEÇÃO D), que só ACRESCENTA um valor —
+-- todos os 6 valores antigos continuam aceitos, nenhum removido. Idempotente
+-- (CREATE EXTENSION/TABLE/INDEX IF NOT EXISTS, CREATE OR REPLACE FUNCTION,
+-- DROP CONSTRAINT IF EXISTS antes de recriar) — seguro reaplicar.
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '10s';
@@ -127,6 +158,11 @@ CREATE TABLE IF NOT EXISTS public.whatsapp_cron_runs (
   -- alerta consultável — ver whatsapp_cron_runs_unfinished_idx).
   finished_at timestamptz NULL,
   ok boolean NULL,
+  -- AJUSTE (dona, 12/11/2026): qual dos dois segredos autenticou esta
+  -- chamada — 'github' (CRON_SECRET) ou 'db' (CRON_SECRET_DB/pg_net).
+  -- NUNCA o valor do segredo, só a origem (ver central-cron-auth.ts).
+  -- NULL em linhas de antes deste ajuste (coluna nova, nunca inferido).
+  trigger_source text NULL CHECK (trigger_source IN ('github', 'db')),
   scan_enqueued int NULL,
   scan_recalculated int NULL,
   scan_cancelled_bobo int NULL,
@@ -136,6 +172,9 @@ CREATE TABLE IF NOT EXISTS public.whatsapp_cron_runs (
   processed_held int NULL,
   processed_cancelled int NULL,
   stuck_recovered int NULL,
+  -- AJUSTE (dona, 12/11/2026): quantos jobs 'incerto' expiraram (>24h sem
+  -- confirmação) nesta execução — nunca reenviados, só marcados 'failed'.
+  uncertain_expired int NULL,
   orphan_deleted int NULL,
   error_message text NULL,
   created_at timestamptz NOT NULL DEFAULT now()
@@ -151,7 +190,24 @@ ALTER TABLE public.whatsapp_cron_runs ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.whatsapp_cron_runs FROM anon, authenticated;
 GRANT ALL ON public.whatsapp_cron_runs TO service_role;
 
--- ===================== SEÇÃO D — recuperar job preso em 'processing' =====================
+-- ===================== SEÇÃO D — novo status em whatsapp_messages =====================
+-- AJUSTE (dona, 12/11/2026): 'uncertain' sem resolução nunca tinha prazo —
+-- um job podia ficar preso em 'processing' pra sempre. 'incerto_expirado'
+-- é o desfecho TERMINAL depois de UNCERTAIN_EXPIRY_HOURS (24h, SEÇÃO E) —
+-- nunca reenviado, só documentado. ÚNICA alteração a algo pré-existente
+-- nesta migration: o CHECK antigo (ARRAY['pending','sent','delivered',
+-- 'read','failed','uncertain']) é substituído por um que tem os MESMOS 6
+-- valores + 1 novo — nenhum valor antigo removido (lição de CLAUDE.md:
+-- nunca estreitar um CHECK existente sem confirmar as linhas atuais —
+-- aqui só alarga, então essa checagem nem é necessária, mas o princípio
+-- de nunca remover um valor aceito continua valendo).
+ALTER TABLE public.whatsapp_messages
+  DROP CONSTRAINT IF EXISTS whatsapp_messages_status_check;
+ALTER TABLE public.whatsapp_messages
+  ADD CONSTRAINT whatsapp_messages_status_check
+  CHECK (status IN ('pending', 'sent', 'delivered', 'read', 'failed', 'uncertain', 'incerto_expirado'));
+
+-- ===================== SEÇÃO E — recuperar job preso em 'processing' =====================
 -- claim_notification_jobs (20260811090000_whatsapp_evolution_mvp.sql) só
 -- reivindica status='pending' — se o processo que reivindicou um job
 -- caiu/deu timeout DEPOIS de marcar 'processing' e ANTES de gravar o
@@ -166,16 +222,26 @@ GRANT ALL ON public.whatsapp_cron_runs TO service_role;
 -- de envio), confere se já existe um whatsapp_messages 'sent'/'delivered'/
 -- 'read' para o MESMO agendamento+template — se existir, o envio real já
 -- aconteceu (só a escrita em notification_jobs que travou) e o job é
--- RECONCILIADO como 'sent' (nunca reenviado). Se o único registro
--- encontrado for 'uncertain' (timeout da Meta, não se sabe se chegou), o
--- job fica como está (ainda 'processing') — mesma regra de "nunca reenviar
--- sozinho em caso de incerteza" já usada em sendCentralTemplate. Só quando
--- NENHUM envio for encontrado é que o job volta para 'pending' de verdade.
+-- RECONCILIADO como 'sent' (nunca reenviado).
+--
+-- AJUSTE (dona, 12/11/2026) — prazo pro 'uncertain' sem resolução: antes,
+-- um job cujo único registro era 'uncertain' (timeout da Meta) ficava
+-- 'processing' PARA SEMPRE, sem nenhum prazo — esta função o devolvia como
+-- 'left_uncertain' indefinidamente, toda vez que rodasse. Agora, se esse
+-- 'uncertain' tem mais de UNCERTAIN_EXPIRY_HOURS (24h), o desfecho passa a
+-- ser TERMINAL: a mensagem vira 'incerto_expirado' (nunca apagada, só
+-- marcada) e o job vira 'failed' — nunca reenviado sozinho, exatamente
+-- como antes, só que agora com um fim declarado em vez de ficar pendurado
+-- para sempre. Dentro das 24h, continua 'left_uncertain' (sem mudança).
+-- owner_id (novo na assinatura) é devolvido só pra quem chama (TypeScript)
+-- saber pra quem avisar no sino sobre um 'incerto_expirado' — a notificação
+-- em si NÃO é criada aqui (mesmo padrão de apply_whatsapp_central_reply,
+-- que também nunca escreve em app_notifications direto do SQL).
 CREATE OR REPLACE FUNCTION public.recover_stuck_notification_jobs(
   p_stuck_after_minutes int DEFAULT 10,
   p_limit int DEFAULT 50
 )
-RETURNS TABLE(job_id uuid, appointment_id uuid, job_type text, outcome text)
+RETURNS TABLE(job_id uuid, appointment_id uuid, owner_id uuid, job_type text, outcome text)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public'
@@ -186,9 +252,11 @@ DECLARE
   v_sent_msg_id uuid;
   v_sent_at timestamptz;
   v_uncertain_msg_id uuid;
+  v_uncertain_created_at timestamptz;
+  v_uncertain_expiry_hours CONSTANT int := 24;
 BEGIN
   FOR rec IN
-    SELECT nj.id, nj.appointment_id, nj.type, nj.attempts
+    SELECT nj.id, nj.appointment_id, nj.owner_id, nj.type, nj.attempts
     FROM public.notification_jobs nj
     WHERE nj.status = 'processing'
       AND nj.type IN ('appointment_reminder_24h', 'appointment_reminder_2h')
@@ -204,6 +272,7 @@ BEGIN
     v_sent_msg_id := NULL;
     v_sent_at := NULL;
     v_uncertain_msg_id := NULL;
+    v_uncertain_created_at := NULL;
 
     IF rec.appointment_id IS NOT NULL THEN
       SELECT wm.id, wm.sent_at INTO v_sent_msg_id, v_sent_at
@@ -232,13 +301,13 @@ BEGIN
         WHERE id = rec.appointment_id AND reminder_2h_sent_at IS NULL;
       END IF;
 
-      job_id := rec.id; appointment_id := rec.appointment_id; job_type := rec.type; outcome := 'reconciled_sent';
+      job_id := rec.id; appointment_id := rec.appointment_id; owner_id := rec.owner_id; job_type := rec.type; outcome := 'reconciled_sent';
       RETURN NEXT;
       CONTINUE;
     END IF;
 
     IF rec.appointment_id IS NOT NULL THEN
-      SELECT wm.id INTO v_uncertain_msg_id
+      SELECT wm.id, wm.created_at INTO v_uncertain_msg_id, v_uncertain_created_at
       FROM public.whatsapp_messages wm
       WHERE wm.appointment_id = rec.appointment_id
         AND wm.message_type = v_template_key
@@ -248,10 +317,27 @@ BEGIN
     END IF;
 
     IF v_uncertain_msg_id IS NOT NULL THEN
-      -- Ainda incerto (timeout da Meta) — nunca reenviar sozinho; deixa
-      -- 'processing' até o webhook de status resolver ou alguém decidir
-      -- manualmente (mesma regra já usada no caminho normal de envio).
-      job_id := rec.id; appointment_id := rec.appointment_id; job_type := rec.type; outcome := 'left_uncertain';
+      IF v_uncertain_created_at < now() - (v_uncertain_expiry_hours || ' hours')::interval THEN
+        -- Mais de 24h sem o webhook de status resolver: terminal agora,
+        -- nunca reenviado — só muda de "pendurado pra sempre" pra "fim
+        -- declarado". A mensagem em si nunca é apagada, só marcada.
+        UPDATE public.whatsapp_messages
+        SET status = 'incerto_expirado'
+        WHERE id = v_uncertain_msg_id;
+        UPDATE public.notification_jobs
+        SET status = 'failed',
+            last_error = 'Nunca confirmado: envio incerto (timeout da Meta) há mais de ' || v_uncertain_expiry_hours || 'h sem o webhook de status resolver. Marcado como falho — nunca reenviado automaticamente.'
+        WHERE id = rec.id;
+
+        job_id := rec.id; appointment_id := rec.appointment_id; owner_id := rec.owner_id; job_type := rec.type; outcome := 'uncertain_expired';
+        RETURN NEXT;
+        CONTINUE;
+      END IF;
+
+      -- Ainda dentro do prazo — nunca reenviar sozinho; deixa 'processing'
+      -- até o webhook de status resolver ou expirar (mesma regra já usada
+      -- no caminho normal de envio).
+      job_id := rec.id; appointment_id := rec.appointment_id; owner_id := rec.owner_id; job_type := rec.type; outcome := 'left_uncertain';
       RETURN NEXT;
       CONTINUE;
     END IF;
@@ -265,7 +351,7 @@ BEGIN
         last_error = 'Recuperado automaticamente: ficou "processando" por mais de ' || p_stuck_after_minutes || ' minuto(s) sem terminar (provável falha/timeout do processo anterior) — nenhum envio confirmado encontrado, liberado para nova tentativa.'
     WHERE id = rec.id;
 
-    job_id := rec.id; appointment_id := rec.appointment_id; job_type := rec.type; outcome := 'reset_to_pending';
+    job_id := rec.id; appointment_id := rec.appointment_id; owner_id := rec.owner_id; job_type := rec.type; outcome := 'reset_to_pending';
     RETURN NEXT;
   END LOOP;
 END;

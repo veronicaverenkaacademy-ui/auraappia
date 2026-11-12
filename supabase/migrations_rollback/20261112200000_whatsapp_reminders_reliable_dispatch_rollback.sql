@@ -10,16 +10,30 @@
 -- não deste projeto) e, mais importante, instalar a extensão nunca ligou
 -- nada por si só (nenhum cron.schedule() foi criado por esta migration —
 -- isso fica no arquivo separado, próprio passo de autorização). Reverter
--- as SEÇÕES B/C/D (as únicas que de fato criam objetos deste projeto) já
--- deixa o banco exatamente como estava antes, sem precisar tocar nas
--- extensões.
+-- as SEÇÕES B/C/D/E (as únicas que de fato criam/alteram objetos deste
+-- projeto) já deixa o banco exatamente como estava antes, sem precisar
+-- tocar nas extensões.
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '10s';
 
--- ---- SEÇÃO D — recuperação de job preso ----
+-- ---- SEÇÃO E — recuperação de job preso ----
 REVOKE ALL ON FUNCTION public.recover_stuck_notification_jobs(int, int) FROM service_role;
 DROP FUNCTION IF EXISTS public.recover_stuck_notification_jobs(int, int);
+
+-- ---- SEÇÃO D — reverte o CHECK de whatsapp_messages.status ao estado
+-- anterior exato (confirmado via pg_get_constraintdef em 12/11/2026, antes
+-- de qualquer alteração desta fase): os MESMOS 6 valores, sem
+-- 'incerto_expirado'. Nenhuma linha com esse status deveria existir se o
+-- rollback rodar logo depois da aplicação (nunca dentro de 24h) — mas, se
+-- existir por qualquer motivo, o DROP+ADD abaixo falharia com "constraint
+-- violated" em vez de silenciosamente perder dado, o que é o comportamento
+-- certo: pare e investigue antes de insistir.
+ALTER TABLE public.whatsapp_messages
+  DROP CONSTRAINT IF EXISTS whatsapp_messages_status_check;
+ALTER TABLE public.whatsapp_messages
+  ADD CONSTRAINT whatsapp_messages_status_check
+  CHECK (status IN ('pending', 'sent', 'delivered', 'read', 'failed', 'uncertain'));
 
 -- ---- SEÇÃO C — histórico de execuções do cron ----
 DROP TABLE IF EXISTS public.whatsapp_cron_runs;

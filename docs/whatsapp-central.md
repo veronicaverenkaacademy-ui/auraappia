@@ -189,6 +189,16 @@ sem autorização):
   `'processing'` (processo anterior caiu/deu timeout) sem nunca reenviar
   um que já tinha sido confirmado como entregue (reconcilia via
   `whatsapp_messages`); chamado por `central-stuck-job-recovery.server.ts`
-  a cada execução do cron.
-- Comparação do `CRON_SECRET` do endpoint agora é em tempo constante
-  (`central-constant-time-compare.ts`).
+  a cada execução do cron. Se o único registro for `'uncertain'` (timeout
+  da Meta) há mais de 24h sem resolução, marca a mensagem como
+  `'incerto_expirado'` e o job como `'failed'` — terminal, nunca reenviado
+  sozinho — e avisa a dona no sino (uma vez por job).
+- Comparação em tempo constante no endpoint (`central-constant-time-compare.ts`),
+  aceitando `CRON_SECRET` (GitHub Actions) OU `CRON_SECRET_DB` (pg_net) —
+  dois segredos INDEPENDENTES (`central-cron-auth.ts`): o GitHub Actions
+  não permite reler um secret já salvo, então "usar o mesmo valor nos
+  dois" nunca foi viável. `whatsapp_cron_runs.trigger_source` registra qual
+  dos dois autenticou (github|db), nunca o valor.
+- `net._http_response` (tabela interna do pg_net) já se limpa sozinha —
+  confirmado via `pg_net.ttl = 6 hours` nesta instância — nenhuma limpeza
+  extra foi adicionada.

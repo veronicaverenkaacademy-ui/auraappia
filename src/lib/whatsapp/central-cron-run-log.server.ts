@@ -39,8 +39,16 @@ export type CronRunCounts = {
   processedHeld: number;
   processedCancelled: number;
   stuckRecovered: number;
+  /** FASE LEMBRETES-1 (ajuste 12/11/2026): job de lembrete 'incerto' há mais
+   * de 24h — marcado como 'incerto_expirado', nunca reenviado sozinho. */
+  uncertainExpired: number;
   orphanDeleted: number;
 };
+
+/** FASE LEMBRETES-1 (ajuste 12/11/2026): de onde veio esta chamada —
+ * 'github' (GitHub Actions, CRON_SECRET) ou 'db' (pg_net, CRON_SECRET_DB).
+ * Nunca o valor do segredo, só a origem. */
+export type CronTriggerSource = "github" | "db";
 
 async function resolveDb(supabaseAdmin?: SupabaseAdmin): Promise<SupabaseAdmin> {
   if (supabaseAdmin) return supabaseAdmin;
@@ -51,13 +59,17 @@ async function resolveDb(supabaseAdmin?: SupabaseAdmin): Promise<SupabaseAdmin> 
 }
 
 export async function startCronRun(
-  deps: { supabaseAdmin?: SupabaseAdmin; now?: () => Date } = {},
+  deps: {
+    supabaseAdmin?: SupabaseAdmin;
+    now?: () => Date;
+    triggerSource?: CronTriggerSource;
+  } = {},
 ): Promise<string | null> {
   const supabaseAdmin = await resolveDb(deps.supabaseAdmin);
   const now = (deps.now ?? (() => new Date()))();
   const { data, error } = await supabaseAdmin
     .from("whatsapp_cron_runs")
-    .insert({ started_at: now.toISOString() })
+    .insert({ started_at: now.toISOString(), trigger_source: deps.triggerSource ?? null })
     .select("id")
     .maybeSingle();
   if (error) {
@@ -91,6 +103,7 @@ export async function finishCronRun(
       processed_held: result.processedHeld ?? null,
       processed_cancelled: result.processedCancelled ?? null,
       stuck_recovered: result.stuckRecovered ?? null,
+      uncertain_expired: result.uncertainExpired ?? null,
       orphan_deleted: result.orphanDeleted ?? null,
       error_message: result.errorMessage ?? null,
     })
