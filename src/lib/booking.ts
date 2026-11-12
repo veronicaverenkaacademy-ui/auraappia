@@ -1,4 +1,11 @@
 import { supabase } from "@/integrations/supabase/client";
+import {
+  fetchPublicServicesWithMediaCore,
+  fetchPublicPortalCategoriesCore,
+  type PublicServicesDb,
+  type PublicServiceMedia,
+  type PublicServiceCategoryMedia,
+} from "@/lib/portal/portal-public-services";
 
 export type PublicService = {
   id: string;
@@ -19,6 +26,25 @@ export type PublicProfessional = {
   avatar_url: string | null;
   agenda_color: string | null;
 };
+
+/**
+ * FASE K2a — `src/integrations/supabase/types.ts` (gerado do banco real)
+ * ainda não conhece `image_path`/`category_id` em `public_services` nem a
+ * view `public_portal_categories`, porque a migração
+ * 20261111173000_portal_k2_public_service_media.sql ainda não foi aplicada
+ * — o cliente supabase-js tipado rejeitaria essas duas consultas em tempo
+ * de compilação. Mesmo cast já usado em portal-media.functions.ts
+ * (`context.supabase as unknown as {...}`) pra descrever só a forma mínima
+ * que esta função usa, sem fingir que o schema inteiro mudou. Quando a
+ * migração for aplicada e `types.ts` regenerado, este cast deixa de ser
+ * necessário (mas continua funcionando, não precisa apagar às pressas).
+ *
+ * A lógica de leitura (incluindo o fallback seguro se a migração não
+ * existir/for desfeita) mora em portal-public-services.ts
+ * (fetchPublicServicesWithMediaCore/fetchPublicPortalCategoriesCore) — só
+ * import relativo lá, testável com `node --test` sem bundler; aqui só a
+ * fiação com o cliente supabase-js real. */
+const untypedFrom = supabase.from.bind(supabase) as unknown as PublicServicesDb["from"];
 
 export async function fetchPublicServices(ownerId: string): Promise<PublicService[]> {
   const { data, error } = await supabase
@@ -51,4 +77,28 @@ export async function fetchPublicProfessionals(ownerId: string): Promise<PublicP
     return [];
   }
   return (data ?? []) as PublicProfessional[];
+}
+
+/**
+ * FASE K2a — mesma leitura de fetchPublicServices, mas já pedindo
+ * image_path/category_id (visual novo do portal, K2b). Ainda não usada por
+ * nenhuma tela — preparada pra quando a migração
+ * 20261111173000_portal_k2_public_service_media.sql for aplicada. Lógica
+ * real (incluindo o fallback seguro) em
+ * portal-public-services.ts#fetchPublicServicesWithMediaCore — aqui só a
+ * fiação com o cliente supabase-js real.
+ */
+export async function fetchPublicServicesWithMedia(ownerId: string): Promise<PublicServiceMedia[]> {
+  return fetchPublicServicesWithMediaCore({ from: untypedFrom }, ownerId);
+}
+
+/**
+ * FASE K2a — categorias públicas de serviço (chips da tela de agendar,
+ * K2b). Lógica real em
+ * portal-public-services.ts#fetchPublicPortalCategoriesCore.
+ */
+export async function fetchPublicPortalCategories(
+  ownerId: string,
+): Promise<PublicServiceCategoryMedia[]> {
+  return fetchPublicPortalCategoriesCore({ from: untypedFrom }, ownerId);
 }
