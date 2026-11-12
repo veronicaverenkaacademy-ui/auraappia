@@ -227,9 +227,11 @@ function CompanyLanding() {
         onOpenMyBookings={openMyBookings}
       />
 
-      <div className="sr-only" aria-hidden="false">
-        <ClientAccountPanel ref={accountPanelRef} ownerId={company.owner_id} hideTrigger />
-      </div>
+      {/* FASE K2b-FIX: NUNCA envolver em sr-only — quando aberto (telefone/
+          código/cadastro ou painel logado), este componente já se apresenta
+          como sobreposição em tela cheia (ver client-account-panel.tsx);
+          fechado, ele renderiza um <div> vazio, sem nenhum efeito visual. */}
+      <ClientAccountPanel ref={accountPanelRef} ownerId={company.owner_id} hideTrigger />
 
       {bookingOpen && (
         <BookingFlow

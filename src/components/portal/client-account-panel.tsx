@@ -69,33 +69,45 @@ export const ClientAccountPanel = forwardRef<
         </Button>
       )}
 
-      {auth.view === "phone" && (
-        <PhoneStep
-          phone={auth.phone}
-          setPhone={auth.setPhone}
-          loading={auth.loading}
-          onSubmit={auth.sendCode}
-          onCancel={() => auth.setView("closed")}
-        />
-      )}
-      {auth.view === "otp" && (
-        <OtpStep
-          code={auth.code}
-          setCode={auth.setCode}
-          loading={auth.loading}
-          onSubmit={auth.verify}
-          onBack={() => auth.setView("phone")}
-          resendAvailableAt={auth.resendAvailableAt}
-          onResend={auth.resendCode}
-        />
-      )}
-      {auth.view === "signup" && (
-        <SignupStep
-          signup={auth.signup}
-          setSignup={auth.setSignup}
-          loading={auth.loading}
-          onSubmit={auth.confirmSignup}
-        />
+      {/* FASE K2b-FIX: telefone/código/cadastro precisam da mesma camada de
+          sobreposição em tela cheia que o painel logado já usa (abaixo) —
+          sem isso, quando este componente é montado fora de uma tela que já
+          é, ela própria, uma sobreposição (ex.: atalho/menu da home nova),
+          o conteúdo fica visível só "no lugar" onde o componente foi
+          montado, que pode estar fora da área vista pela cliente. */}
+      {auth.view !== "closed" && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-background/95 p-6 overflow-y-auto">
+          <div className="w-full max-w-sm">
+            {auth.view === "phone" && (
+              <PhoneStep
+                phone={auth.phone}
+                setPhone={auth.setPhone}
+                loading={auth.loading}
+                onSubmit={auth.sendCode}
+                onCancel={() => auth.setView("closed")}
+              />
+            )}
+            {auth.view === "otp" && (
+              <OtpStep
+                code={auth.code}
+                setCode={auth.setCode}
+                loading={auth.loading}
+                onSubmit={auth.verify}
+                onBack={() => auth.setView("phone")}
+                resendAvailableAt={auth.resendAvailableAt}
+                onResend={auth.resendCode}
+              />
+            )}
+            {auth.view === "signup" && (
+              <SignupStep
+                signup={auth.signup}
+                setSignup={auth.setSignup}
+                loading={auth.loading}
+                onSubmit={auth.confirmSignup}
+              />
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
