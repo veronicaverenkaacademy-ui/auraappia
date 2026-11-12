@@ -1,25 +1,39 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Instagram,
-  Facebook,
-  Music2,
-  MessageCircle,
-  MapPin,
-  Clock,
-  Calendar,
-  Users,
-} from "lucide-react";
+import { MapPin, Users } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { fetchCompanyProfileBySlug, type CompanyProfile } from "@/lib/companyProfile";
-import { fetchPublicServices, fetchPublicProfessionals } from "@/lib/booking";
+import {
+  fetchPublicProfessionals,
+  fetchPublicServicesWithMedia,
+  fetchPublicPortalCategories,
+} from "@/lib/booking";
 import { initials } from "@/lib/clients";
 import { BookingFlow } from "@/components/portal/booking-flow";
-import { ClientAccountPanel } from "@/components/portal/client-account-panel";
+import {
+  ClientAccountPanel,
+  type ClientAccountPanelHandle,
+} from "@/components/portal/client-account-panel";
+import { PortalHero } from "@/components/portal/portal-hero";
+import { PortalMenuSheet } from "@/components/portal/portal-menu-sheet";
+import { PortalServicesSection } from "@/components/portal/portal-services-section";
+import { PortalBannerStrip, PortalImportantCard } from "@/components/portal/portal-misc-cards";
+import { PortalFixedFooter } from "@/components/portal/portal-footer";
 import { fetchPortalPublicConfig } from "@/lib/portal/portal-public";
 import { resolvePortalRenderData, type PortalRenderData } from "@/lib/portal/portal-render-data";
+import {
+  resolveCoverTitle,
+  resolveCoverSubtitle,
+  resolveShortcuts,
+  isBannerVisible,
+  isImportantVisible,
+  resolveInstagramHref,
+  formatCityState,
+} from "@/lib/portal/portal-home-view";
+import { whatsappHref as buildWhatsappHref } from "@/lib/portal/portal-whatsapp";
+import "@/lib/portal/portal-fonts";
 
 export const Route = createFileRoute("/l/$slug")({
   ssr: false,
@@ -54,6 +68,9 @@ function CompanyLanding() {
     queryFn: () => fetchPortalPublicConfig(slug),
   });
   const [bookingOpen, setBookingOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [footerHeight, setFooterHeight] = useState(72);
+  const accountPanelRef = useRef<ClientAccountPanelHandle>(null);
 
   if (isLoading) {
     return (
@@ -94,6 +111,29 @@ function CompanyLanding() {
     publicConfig ?? null,
   );
 
+  const openBooking = () => {
+    setMenuOpen(false);
+    setBookingOpen(true);
+  };
+  const openMyBookings = () => {
+    setMenuOpen(false);
+    accountPanelRef.current?.open();
+  };
+
+  const whatsappHref = buildWhatsappHref(company.whatsapp);
+  const instagramHref = resolveInstagramHref(company.instagram);
+  const cityState = formatCityState(company.city, company.state);
+  const coverTitle = resolveCoverTitle(renderData.coverTitle, company.display_name);
+  const coverSubtitle = resolveCoverSubtitle({
+    coverSubtitle: renderData.coverSubtitle,
+    companyDescription: company.description,
+    welcomeMessage: renderData.welcomeMessage,
+  });
+  const shortcuts = resolveShortcuts({
+    showShortcuts: renderData.showShortcuts,
+    hasWhatsapp: Boolean(whatsappHref),
+  });
+
   return (
     <div
       className="min-h-screen bg-background text-foreground"
@@ -106,163 +146,125 @@ function CompanyLanding() {
           : undefined
       }
     >
-      <div className="mx-auto w-full max-w-2xl px-6 pt-4 flex justify-end">
-        <ClientAccountPanel ownerId={company.owner_id} />
-      </div>
-      <Hero company={company} renderData={renderData} onBook={() => setBookingOpen(true)} />
-      <div className="mx-auto w-full max-w-2xl px-6">
-        <AboutSection company={company} />
-        {renderData.showServices && <ServicesSection ownerId={company.owner_id} />}
+      <PortalHero
+        displayName={company.display_name}
+        logoWideUrl={renderData.logoWideUrl}
+        coverUrl={renderData.coverUrl}
+        coverTitle={coverTitle}
+        coverSubtitle={coverSubtitle}
+        shortcuts={shortcuts}
+        whatsappHref={whatsappHref}
+        onOpenMenu={() => setMenuOpen(true)}
+        onOpenBooking={openBooking}
+        onOpenMyBookings={openMyBookings}
+      />
+
+      <div
+        className="mx-auto w-full max-w-2xl px-4"
+        style={{ paddingBottom: renderData.showFooter ? footerHeight : 24 }}
+      >
+        {isBannerVisible({
+          showBanner: renderData.showBanner,
+          bannerUrl: renderData.bannerUrl,
+          bannerText: renderData.bannerText,
+        }) && (
+          <PortalBannerStrip
+            bannerUrl={renderData.bannerUrl}
+            bannerText={renderData.bannerText}
+            displayName={company.display_name}
+          />
+        )}
+
+        {renderData.showServices && (
+          <ServicesSectionData ownerId={company.owner_id} onOpenBooking={openBooking} />
+        )}
+
+        {isImportantVisible({
+          showImportant: renderData.showImportant,
+          importantText: renderData.importantText,
+        }) && (
+          <PortalImportantCard title={renderData.importantTitle} text={renderData.importantText!} />
+        )}
+
         {renderData.showProfessionals && <ProfessionalsSection ownerId={company.owner_id} />}
         {renderData.showLocation && <LocationSection company={company} />}
-        <SocialSection company={company} />
+
+        <div className="py-6 text-center">
+          <Link
+            to="/termos-de-uso"
+            className="text-xs opacity-60 hover:opacity-100 transition mr-4"
+          >
+            Termos
+          </Link>
+          <Link
+            to="/politica-de-privacidade"
+            className="text-xs opacity-60 hover:opacity-100 transition"
+          >
+            Privacidade
+          </Link>
+        </div>
       </div>
-      {renderData.showFooter && <Footer company={company} />}
-      {bookingOpen && <BookingFlow company={company} onClose={() => setBookingOpen(false)} />}
+
+      {renderData.showFooter && (
+        <PortalFixedFooter
+          displayName={company.display_name}
+          cityState={cityState}
+          whatsappHref={whatsappHref}
+          instagramHref={instagramHref}
+          onHeightChange={setFooterHeight}
+        />
+      )}
+
+      <PortalMenuSheet
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        displayName={company.display_name}
+        cityState={cityState}
+        whatsappHref={whatsappHref}
+        instagramHref={instagramHref}
+        onNavigateHome={() => setMenuOpen(false)}
+        onOpenBooking={openBooking}
+        onOpenMyBookings={openMyBookings}
+      />
+
+      <div className="sr-only" aria-hidden="false">
+        <ClientAccountPanel ref={accountPanelRef} ownerId={company.owner_id} hideTrigger />
+      </div>
+
+      {bookingOpen && (
+        <BookingFlow
+          company={company}
+          logoWideUrl={renderData.logoWideUrl}
+          onClose={() => setBookingOpen(false)}
+        />
+      )}
     </div>
   );
 }
 
-function Hero({
-  company,
-  renderData,
-  onBook,
+function ServicesSectionData({
+  ownerId,
+  onOpenBooking,
 }: {
-  company: CompanyProfile;
-  renderData: PortalRenderData;
-  onBook: () => void;
+  ownerId: string;
+  onOpenBooking: () => void;
 }) {
-  const coverUrl = renderData.coverUrl;
-  const logoUrl = renderData.logoUrl;
-  return (
-    <header className="relative">
-      {coverUrl ? (
-        <div className="h-48 md:h-64 w-full overflow-hidden">
-          <img src={coverUrl} alt="" className="h-full w-full object-cover" />
-        </div>
-      ) : (
-        <div
-          className="h-24 md:h-32 w-full bg-gradient-to-b from-secondary/60 to-background"
-          aria-hidden="true"
-        />
-      )}
-
-      <div className="mx-auto w-full max-w-2xl px-6">
-        <div className={coverUrl ? "-mt-14 md:-mt-16" : "-mt-10"}>
-          <Avatar className="w-28 h-28 md:w-32 md:h-32 border-4 border-background shadow-sm">
-            <AvatarImage src={logoUrl ?? undefined} alt="" />
-            <AvatarFallback className="text-2xl">{initials(company.display_name)}</AvatarFallback>
-          </Avatar>
-        </div>
-
-        <div className="mt-5 space-y-3 text-center md:text-left">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-display tracking-tight text-balance">
-              {company.display_name}
-            </h1>
-            {company.category && (
-              <p className="text-sm text-muted-foreground mt-1">{company.category}</p>
-            )}
-          </div>
-
-          {company.description && (
-            <p className="text-sm text-foreground/70 leading-relaxed max-w-lg mx-auto md:mx-0">
-              {company.description}
-            </p>
-          )}
-
-          <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-4 gap-y-1.5 text-xs text-muted-foreground pt-1">
-            {company.city && (
-              <span className="inline-flex items-center gap-1.5">
-                <MapPin className="w-3.5 h-3.5" aria-hidden="true" />
-                {company.city}
-                {company.state ? ` - ${company.state}` : ""}
-              </span>
-            )}
-            {company.open_hours_text && (
-              <span className="inline-flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5" aria-hidden="true" />
-                {company.open_hours_text}
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-8 pb-8 md:pb-10">
-          <Button
-            onClick={onBook}
-            className="w-full md:w-auto h-14 px-10 rounded-full text-base gap-2"
-          >
-            <Calendar className="w-4 h-4" aria-hidden="true" /> Agendar Agora
-          </Button>
-        </div>
-      </div>
-    </header>
-  );
-}
-
-function AboutSection({ company }: { company: CompanyProfile }) {
-  if (!company.description && !company.category) return null;
-  return (
-    <section aria-labelledby="about-heading" className="py-10 border-t border-border/60">
-      <h2 id="about-heading" className="text-xl font-display tracking-tight">
-        Quem somos
-      </h2>
-      <div className="mt-4 space-y-3 text-sm text-foreground/80 leading-relaxed">
-        {company.description ? (
-          <p>{company.description}</p>
-        ) : (
-          <p className="text-muted-foreground">A empresa ainda não cadastrou uma descrição.</p>
-        )}
-        {company.category && (
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">
-            Especialidade:{" "}
-            <span className="text-foreground/80 normal-case">{company.category}</span>
-          </p>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function ServicesSection({ ownerId }: { ownerId: string }) {
-  const { data: services, isLoading } = useQuery({
-    queryKey: ["public-services", ownerId],
-    queryFn: () => fetchPublicServices(ownerId),
+  const { data: services, isLoading: loadingServices } = useQuery({
+    queryKey: ["public-services-media", ownerId],
+    queryFn: () => fetchPublicServicesWithMedia(ownerId),
+  });
+  const { data: categories, isLoading: loadingCategories } = useQuery({
+    queryKey: ["public-portal-categories", ownerId],
+    queryFn: () => fetchPublicPortalCategories(ownerId),
   });
 
   return (
-    <section aria-labelledby="services-heading" className="py-10 border-t border-border/60">
-      <h2 id="services-heading" className="text-xl font-display tracking-tight">
-        Serviços
-      </h2>
-      {isLoading ? (
-        <div className="mt-4 rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center">
-          <p className="text-sm text-muted-foreground">Carregando…</p>
-        </div>
-      ) : !services || services.length === 0 ? (
-        <div className="mt-4 rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            Ainda não há serviços cadastrados para agendamento online.
-          </p>
-        </div>
-      ) : (
-        <div className="mt-4 space-y-2">
-          {services.map((svc) => (
-            <div
-              key={svc.id}
-              className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/40 px-4 py-3"
-            >
-              <div>
-                <p className="text-sm font-medium">{svc.name}</p>
-                <p className="text-xs text-muted-foreground">{svc.duration_min} min</p>
-              </div>
-              <p className="text-sm">R$ {svc.price.toFixed(2).replace(".", ",")}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
+    <PortalServicesSection
+      services={services ?? []}
+      categories={categories ?? []}
+      isLoading={loadingServices || loadingCategories}
+      onOpenBooking={onOpenBooking}
+    />
   );
 }
 
@@ -273,12 +275,12 @@ function ProfessionalsSection({ ownerId }: { ownerId: string }) {
   });
 
   return (
-    <section aria-labelledby="professionals-heading" className="py-10 border-t border-border/60">
+    <section aria-labelledby="professionals-heading" className="py-8 border-t border-border/40">
       <h2
         id="professionals-heading"
-        className="text-xl font-display tracking-tight flex items-center gap-2"
+        className="font-display text-xl tracking-tight flex items-center gap-2"
       >
-        <Users className="w-4 h-4 text-muted-foreground" aria-hidden="true" /> Profissionais
+        <Users className="w-4 h-4 opacity-60" aria-hidden="true" /> Profissionais
       </h2>
       {isLoading ? (
         <div className="mt-4 rounded-2xl border border-dashed border-border/70 bg-card/40 p-8 text-center">
@@ -316,14 +318,14 @@ function LocationSection({ company }: { company: CompanyProfile }) {
   );
 
   return (
-    <section aria-labelledby="location-heading" className="py-10 border-t border-border/60">
-      <h2 id="location-heading" className="text-xl font-display tracking-tight">
+    <section aria-labelledby="location-heading" className="py-8 border-t border-border/40">
+      <h2 id="location-heading" className="font-display text-xl tracking-tight">
         Localização
       </h2>
       <div className="mt-4 space-y-3 text-sm">
-        {company.address && <p className="text-foreground/80">{company.address}</p>}
+        {company.address && <p className="opacity-80">{company.address}</p>}
         {company.city && (
-          <p className="text-muted-foreground">
+          <p className="opacity-60">
             {company.city}
             {company.state ? ` - ${company.state}` : ""}
           </p>
@@ -340,95 +342,5 @@ function LocationSection({ company }: { company: CompanyProfile }) {
         </a>
       </div>
     </section>
-  );
-}
-
-function SocialSection({ company }: { company: CompanyProfile }) {
-  const links = [
-    company.instagram && {
-      key: "instagram",
-      display: company.instagram,
-      ariaLabel: `Instagram: ${company.instagram}`,
-      icon: Instagram,
-      href: `https://instagram.com/${company.instagram.replace("@", "")}`,
-    },
-    company.whatsapp && {
-      key: "whatsapp",
-      display: "WhatsApp",
-      ariaLabel: "Conversar no WhatsApp",
-      icon: MessageCircle,
-      href: `https://wa.me/${company.whatsapp.replace(/\D/g, "")}`,
-    },
-    company.facebook && {
-      key: "facebook",
-      display: "Facebook",
-      ariaLabel: "Facebook",
-      icon: Facebook,
-      href: company.facebook,
-    },
-    company.tiktok && {
-      key: "tiktok",
-      display: company.tiktok,
-      ariaLabel: `TikTok: ${company.tiktok}`,
-      icon: Music2,
-      href: `https://tiktok.com/@${company.tiktok.replace("@", "")}`,
-    },
-  ].filter(
-    (
-      l,
-    ): l is {
-      key: string;
-      display: string;
-      ariaLabel: string;
-      icon: typeof Instagram;
-      href: string;
-    } => Boolean(l),
-  );
-
-  if (links.length === 0) return null;
-
-  return (
-    <section aria-labelledby="social-heading" className="py-10 border-t border-border/60">
-      <h2 id="social-heading" className="text-xl font-display tracking-tight">
-        Redes sociais
-      </h2>
-      <div className="mt-4 flex flex-wrap gap-3">
-        {links.map(({ key, display, ariaLabel, icon: Icon, href }) => (
-          <a
-            key={key}
-            href={href}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={ariaLabel}
-            className="inline-flex items-center gap-2 rounded-full border border-border/70 px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/30 transition"
-          >
-            <Icon className="w-3.5 h-3.5" aria-hidden="true" /> {display}
-          </a>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function Footer({ company }: { company: CompanyProfile }) {
-  return (
-    <footer className="border-t border-border/60 py-10 mt-6">
-      <div className="mx-auto w-full max-w-2xl px-6 flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
-        <p>
-          © {new Date().getFullYear()} {company.display_name}. Todos os direitos reservados.
-        </p>
-        <div className="flex items-center gap-4">
-          <span>
-            Powered by <span className="font-medium text-foreground/70">AURA</span>
-          </span>
-          <Link to="/termos-de-uso" className="hover:text-foreground transition">
-            Termos
-          </Link>
-          <Link to="/politica-de-privacidade" className="hover:text-foreground transition">
-            Privacidade
-          </Link>
-        </div>
-      </div>
-    </footer>
   );
 }

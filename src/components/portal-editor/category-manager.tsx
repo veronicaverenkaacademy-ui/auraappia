@@ -81,7 +81,7 @@ export function CategoryManager({
           <div className="shrink-0">
             <ImageCard
               label="Foto"
-              recommended="Quadrada"
+              recommended="Quadrada, 800×800px"
               kind="categories"
               mediaKey={mediaKey}
               mediaKeyLoading={mediaKeyLoading}

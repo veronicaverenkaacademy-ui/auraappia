@@ -36,3 +36,27 @@ test("PreviewFrame nunca escreve tema no documento global", () => {
 test("portal público (l.$slug.tsx) nunca escreve tema no documento global", () => {
   assertNeverWritesGlobalTheme("src/routes/l.$slug.tsx");
 });
+
+// FASE K2b — casca visual nova: todo componente que recebe/usa as
+// variáveis --portal-* precisa continuar isolado no próprio contêiner.
+const K2B_COMPONENT_FILES = [
+  "src/components/portal/portal-hero.tsx",
+  "src/components/portal/portal-header.tsx",
+  "src/components/portal/portal-logo.tsx",
+  "src/components/portal/portal-image.tsx",
+  "src/components/portal/portal-menu-sheet.tsx",
+  "src/components/portal/portal-services-section.tsx",
+  "src/components/portal/portal-misc-cards.tsx",
+  "src/components/portal/portal-footer.tsx",
+  "src/components/portal/step-indicator.tsx",
+  "src/components/portal/booking-flow.tsx",
+  "src/lib/portal/portal-theme-vars.ts",
+  "src/lib/portal/portal-render-data.ts",
+  "src/lib/portal/portal-draft-preview.ts",
+];
+
+for (const file of K2B_COMPONENT_FILES) {
+  test(`${file} nunca escreve tema no documento global`, () => {
+    assertNeverWritesGlobalTheme(file);
+  });
+}
