@@ -32,6 +32,17 @@ export const BusinessHoursSchema = z.object({
 export const optionalText = (max: number) =>
   z.union([z.string().trim().max(max), z.null(), z.undefined()]).transform((v) => v ?? "");
 
+// FASE K1b-B: diferente de optionalText — aqui "não mandou o campo"
+// (undefined, chave ausente do payload) precisa continuar DISTINTO de
+// "mandou null/vazio" (quer limpar), porque upsertCompanyProfile usa isso
+// pra decidir se inclui a coluna no upsert ou deixa o valor existente
+// intocado. optionalText apaga essa distinção (transforma tudo, inclusive
+// ausência, em ""), por isso não serve pra logo_url/cover_image_url agora
+// que a aba Empresa nunca mais envia esses dois campos (ficaram em
+// Personalizar meu portal) — mesma lição do PR #108 (null × ausente).
+export const optionalPreservingAbsence = (max: number) =>
+  z.union([z.string().trim().max(max), z.null()]).optional();
+
 // Slugs que colidiriam com rotas do próprio AURA — bloqueados na aplicação,
 // não no banco (o CHECK do banco só valida formato).
 export const RESERVED_SLUGS = new Set([
@@ -80,8 +91,8 @@ export const UpsertInput = z.object({
   facebook: optionalText(100),
   tiktok: optionalText(60),
   open_hours_text: optionalText(200),
-  logo_url: optionalText(500),
-  cover_image_url: optionalText(500),
+  logo_url: optionalPreservingAbsence(500),
+  cover_image_url: optionalPreservingAbsence(500),
   business_hours: BusinessHoursSchema.optional(),
 });
 

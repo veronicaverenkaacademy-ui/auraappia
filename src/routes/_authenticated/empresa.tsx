@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Capacitor } from "@capacitor/core";
-import { ChevronLeft, Check, X, Loader2, ExternalLink, Copy, Download } from "lucide-react";
+import { ChevronLeft, Check, X, Loader2, Download } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -19,7 +19,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PanelHeader, Field, Section } from "@/components/settings-ui";
-import { CompanyImageUpload } from "@/components/company-image-upload";
 import { useControlCenter, type ControlCenterState } from "@/lib/control-center";
 import {
   getMyCompanyProfile,
@@ -47,7 +46,10 @@ export const Route = createFileRoute("/_authenticated/empresa")({
   component: EmpresaPage,
 });
 
-type PublicForm = Omit<CompanyProfile, "owner_id">;
+// FASE K1b-B: sem logo_url/cover_image_url — esse envio saiu da Empresa e
+// foi pra Personalizar meu portal; nunca fazem parte deste formulário, pra
+// nunca correr o risco de reenviá-los (e apagá-los) ao salvar outro campo.
+type PublicForm = Omit<CompanyProfile, "owner_id" | "logo_url" | "cover_image_url">;
 
 const EMPTY_PUBLIC_FORM: PublicForm = {
   slug: "",
@@ -63,8 +65,6 @@ const EMPTY_PUBLIC_FORM: PublicForm = {
   facebook: "",
   tiktok: "",
   open_hours_text: "",
-  logo_url: "",
-  cover_image_url: "",
   business_hours: DEFAULT_BUSINESS_HOURS,
 };
 
@@ -391,49 +391,13 @@ function EmpresaPage() {
               </div>
             </Field>
 
-            <div className="grid md:grid-cols-2 gap-4 items-start">
-              <CompanyImageUpload
-                label="Logo"
-                hint="JPG, PNG ou WEBP, até 5MB"
-                kind="logo"
-                value={form.logo_url}
-                onChange={(url) => patchForm({ logo_url: url })}
-              />
-              <CompanyImageUpload
-                label="Imagem de capa"
-                hint="JPG, PNG ou WEBP, até 5MB"
-                kind="cover"
-                value={form.cover_image_url}
-                onChange={(url) => patchForm({ cover_image_url: url })}
-                aspect="wide"
-              />
-            </div>
-
-            <div className="flex items-center gap-2 min-w-0 pt-2">
-              {publicUrl && (
-                <>
-                  <code className="text-xs px-3 py-1.5 rounded-full bg-muted/60 truncate">
-                    {publicUrl}
-                  </code>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="rounded-full h-8 w-8 shrink-0"
-                    onClick={() => {
-                      navigator.clipboard.writeText(publicUrl);
-                      toast.success("Link copiado.");
-                    }}
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                  </Button>
-                  <a href={publicUrl} target="_blank" rel="noreferrer">
-                    <Button variant="ghost" size="icon" className="rounded-full h-8 w-8 shrink-0">
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </Button>
-                  </a>
-                </>
-              )}
-            </div>
+            <p className="text-xs text-muted-foreground pt-2">
+              O link e as imagens do portal agora ficam em{" "}
+              <Link to="/personalizar-portal" className="text-primary underline underline-offset-4">
+                Mais → Personalizar meu portal
+              </Link>
+              .
+            </p>
           </div>
         </Section>
 

@@ -185,9 +185,9 @@ const settingsItems: Item[] = [
   },
   {
     to: "/personalizacao",
-    label: "Personalização",
+    label: "Aparência do app",
     icon: Palette,
-    desc: "Identidade visual e experiência",
+    desc: "Visual do sistema administrativo (cores, fonte, tema)",
     roles: ["admin"],
   },
   {
