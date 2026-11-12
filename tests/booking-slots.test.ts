@@ -539,3 +539,91 @@ test("DOURADO: evaluateRequestedSlot concorda com computeFreeSlots em todo ponto
     }
   }
 });
+
+// ---------------------------------------------------------------------------
+// Pergunta explícita antes do merge do PR #113: "empresa sem business_hours
+// configurado (null/vazio/formato inesperado) — o servidor se comporta
+// EXATAMENTE como a tela (mesmo resultado de computeFreeSlots), sem recusar
+// tudo nem aceitar tudo?" Em produção, tanto getAvailableSlots
+// (booking.functions.ts) quanto resolveCompanyBookingContext
+// (booking-validation.server.ts) fazem `(company?.business_hours ?? {})`
+// ANTES de chamar qualquer uma das duas funções abaixo — null/undefined
+// nunca chega aqui. Este teste cobre o que sobra: valores já resolvidos,
+// porém de formato inesperado (jsonb aceita qualquer JSON, sem CHECK de
+// formato no banco) — e prova, caso a caso, que as duas funções SEMPRE dão
+// o mesmo resultado (inclusive quando o resultado é "lança a mesma
+// excessão") — nunca uma aceita o que a outra recusa.
+// ---------------------------------------------------------------------------
+
+test("business_hours em formato inesperado: computeFreeSlots e evaluateRequestedSlot sempre concordam (mesmo resultado OU mesma exceção)", () => {
+  const now = SEGUNDA_09_11_2026_06H_BRT;
+  const start = new Date("2026-11-09T13:00:00Z"); // 10:00 BRT, dentro do expediente normal
+  const durationMs = 30 * 60 * 1000;
+
+  const casosFormatoInesperado: { label: string; businessHours: unknown }[] = [
+    { label: "objeto vazio {}", businessHours: {} },
+    { label: "string (jsonb aceita qualquer JSON)", businessHours: "garbage-string" },
+    { label: "array vazio", businessHours: [] },
+    { label: "dia presente mas null (igual domingo hoje)", businessHours: { mon: null } },
+    { label: "dia com objeto incompleto (sem close)", businessHours: { mon: { open: "09:00" } } },
+    { label: "dia com valor que não é objeto", businessHours: { mon: "não é um objeto" } },
+  ];
+
+  for (const { label, businessHours } of casosFormatoInesperado) {
+    const bh = businessHours as BusinessHours;
+
+    let listaResultado: string[] | undefined;
+    let listaErro: string | undefined;
+    try {
+      listaResultado = computeFreeSlots(now, bh, TZ, durationMs, [], 1);
+    } catch (e) {
+      listaErro = e instanceof Error ? e.message : String(e);
+    }
+
+    let avaliacaoResultado: ReturnType<typeof evaluateRequestedSlot> | undefined;
+    let avaliacaoErro: string | undefined;
+    try {
+      avaliacaoResultado = evaluateRequestedSlot(start, now, bh, TZ, durationMs, []);
+    } catch (e) {
+      avaliacaoErro = e instanceof Error ? e.message : String(e);
+    }
+
+    if (listaErro !== undefined || avaliacaoErro !== undefined) {
+      // Ou as duas lançam a MESMA exceção, ou nenhuma lança — nunca uma
+      // "aceita" enquanto a outra "quebra" (o que seria uma divergência
+      // de comportamento real, o que a dona pediu pra garantir que não
+      // acontece).
+      assert.equal(
+        listaErro,
+        avaliacaoErro,
+        `[${label}] uma lançou e a outra não, ou com mensagens diferentes`,
+      );
+    } else {
+      // Nenhuma lançou: a lista estar vazia (tela não oferece nada nesse
+      // dia) tem que corresponder a evaluateRequestedSlot recusar o
+      // mesmo horário — nunca a tela "sem nada" e o servidor "permitindo".
+      assert.equal(
+        listaResultado!.length === 0,
+        avaliacaoResultado!.allowed === false,
+        `[${label}] tela e servidor divergiram: lista=${JSON.stringify(listaResultado)} avaliação=${JSON.stringify(avaliacaoResultado)}`,
+      );
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Pergunta explícita antes do merge do PR #113: "fuso inválido ou nulo —
+// mesmo fallback da tela?" getAvailableSlots e resolveCompanyBookingContext
+// usam a MESMA expressão (isValidTimeZone(...) ? ... : DEFAULT_TIMEZONE,
+// DEFAULT_TIMEZONE="America/Sao_Paulo" nos dois arquivos — ver
+// src/lib/booking.functions.ts e src/lib/booking-validation.server.ts).
+// Aqui a prova é ao nível da própria função que os dois chamam.
+// ---------------------------------------------------------------------------
+
+test("isValidTimeZone recusa null/vazio/inválido igual nos dois lugares (mesma função usada por getAvailableSlots e resolveCompanyBookingContext)", async () => {
+  const { isValidTimeZone } = await import("../src/lib/timezone.ts");
+  for (const tz of [null, undefined, "", "   ", "Isso/NaoExiste"]) {
+    assert.equal(isValidTimeZone(tz), false, `${JSON.stringify(tz)} deveria cair no fallback`);
+  }
+  assert.equal(isValidTimeZone("America/Sao_Paulo"), true);
+});

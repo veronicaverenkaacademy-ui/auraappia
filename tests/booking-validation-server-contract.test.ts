@@ -261,4 +261,66 @@ describe("assertSlotAllowed — mesma lógica de evaluateRequestedSlot, agora la
       /Código de suporte: C21\./,
     );
   });
+
+  // -------------------------------------------------------------------------
+  // Pergunta explícita antes do merge do PR #113: "remarcação de um
+  // agendamento cujo horário ORIGINAL já passou ou está fora da janela de 14
+  // dias continua permitindo remarcar para um horário NOVO válido?"
+  //
+  // assertSlotAllowed/evaluateRequestedSlot nunca recebem o horário
+  // ORIGINAL do agendamento — só o horário NOVO pedido (`startsAt`,
+  // derivado de `data.starts_at` em rescheduleClientAppointment) e `now`.
+  // O horário original (`appt.starts_at`) só é lido pra decidir se o
+  // agendamento pode ser remarcado (status) e pro texto do aviso — nunca
+  // entra na validação do novo horário.
+  // -------------------------------------------------------------------------
+  test("remarcar: horário NOVO válido passa mesmo que o agendamento ORIGINAL já tenha passado ou esteja fora da janela de 14 dias", () => {
+    const now = new Date("2026-11-09T09:00:00Z"); // 06:00 BRT, segunda
+    const novoHorarioValido = new Date("2026-11-09T13:00:00Z"); // 10:00 BRT, hoje — dentro do expediente
+
+    // Agendamento original há muito no passado (ex.: 2020) — nunca é
+    // passado pra assertSlotAllowed; só influenciaria se alguém
+    // (erradamente) validasse o novo horário contra o antigo.
+    const originalMuitoNoPassado = new Date("2020-01-01T12:00:00Z");
+    assert.ok(originalMuitoNoPassado.getTime() < now.getTime(), "sanity check do fixture");
+
+    // Agendamento original muito além da janela de 14 dias (ex.: em 2027)
+    // — mesma ideia, só pra deixar claro que não é usado na validação.
+    const originalForaDaJanela = new Date("2027-06-01T12:00:00Z");
+    assert.ok(originalForaDaJanela.getTime() > now.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+    // A chamada real (ver rescheduleClientAppointment em booking.functions.ts)
+    // nunca passa o horário original pra assertSlotAllowed — só o novo.
+    // Confirmamos aqui que validar o horário NOVO funciona normalmente,
+    // independente de qual seria o horário original.
+    assert.doesNotThrow(() =>
+      assertSlotAllowed(novoHorarioValido, now, SEMANA, "America/Sao_Paulo", 30 * 60 * 1000, []),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Guarda estática: rescheduleClientAppointment nunca deve passar o horário
+// ORIGINAL do agendamento (appt.starts_at) pra assertSlotAllowed — só o
+// horário novo pedido pela cliente (startsAt, derivado de data.starts_at).
+// Protege a resposta dada acima contra um refactor futuro que, por engano,
+// passe a validar contra o horário antigo.
+// ---------------------------------------------------------------------------
+test("GUARDA: rescheduleClientAppointment chama assertSlotAllowed só com o horário NOVO (startsAt), nunca com appt.starts_at", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/lib/booking.functions.ts", import.meta.url), "utf8");
+  const rescheduleBody = src.slice(src.indexOf("export const rescheduleClientAppointment"));
+  const call = rescheduleBody.match(/assertSlotAllowed\(([^)]*)\)/);
+  assert.ok(call, "não encontrei a chamada de assertSlotAllowed em rescheduleClientAppointment");
+  const args = call![1];
+  assert.match(
+    args,
+    /^\s*startsAt\s*,/,
+    "primeiro argumento deveria ser startsAt (o horário NOVO)",
+  );
+  assert.doesNotMatch(
+    args,
+    /appt\.starts_at/,
+    "nunca deveria usar appt.starts_at (horário ORIGINAL) na validação",
+  );
 });
