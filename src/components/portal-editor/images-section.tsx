@@ -126,7 +126,7 @@ export function ImagesSection({
           )}
           <ImageCard
             label="Capa"
-            recommended="Larga, 1600×500px"
+            recommended="Vertical, proporção 4:5 (ex.: 1080×1350px)"
             kind="cover"
             mediaKey={mediaKey}
             mediaKeyLoading={mediaKeyLoading}
@@ -135,7 +135,7 @@ export function ImagesSection({
             currentPath={form.cover_path}
             isProtected={isPathProtected(form.cover_path ?? "", protectedPaths)}
             altName={companyDisplayName}
-            aspect="wide"
+            aspect="portrait45"
             onUploaded={(path) => patchForm({ cover_path: path })}
             onDeleted={() => patchForm({ cover_path: null })}
           />
@@ -171,7 +171,7 @@ export function ImagesSection({
               <div key={svc.id} className="space-y-1">
                 <ImageCard
                   label={svc.name}
-                  recommended="Quadrada"
+                  recommended="Quadrada, 800×800px"
                   kind="services"
                   mediaKey={mediaKey}
                   mediaKeyLoading={mediaKeyLoading}
@@ -206,7 +206,7 @@ export function ImagesSection({
               <div key={pro.id} className="space-y-1">
                 <ImageCard
                   label={pro.full_name}
-                  recommended="Quadrada"
+                  recommended="Quadrada, 800×800px"
                   kind="professionals"
                   mediaKey={mediaKey}
                   mediaKeyLoading={mediaKeyLoading}

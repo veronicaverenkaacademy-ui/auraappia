@@ -1,7 +1,9 @@
 // Prova (sem precisar de DOM) de que "sem publicação = portal idêntico ao
 // atual": resolvePortalRenderData devolve exatamente o comportamento de
 // sempre (sem override de tema, logo/capa da própria company_profiles,
-// todas as seções visíveis) quando publicConfig é null.
+// todas as seções visíveis) quando publicConfig é null. FASE K2b: estendido
+// com os campos novos da casca visual (logo largo, capa/banner/importante,
+// atalhos), sempre com fallback seguro.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -22,6 +24,7 @@ function baseConfig(overrides: Partial<PortalPublicConfig> = {}): PortalPublicCo
     fontFamily: "system-ui",
     logoUrl: null,
     logoLightUrl: null,
+    logoWideUrl: null,
     coverUrl: null,
     bannerUrl: null,
     showShortcuts: true,
@@ -47,20 +50,38 @@ test("GARANTIA CRÍTICA: sem publicação (null), nenhum override de tema e dado
     themeVars: null,
     fontFamily: null,
     logoUrl: COMPANY.logo_url,
+    logoWideUrl: null,
     coverUrl: COMPANY.cover_image_url,
+    bannerUrl: null,
+    bannerText: null,
+    coverTitle: null,
+    coverSubtitle: null,
+    welcomeMessage: null,
+    importantTitle: null,
+    importantText: null,
+    showShortcuts: true,
+    showBanner: true,
     showServices: true,
+    showImportant: true,
     showProfessionals: true,
     showLocation: true,
     showFooter: true,
   });
 });
 
-test("publicado mas sem nenhuma cor escolhida: themeVars vazio (nenhuma mudança visual)", () => {
+test("publicado mas sem nenhuma cor escolhida: só as --portal-* (sempre com valor) aparecem, nenhuma legada", () => {
   const result = resolvePortalRenderData(COMPANY, baseConfig());
-  assert.deepEqual(result.themeVars, {});
+  assert.deepEqual(result.themeVars, {
+    "--portal-primary": "#211c1a",
+    "--portal-secondary": "#6b6b6b",
+    "--portal-button": "#211c1a",
+    "--portal-button-text": "#ffffff",
+    "--portal-text": "#211c1a",
+    "--portal-background": "#f8f5f0",
+  });
 });
 
-test("publicado com cores: só sobrescreve as 4 variáveis que o layout atual já usa", () => {
+test("publicado com cores: sobrescreve as 4 variáveis legadas E as --portal-* correspondentes", () => {
   const result = resolvePortalRenderData(
     COMPANY,
     baseConfig({
@@ -68,15 +89,15 @@ test("publicado com cores: só sobrescreve as 4 variáveis que o layout atual j�
       colorText: "#211c1a",
       colorButton: "#55443b",
       colorButtonText: "#ffffff",
-      colorPrimary: "#999999", // não deveria aparecer — sem slot hoje
+      colorPrimary: "#999999",
     }),
   );
-  assert.deepEqual(result.themeVars, {
-    "--background": "#f8f5f0",
-    "--foreground": "#211c1a",
-    "--primary": "#55443b",
-    "--primary-foreground": "#ffffff",
-  });
+  assert.equal(result.themeVars?.["--background"], "#f8f5f0");
+  assert.equal(result.themeVars?.["--foreground"], "#211c1a");
+  assert.equal(result.themeVars?.["--primary"], "#55443b");
+  assert.equal(result.themeVars?.["--primary-foreground"], "#ffffff");
+  assert.equal(result.themeVars?.["--portal-primary"], "#999999");
+  assert.equal(result.themeVars?.["--portal-button"], "#55443b");
 });
 
 test("logo/capa publicadas têm prioridade; sem elas, cai pro fallback de company_profiles", () => {
@@ -88,6 +109,17 @@ test("logo/capa publicadas têm prioridade; sem elas, cai pro fallback de compan
 
   const withoutLogo = resolvePortalRenderData(COMPANY, baseConfig({ logoUrl: null }));
   assert.equal(withoutLogo.logoUrl, COMPANY.logo_url);
+});
+
+test("logo largo publicada aparece em logoWideUrl; sem ela, fica null (nunca cai pro logo quadrado)", () => {
+  const withWide = resolvePortalRenderData(
+    COMPANY,
+    baseConfig({ logoWideUrl: "https://bucket/logo-wide.png" }),
+  );
+  assert.equal(withWide.logoWideUrl, "https://bucket/logo-wide.png");
+
+  const withoutWide = resolvePortalRenderData(COMPANY, baseConfig({ logoWideUrl: null }));
+  assert.equal(withoutWide.logoWideUrl, null);
 });
 
 test("toggles show_* publicados são respeitados (seções que já existem no layout atual)", () => {
@@ -109,4 +141,24 @@ test("toggles show_* publicados são respeitados (seções que já existem no la
     },
     { s: false, p: false, l: false, f: false },
   );
+});
+
+test("banner/capa/importante publicados passam direto (fallback real vive em portal-home-view.ts)", () => {
+  const result = resolvePortalRenderData(
+    COMPANY,
+    baseConfig({
+      bannerText: "Promoção!",
+      coverTitle: "Agende seu atendimento",
+      coverSubtitle: "Praticidade e cuidado.",
+      welcomeMessage: "Bem-vinda!",
+      importantTitle: "Importante",
+      importantText: "Chegue com 10 min de antecedência.",
+    }),
+  );
+  assert.equal(result.bannerText, "Promoção!");
+  assert.equal(result.coverTitle, "Agende seu atendimento");
+  assert.equal(result.coverSubtitle, "Praticidade e cuidado.");
+  assert.equal(result.welcomeMessage, "Bem-vinda!");
+  assert.equal(result.importantTitle, "Importante");
+  assert.equal(result.importantText, "Chegue com 10 min de antecedência.");
 });

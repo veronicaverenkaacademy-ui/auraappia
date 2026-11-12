@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useImperativeHandle, useState, forwardRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Calendar, Gift, Package, Ticket, Loader2, LogOut, Pencil } from "lucide-react";
@@ -14,15 +14,25 @@ import { fetchMyAppointments, type MyAppointment } from "@/lib/clientPortal";
 import { updateMyClientProfile, deleteMyClientAccount } from "@/lib/clientPortal.functions";
 import { rescheduleClientAppointment, cancelClientAppointment } from "@/lib/booking.functions";
 
+/** Permite abrir o painel (mesmo fluxo do botão "Minha conta") a partir de
+ * fora — ex.: atalho "Meus agendamentos" da HOME nova (FASE K2b) ou item do
+ * menu hamburger — sem duplicar nenhuma lógica de login/OTP. */
+export type ClientAccountPanelHandle = { open: () => void };
+
 /**
  * Login por telefone (OTP) + painel "Minha conta" da cliente, desacoplado de qualquer
  * profissional específica — precisa só do owner_id da empresa. Usa useClientAuth (a
  * mesma lógica compartilhada com o funil de agendamento) para nunca ter dois fluxos de
  * autenticação de cliente divergindo com o tempo.
  */
-export function ClientAccountPanel({ ownerId }: { ownerId: string }) {
+export const ClientAccountPanel = forwardRef<
+  ClientAccountPanelHandle,
+  { ownerId: string; hideTrigger?: boolean }
+>(function ClientAccountPanel({ ownerId, hideTrigger = false }, ref) {
   const auth = useClientAuth(ownerId);
   const [showDashboard, setShowDashboard] = useState(false);
+
+  useImperativeHandle(ref, () => ({ open: () => auth.start() }), [auth.start]);
 
   useEffect(() => {
     if (auth.view === "ready" && auth.myClient) setShowDashboard(true);
@@ -47,15 +57,17 @@ export function ClientAccountPanel({ ownerId }: { ownerId: string }) {
 
   return (
     <div>
-      <Button
-        variant="outline"
-        size="sm"
-        className="rounded-full h-8 text-xs"
-        onClick={auth.start}
-        disabled={auth.loading}
-      >
-        Minha conta
-      </Button>
+      {!hideTrigger && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="rounded-full h-8 text-xs"
+          onClick={auth.start}
+          disabled={auth.loading}
+        >
+          Minha conta
+        </Button>
+      )}
 
       {auth.view === "phone" && (
         <PhoneStep
@@ -87,7 +99,7 @@ export function ClientAccountPanel({ ownerId }: { ownerId: string }) {
       )}
     </div>
   );
-}
+});
 
 const statusLabel: Record<MyAppointment["status"], string> = {
   pending: "Pendente",

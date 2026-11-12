@@ -49,8 +49,9 @@ export function ImageCard({
   isProtected: boolean;
   altName: string;
   /** "wide4" (~4:1) é usado só pela logo largo (K2c) — mais estreito que
-   * "wide" (3:1, capa/banner). */
-  aspect?: "square" | "wide" | "wide4";
+   * "wide" (3:1, banner). "portrait45" (4:5) é a capa (FASE K2b, medida a
+   * partir da referência visual do portal novo). */
+  aspect?: "square" | "wide" | "wide4" | "portrait45";
   onUploaded: (path: string) => void;
   onDeleted: () => void;
 }) {
@@ -131,7 +132,9 @@ export function ImageCard({
             ? "aspect-square w-32"
             : aspect === "wide4"
               ? "aspect-[4/1] w-full"
-              : "aspect-[3/1] w-full",
+              : aspect === "portrait45"
+                ? "aspect-[4/5] w-36"
+                : "aspect-[3/1] w-full",
           "border-border/70",
         )}
       >

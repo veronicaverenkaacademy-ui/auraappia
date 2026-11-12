@@ -1,17 +1,30 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { X, ChevronLeft, Loader2, CalendarPlus, MapPin, MessageCircle } from "lucide-react";
+import { Loader2, CalendarPlus, MapPin, MessageCircle, Search, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  fetchPublicServices,
   fetchPublicProfessionals,
+  fetchPublicServicesWithMedia,
+  fetchPublicPortalCategories,
   type PublicService,
   type PublicProfessional,
 } from "@/lib/booking";
+import type { PublicServiceMedia } from "@/lib/portal/portal-public-services";
+import {
+  groupServicesByCategory,
+  categoryChipLabels,
+  resolveServiceImagePath,
+} from "@/lib/portal/portal-public-services";
+import { filterServicesForStep1, ALL_CATEGORIES_LABEL } from "@/lib/portal/portal-service-search";
+import { displayStepFor } from "@/lib/portal/portal-booking-steps";
+import { getPortalMediaPublicUrl } from "@/lib/portal/portal-media-browser";
 import { SlotPicker, type PickedSlot } from "./slot-picker";
 import { AuthCard, PhoneStep, OtpStep, SignupStep } from "./client-auth-steps";
+import { BookingHeader } from "@/components/portal/portal-header";
+import { StepIndicator } from "@/components/portal/step-indicator";
+import { PortalImg } from "@/components/portal/portal-image";
 import { useClientAuth } from "@/hooks/use-client-auth";
 import {
   createClientAppointment,
@@ -44,11 +57,17 @@ function formatDateTime(iso: string): string {
     .replace(".", "");
 }
 
+function formatPrice(value: number): string {
+  return `R$ ${value.toFixed(2).replace(".", ",")}`;
+}
+
 export function BookingFlow({
   company,
+  logoWideUrl,
   onClose,
 }: {
   company: CompanyProfile;
+  logoWideUrl: string | null;
   onClose: () => void;
 }) {
   const ownerId = company.owner_id;
@@ -65,13 +84,24 @@ export function BookingFlow({
   const [rescheduling, setRescheduling] = useState(false);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
 
+  // Seleção da tela "Escolha seu procedimento" (passo 1, FASE K2b) — SÓ
+  // visual até a cliente tocar "Avançar"; a navegação real continua
+  // acionada por selectService (mesma função de sempre), nunca mudada.
+  const [pendingServiceId, setPendingServiceId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategoryLabel, setSelectedCategoryLabel] = useState(ALL_CATEGORIES_LABEL);
+
   const createFn = useServerFn(createClientAppointment);
   const rescheduleFn = useServerFn(rescheduleClientAppointment);
   const cancelFn = useServerFn(cancelClientAppointment);
 
   const { data: services, isLoading: loadingServices } = useQuery({
-    queryKey: ["public-services", ownerId],
-    queryFn: () => fetchPublicServices(ownerId),
+    queryKey: ["public-services-media", ownerId],
+    queryFn: () => fetchPublicServicesWithMedia(ownerId),
+  });
+  const { data: categories = [] } = useQuery({
+    queryKey: ["public-portal-categories", ownerId],
+    queryFn: () => fetchPublicPortalCategories(ownerId),
   });
   const { data: professionals = [], isLoading: loadingPros } = useQuery({
     queryKey: ["public-professionals", ownerId],
@@ -111,6 +141,14 @@ export function BookingFlow({
     id ? (professionals.find((p) => p.id === id)?.full_name ?? null) : null;
 
   const goBackFromSlot = () => setStep(professionals.length > 1 ? "professional" : "service");
+
+  const goBack = () => {
+    if (step === "service") onClose();
+    else if (step === "professional") setStep("service");
+    else if (step === "slot") goBackFromSlot();
+    else if (step === "auth") setStep("slot");
+    else if (step === "confirm") setStep("slot");
+  };
 
   const confirm = async () => {
     if (!service || !pickedSlot || !auth.myClient || submitting) return;
@@ -206,78 +244,57 @@ export function BookingFlow({
     return `https://wa.me/${company.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(msg)}`;
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-background overflow-y-auto">
-      <div className="mx-auto w-full max-w-lg px-6 py-6 min-h-screen flex flex-col">
-        <div className="flex items-center justify-between">
-          {step !== "service" && step !== "done" ? (
-            <button
-              onClick={() => {
-                if (step === "professional") setStep("service");
-                else if (step === "slot") goBackFromSlot();
-                else if (step === "auth") setStep("slot");
-                else if (step === "confirm") setStep("slot");
-              }}
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition"
-            >
-              <ChevronLeft className="w-4 h-4" /> Voltar
-            </button>
-          ) : (
-            <span />
-          )}
-          <button
-            onClick={onClose}
-            aria-label="Fechar"
-            className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-secondary/60 transition"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+  const groups = useMemo(
+    () => groupServicesByCategory(services ?? [], categories),
+    [services, categories],
+  );
+  const chipLabels = useMemo(() => categoryChipLabels(groups), [groups]);
+  const filteredServices = useMemo(
+    () =>
+      filterServicesForStep1({
+        services: services ?? [],
+        categories,
+        selectedCategoryLabel,
+        query: searchQuery,
+      }),
+    [services, categories, selectedCategoryLabel, searchQuery],
+  );
+  const pendingService = filteredServices.find((s) => s.id === pendingServiceId) ?? null;
 
-        <div className="mt-6 flex-1">
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+      <BookingHeader
+        displayName={company.display_name}
+        logoWideUrl={logoWideUrl}
+        onBack={goBack}
+        onClose={onClose}
+        showBack={step !== "done"}
+      />
+      <div
+        className="px-4 pb-4 pt-4"
+        style={{ background: "var(--portal-background)", color: "var(--portal-text)" }}
+      >
+        <StepIndicator current={displayStepFor(step)} />
+      </div>
+
+      <div className="flex-1 overflow-y-auto" style={{ background: "var(--portal-background)" }}>
+        <div className="mx-auto w-full max-w-lg px-4 pb-8">
           {step === "service" && (
-            <AuthCard title="Escolha o serviço">
-              {loadingServices || loadingPros ? (
-                <div className="py-6 text-center text-sm text-muted-foreground">
-                  <Loader2 className="w-4 h-4 animate-spin mx-auto mb-2" /> Carregando…
-                </div>
-              ) : !services || services.length === 0 ? (
-                <div className="py-4 text-center space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    Ainda não há serviços cadastrados para agendamento online.
-                  </p>
-                  {company.whatsapp && (
-                    <a
-                      href={`https://wa.me/${company.whatsapp.replace(/\D/g, "")}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <Button variant="outline" size="sm" className="rounded-full gap-1.5">
-                        <MessageCircle className="w-3.5 h-3.5" /> Falar no WhatsApp
-                      </Button>
-                    </a>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {services.map((svc) => (
-                    <button
-                      key={svc.id}
-                      onClick={() => selectService(svc)}
-                      className="w-full flex items-center justify-between rounded-xl border border-border/70 bg-background px-4 py-3 text-left hover:border-foreground/40 transition"
-                    >
-                      <span>
-                        <span className="block text-sm font-medium">{svc.name}</span>
-                        <span className="block text-xs text-muted-foreground">
-                          {svc.duration_min} min
-                        </span>
-                      </span>
-                      <span className="text-sm">R$ {svc.price.toFixed(2).replace(".", ",")}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </AuthCard>
+            <ServiceStep
+              loading={loadingServices || loadingPros}
+              hasAnyService={(services?.length ?? 0) > 0}
+              whatsapp={company.whatsapp}
+              chipLabels={chipLabels}
+              selectedCategoryLabel={selectedCategoryLabel}
+              onSelectCategory={setSelectedCategoryLabel}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              filteredServices={filteredServices}
+              pendingServiceId={pendingServiceId}
+              onTogglePending={(id) =>
+                setPendingServiceId((current) => (current === id ? null : id))
+              }
+            />
           )}
 
           {step === "professional" && (
@@ -362,7 +379,7 @@ export function BookingFlow({
                   <Row label="Profissional" value={professionalName(pickedSlot.professional_id)!} />
                 )}
                 <Row label="Quando" value={formatDateTime(pickedSlot.starts_at)} />
-                <Row label="Valor" value={`R$ ${service.price.toFixed(2).replace(".", ",")}`} />
+                <Row label="Valor" value={formatPrice(service.price)} />
               </div>
               <Button onClick={confirm} disabled={submitting} className="w-full h-12 rounded-xl">
                 {submitting ? (
@@ -492,7 +509,220 @@ export function BookingFlow({
           )}
         </div>
       </div>
+
+      {step === "service" && (
+        <div
+          className="flex items-center justify-between gap-3 border-t px-4 pb-[max(0.875rem,env(safe-area-inset-bottom))] pt-3"
+          style={{
+            background: "var(--portal-background)",
+            borderColor: "color-mix(in srgb, var(--portal-text) 12%, transparent)",
+          }}
+        >
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium">
+              {pendingService ? "1 serviço selecionado" : "Nenhum serviço selecionado"}
+            </p>
+            <p className="text-sm font-semibold">
+              {pendingService ? formatPrice(pendingService.price) : "R$ 0,00"}
+            </p>
+          </div>
+          <Button
+            onClick={() => pendingService && selectService(pendingService)}
+            disabled={!pendingService}
+            className="h-12 shrink-0 rounded-full px-6"
+          >
+            Avançar
+          </Button>
+        </div>
+      )}
     </div>
+  );
+}
+
+export function ServiceStep({
+  loading,
+  hasAnyService,
+  whatsapp,
+  chipLabels,
+  selectedCategoryLabel,
+  onSelectCategory,
+  searchQuery,
+  onSearchChange,
+  filteredServices,
+  pendingServiceId,
+  onTogglePending,
+}: {
+  loading: boolean;
+  hasAnyService: boolean;
+  whatsapp: string | null;
+  chipLabels: string[];
+  selectedCategoryLabel: string;
+  onSelectCategory: (label: string) => void;
+  searchQuery: string;
+  onSearchChange: (q: string) => void;
+  filteredServices: PublicServiceMedia[];
+  pendingServiceId: string | null;
+  onTogglePending: (id: string) => void;
+}) {
+  if (loading) {
+    return (
+      <div className="py-10 text-center text-sm opacity-60">
+        <Loader2 className="w-4 h-4 animate-spin mx-auto mb-2" /> Carregando…
+      </div>
+    );
+  }
+
+  if (!hasAnyService) {
+    return (
+      <div className="py-10 text-center space-y-3">
+        <p className="text-sm opacity-70">
+          Ainda não há serviços cadastrados para agendamento online.
+        </p>
+        {whatsapp && (
+          <a href={`https://wa.me/${whatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">
+            <Button variant="outline" size="sm" className="rounded-full gap-1.5">
+              <MessageCircle className="w-3.5 h-3.5" /> Falar no WhatsApp
+            </Button>
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="pt-5">
+      <h2 className="font-display text-2xl tracking-tight">Escolha seu procedimento</h2>
+      <p className="mt-1 text-sm opacity-60">
+        Selecione o serviço, veja a duração e o valor, e agende o seu horário.
+      </p>
+
+      <div className="mt-4 relative">
+        <Search
+          className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50"
+          aria-hidden="true"
+        />
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="Buscar procedimento..."
+          aria-label="Buscar procedimento"
+          className="h-12 w-full rounded-full border bg-transparent pl-11 pr-4 text-sm outline-none focus-visible:ring-2"
+          style={{ borderColor: "color-mix(in srgb, var(--portal-text) 18%, transparent)" }}
+        />
+      </div>
+
+      {chipLabels.length > 1 && (
+        <div
+          className="mt-3 flex gap-2 overflow-x-auto pb-1"
+          role="tablist"
+          aria-label="Categorias de serviço"
+        >
+          {chipLabels.map((label) => {
+            const active = label === selectedCategoryLabel;
+            return (
+              <button
+                key={label}
+                role="tab"
+                aria-selected={active}
+                onClick={() => onSelectCategory(label)}
+                className="shrink-0 min-h-[40px] rounded-full px-4 text-sm font-medium transition"
+                style={
+                  active
+                    ? { background: "var(--portal-button)", color: "var(--portal-button-text)" }
+                    : {
+                        border: "1px solid color-mix(in srgb, var(--portal-text) 20%, transparent)",
+                        color: "var(--portal-text)",
+                      }
+                }
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="mt-4 space-y-3">
+        {filteredServices.length === 0 ? (
+          <p className="py-8 text-center text-sm opacity-60">
+            Nenhum procedimento encontrado para essa busca.
+          </p>
+        ) : (
+          filteredServices.map((svc) => (
+            <ServiceCard
+              key={svc.id}
+              service={svc}
+              selected={svc.id === pendingServiceId}
+              onToggle={() => onTogglePending(svc.id)}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function ServiceCard({
+  service,
+  selected,
+  onToggle,
+}: {
+  service: PublicServiceMedia;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  const imagePath = resolveServiceImagePath(service.image_path);
+  return (
+    <div
+      className="flex gap-3 rounded-2xl border p-3"
+      style={{
+        borderColor: selected
+          ? "var(--portal-button)"
+          : "color-mix(in srgb, var(--portal-text) 14%, transparent)",
+      }}
+    >
+      <PortalImg
+        src={imagePath ? getPortalMediaPublicUrl(imagePath) : null}
+        alt=""
+        label={service.name}
+        className="h-20 w-20 shrink-0 overflow-hidden rounded-xl"
+      />
+      <div className="min-w-0 flex-1">
+        <p className="font-medium leading-tight">{service.name}</p>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          <Pill>
+            <Clock className="w-3 h-3" aria-hidden="true" /> {service.duration_min} minutos
+          </Pill>
+          <Pill>{formatPrice(service.price)}</Pill>
+        </div>
+        {service.description && (
+          <p className="mt-1.5 text-xs leading-relaxed opacity-70 line-clamp-3">
+            {service.description}
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-pressed={selected}
+          className="mt-2.5 flex h-10 w-full items-center justify-center gap-1.5 rounded-full text-sm font-medium transition"
+          style={{ background: "var(--portal-button)", color: "var(--portal-button-text)" }}
+        >
+          {selected ? "Selecionado ✓" : "Selecionar"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Pill({ children }: { children: ReactNode }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+      style={{ background: "color-mix(in srgb, var(--portal-secondary) 16%, transparent)" }}
+    >
+      {children}
+    </span>
   );
 }
 

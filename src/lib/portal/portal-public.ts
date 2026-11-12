@@ -17,6 +17,11 @@ type RawPublicConfig = {
   font_key: string | null;
   logo_path: string | null;
   logo_light_path: string | null;
+  /** FASE K2c — ausente do jsonb de portal_obter_publico() se a migração
+   * ainda não tiver sido aplicada (coluna não existia quando a função SQL
+   * foi escrita na época); nunca lança, só vira `undefined` nesse caso (ver
+   * leitura abaixo com `?.`). */
+  logo_wide_path?: string | null;
   cover_path: string | null;
   banner_path: string | null;
   show_shortcuts: boolean | null;
@@ -69,6 +74,7 @@ export async function fetchPortalPublicConfig(slug: string): Promise<PortalPubli
     fontFamily: fontFamilyForKey(isValidFontKey(raw.font_key) ? raw.font_key : "system"),
     logoUrl: resolveMediaUrl(raw.logo_path),
     logoLightUrl: resolveMediaUrl(raw.logo_light_path),
+    logoWideUrl: resolveMediaUrl(raw.logo_wide_path ?? null),
     coverUrl: resolveMediaUrl(raw.cover_path),
     bannerUrl: resolveMediaUrl(raw.banner_path),
     showShortcuts: raw.show_shortcuts ?? true,

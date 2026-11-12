@@ -23,6 +23,7 @@ import {
 import { getPortalMediaInfo } from "@/lib/portal/portal-media.functions";
 import { listServices } from "@/lib/catalog";
 import { listTeamMembers } from "@/lib/team";
+import { listPortalCategories } from "@/lib/portal/portal-categories";
 import { draftFormFromRow, EMPTY_FORM, type PortalDraftForm } from "@/lib/portal/portal-draft-form";
 import {
   PortalDraftPatchSchema,
@@ -80,6 +81,10 @@ function PersonalizarPortalPage() {
   const { data: professionals = [] } = useQuery({
     queryKey: ["team-members"],
     queryFn: listTeamMembers,
+  });
+  const { data: categories = [] } = useQuery({
+    queryKey: ["portal-categories"],
+    queryFn: listPortalCategories,
   });
 
   const [form, setForm] = useState<PortalDraftForm>(EMPTY_FORM);
@@ -343,20 +348,22 @@ function PersonalizarPortalPage() {
           <DialogTitle className="sr-only">Pré-visualização do portal</DialogTitle>
           <PortalPreviewFrame
             form={form}
-            logoUrl={
-              form.logo_path ? getPortalMediaPublicUrl(form.logo_path) : (profile?.logo_url ?? null)
-            }
+            logoWideUrl={form.logo_wide_path ? getPortalMediaPublicUrl(form.logo_wide_path) : null}
             coverUrl={
               form.cover_path
                 ? getPortalMediaPublicUrl(form.cover_path)
                 : (profile?.cover_image_url ?? null)
             }
+            bannerUrl={form.banner_path ? getPortalMediaPublicUrl(form.banner_path) : null}
             displayName={profile?.display_name ?? ""}
             category={profile?.category ?? null}
             description={profile?.description ?? null}
             city={profile?.city ?? null}
             state={profile?.state ?? null}
+            whatsapp={profile?.whatsapp ?? null}
+            instagram={profile?.instagram ?? null}
             services={services}
+            categories={categories}
             professionals={professionals.filter((p) => p.status === "active")}
           />
         </DialogContent>
