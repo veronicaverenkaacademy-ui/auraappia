@@ -33,6 +33,7 @@ import {
 } from "@/lib/booking.functions";
 import { downloadIcsFile } from "@/lib/ics";
 import type { CompanyProfile } from "@/lib/companyProfile";
+import { isStaleSlotError } from "@/lib/booking-validation";
 
 type Step = "service" | "professional" | "slot" | "auth" | "confirm" | "done";
 
@@ -168,7 +169,11 @@ export function BookingFlow({
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       toast.error(msg);
-      if (msg.includes("acabou de ser preenchido")) {
+      // FASE C2: qualquer recusa do servidor (horário fora do expediente, em
+      // dia fechado, em conflito etc. — não só a trava de corrida do banco)
+      // significa que esse horário não vale mais — volta pro passo de
+      // escolher horário com a lista recarregada, sem perder o serviço.
+      if (isStaleSlotError(msg)) {
         setPickedSlot(null);
         qc.invalidateQueries({
           queryKey: ["available-slots", ownerId, service.id, professionalChoice],
@@ -200,7 +205,7 @@ export function BookingFlow({
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       toast.error(msg);
-      if (msg.includes("acabou de ser preenchido")) {
+      if (isStaleSlotError(msg)) {
         qc.invalidateQueries({
           queryKey: ["available-slots", ownerId, service.id, professionalChoice],
         });

@@ -4,6 +4,14 @@ import { z } from "zod";
 import { computeFreeSlots, BOOKING_WINDOW_DAYS, type BusinessHours } from "@/lib/booking-slots";
 import { isValidTimeZone } from "@/lib/timezone";
 import {
+  fetchBusyIntervalsForValidation,
+  resolveCompanyBookingContext,
+  assertServiceBookable,
+  assertProfessionalBookable,
+  assertSlotAllowed,
+  type SupabaseAdmin,
+} from "@/lib/booking-validation.server";
+import {
   createBookingNotification,
   buildNewBookingNotification,
   buildClientCancelledNotification,
@@ -24,10 +32,6 @@ const AvailabilityInput = z.object({
   // "any" = "Qualquer profissional" — mescla a disponibilidade de toda a equipe ativa.
   professional_id: z.union([z.string().uuid(), z.literal("any"), z.null()]),
 });
-
-type SupabaseAdmin = Awaited<
-  typeof import("@/integrations/supabase/client.server")
->["supabaseAdmin"];
 
 /** Mesma leitura/fallback de fuso já usada em getAvailableSlots (item A1 da FASE H-BIS) — reaproveitada aqui só pra formatar o horário nos avisos (FASE J), nunca pra calcular disponibilidade. */
 async function getCompanyTimeZone(supabaseAdmin: SupabaseAdmin, ownerId: string): Promise<string> {
@@ -202,20 +206,30 @@ export const createClientAppointment = createServerFn({ method: "POST" })
     if (clientErr) throw new Error(clientErr.message);
     if (!clientRow) throw new Error("Cliente não encontrada nesta conta.");
 
-    const { data: service, error: svcErr } = await supabaseAdmin
-      .from("services")
-      .select("name, price, duration_min")
-      .eq("id", data.service_id)
-      .eq("owner_id", data.owner_id)
-      .maybeSingle();
-    if (svcErr) throw new Error(svcErr.message);
-    if (!service) throw new Error("Serviço não encontrado.");
+    // FASE C2: revalida tudo no servidor — nunca confia em duração, fuso ou
+    // profissional mandados pelo navegador (nem no que getAvailableSlots
+    // mostrou na tela, que pode estar desatualizado/aberto há horas).
+    const service = await assertServiceBookable(supabaseAdmin, data.owner_id, data.service_id);
+    const { businessHours, timeZone } = await resolveCompanyBookingContext(
+      supabaseAdmin,
+      data.owner_id,
+    );
+    await assertProfessionalBookable(supabaseAdmin, data.owner_id, data.professional_id);
 
     const startsAt = new Date(data.starts_at);
-    if (Number.isNaN(startsAt.getTime()) || startsAt.getTime() < Date.now()) {
-      throw new Error("Esse horário já passou — escolha outro.");
-    }
-    const endsAt = new Date(startsAt.getTime() + service.duration_min * 60 * 1000);
+    const durationMs = service.duration_min * 60 * 1000;
+    const now = new Date();
+    const rangeEnd = new Date(now.getTime() + BOOKING_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const busy = await fetchBusyIntervalsForValidation(
+      supabaseAdmin,
+      data.owner_id,
+      data.professional_id,
+      now,
+      rangeEnd,
+    );
+    assertSlotAllowed(startsAt, now, businessHours, timeZone, durationMs, busy);
+
+    const endsAt = new Date(startsAt.getTime() + durationMs);
 
     const { data: appointment, error } = await supabaseAdmin
       .from("appointments")
@@ -242,7 +256,8 @@ export const createClientAppointment = createServerFn({ method: "POST" })
 
     // Item 1.1 (FASE J): aviso pra profissional/equipe — o agendamento já
     // foi gravado acima; uma falha aqui nunca desfaz nem bloqueia (item 1.6).
-    const timeZone = await getCompanyTimeZone(supabaseAdmin, data.owner_id);
+    // timeZone já resolvido acima (FASE C2), pra validar o horário — mesmo
+    // valor, sem buscar de novo.
     await createBookingNotification(supabaseAdmin, {
       ownerId: data.owner_id,
       appointmentId: appointment.id,
@@ -291,21 +306,35 @@ export const rescheduleClientAppointment = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!clientRow) throw new Error("Este agendamento não pertence a esta conta.");
 
+    // FASE C2: mesma revalidação de createClientAppointment — serviço e
+    // profissional aqui vêm do próprio agendamento já salvo no banco (nunca
+    // do navegador: o input desta função só tem starts_at).
     let durationMin = 30;
     if (appt.service_id) {
-      const { data: svc } = await supabaseAdmin
-        .from("services")
-        .select("duration_min")
-        .eq("id", appt.service_id)
-        .maybeSingle();
-      if (svc) durationMin = svc.duration_min;
+      const service = await assertServiceBookable(supabaseAdmin, data.owner_id, appt.service_id);
+      durationMin = service.duration_min;
     }
+    const { businessHours, timeZone: timeZoneResched } = await resolveCompanyBookingContext(
+      supabaseAdmin,
+      data.owner_id,
+    );
+    await assertProfessionalBookable(supabaseAdmin, data.owner_id, appt.professional_id);
 
     const startsAt = new Date(data.starts_at);
-    if (Number.isNaN(startsAt.getTime()) || startsAt.getTime() < Date.now()) {
-      throw new Error("Esse horário já passou — escolha outro.");
-    }
-    const endsAt = new Date(startsAt.getTime() + durationMin * 60 * 1000);
+    const durationMs = durationMin * 60 * 1000;
+    const now = new Date();
+    const rangeEnd = new Date(now.getTime() + BOOKING_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const busy = await fetchBusyIntervalsForValidation(
+      supabaseAdmin,
+      data.owner_id,
+      appt.professional_id,
+      now,
+      rangeEnd,
+      appt.id,
+    );
+    assertSlotAllowed(startsAt, now, businessHours, timeZoneResched, durationMs, busy);
+
+    const endsAt = new Date(startsAt.getTime() + durationMs);
 
     const { error } = await supabaseAdmin
       .from("appointments")
@@ -323,8 +352,8 @@ export const rescheduleClientAppointment = createServerFn({ method: "POST" })
     }
 
     // Item 1.3 (FASE J): aviso de remarcação — a mudança já foi gravada
-    // acima; uma falha aqui nunca desfaz nem bloqueia (item 1.6).
-    const timeZoneResched = await getCompanyTimeZone(supabaseAdmin, data.owner_id);
+    // acima; uma falha aqui nunca desfaz nem bloqueia (item 1.6). timeZone
+    // já resolvido acima (FASE C2), mesmo valor, sem buscar de novo.
     await createBookingNotification(supabaseAdmin, {
       ownerId: data.owner_id,
       appointmentId: data.appointment_id,
