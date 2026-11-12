@@ -548,13 +548,24 @@ test("3g: 'PARAR' gera aviso PRIORITÁRIO e NÃO gera o aviso genérico de 'mens
   assert.equal(db.tables.app_notifications[0].kind, "client_stop_request");
 });
 
+test("FASE LEMBRETES-1: 'PARAR' agora bloqueia de verdade (whatsapp_blocked_recipients), além de avisar a dona", async () => {
+  const db = makeDb();
+  await run(db, [textEvent({ contextId: "wamid.OUTBOUND_001", text: "PARAR" })]);
+  assert.equal(db.tables.whatsapp_blocked_recipients?.length, 1);
+  const block = db.tables.whatsapp_blocked_recipients[0];
+  assert.equal(block.owner_id, "owner-1");
+  assert.equal(block.phone_e164, "5547999990001");
+  assert.equal(block.unblocked_at, undefined);
+  assert.match(db.tables.app_notifications[0].body as string, /bloqueado/i);
+});
+
 test("3g: 'não vou parar de ir aí' NÃO dispara o aviso de opt-out (gera o aviso comum)", async () => {
   const db = makeDb();
   await run(db, [textEvent({ contextId: "wamid.OUTBOUND_001", text: "não vou parar de ir aí" })]);
   assert.equal(db.tables.app_notifications[0].kind, "unanswered_message");
 });
 
-test("3g: PARAR não lança excecão nem impede o processamento de outros eventos (nunca bloqueia envio — não existe nenhum código de bloqueio a jusante)", async () => {
+test("3g: PARAR não lança exceção nem impede o processamento de outros eventos (FASE LEMBRETES-1: agora bloqueia o telefone de verdade, mas nunca derruba o restante do lote)", async () => {
   const db = makeDb();
   await run(db, [
     textEvent({

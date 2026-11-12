@@ -22,6 +22,7 @@ import {
 } from "./central-reminder-policy.ts";
 import { isValidPhoneBR } from "../phone.ts";
 import { sameInstant } from "./time-instant.ts";
+import { isPhoneBlocked, type OptOutRecipientsDb } from "./central-opt-out.server.ts";
 
 const REMINDER_24H_MS = 24 * 60 * 60 * 1000;
 const REMINDER_2H_MS = 2 * 60 * 60 * 1000;
@@ -301,6 +302,13 @@ export async function processCentralReminderJob(
   const templateKey: ReminderTemplateKey =
     job.type === "appointment_reminder_24h" ? "lembrete_24h" : "lembrete_2h";
   const phone = client?.phone ?? "";
+  const recipientBlocked = await isPhoneBlocked(
+    // Cast: whatsapp_blocked_recipients ainda não existe em types.ts
+    // (migration não aplicada nesta fase) — ver OptOutRecipientsDb.
+    supabaseAdmin as unknown as OptOutRecipientsDb,
+    job.owner_id,
+    phone,
+  );
 
   const decision = decideReminderJobAction({
     templateKey,
@@ -315,6 +323,7 @@ export async function processCentralReminderJob(
     automationMetaTemplateName: automation?.meta_template_name ?? null,
     recipientPhoneValid: isValidPhoneBR(phone),
     recipientPhoneE164: phone,
+    recipientBlocked,
     remindersEnabled: remindersEnabled(),
     testMode: testModeEnabled(),
     testPhones: testPhones(),

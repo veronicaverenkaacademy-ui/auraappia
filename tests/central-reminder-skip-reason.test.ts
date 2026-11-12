@@ -84,6 +84,15 @@ test("status inelegível (horário já passou)", () => {
   );
 });
 
+test("FASE LEMBRETES-1: cliente bloqueado (pediu PARAR)", () => {
+  assert.equal(
+    categorizeReminderSkipReason(
+      "Cliente pediu para parar de receber mensagens pelo WhatsApp (bloqueio ativo).",
+    ),
+    "cliente_bloqueado",
+  );
+});
+
 test("texto desconhecido cai em 'outro', nunca lança erro", () => {
   assert.equal(categorizeReminderSkipReason("algo que nunca vamos escrever"), "outro");
 });

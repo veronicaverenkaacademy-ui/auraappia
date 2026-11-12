@@ -1,0 +1,47 @@
+-- FASE LEMBRETES-1 (Pedido B) — ligar o agendador DENTRO do Postgres
+-- (pg_cron + pg_net), chamando o MESMO endpoint que o GitHub Actions já
+-- chama hoje (/api/cron/whatsapp-reminders). ESTE ARQUIVO É SÓ COMENTÁRIO —
+-- nenhum comando SQL executável abaixo. Mesmo se alguém rodar este arquivo
+-- como está, nada muda no banco (nenhum cron.schedule é criado).
+--
+-- Por quê um arquivo separado, desligado por padrão (pedido explícito da
+-- dona): a migration 20261112200000 só PREPARA o terreno (instala as
+-- extensões, cria as tabelas de apoio) — ligar um job que passa a rodar
+-- sozinho, de 1 em 1 ou de 5 em 5 minutos, pra sempre, é uma decisão
+-- operacional diferente (e maior) do que só ter a peça disponível. Fica
+-- para um passo de autorização PRÓPRIO, separado de "AUTORIZO APLICAR
+-- MIGRAÇÃO FASE LEMBRETES-1".
+--
+-- Pré-requisito antes de autorizar isto: criar, no Supabase Vault (aba
+-- Project Settings → Vault, ou `select vault.create_secret(...)`), um
+-- segredo chamado 'whatsapp_cron_internal_secret' com o MESMO valor que já
+-- está no secret CRON_SECRET do GitHub Actions hoje — nunca um valor novo
+-- inventado aqui, nunca colado em nenhuma mensagem para mim. O pg_net
+-- precisa ler esse valor de dentro do SQL (vault.decrypted_secrets) pra
+-- montar o cabeçalho Authorization — não existe outro jeito seguro de um
+-- job do pg_cron "saber" o segredo sem guardá-lo em algum lugar do banco.
+--
+-- Quando autorizado, o comando real (hoje só em comentário) seria algo
+-- como:
+--
+-- select cron.schedule(
+--   'whatsapp-reminders-pg-cron',
+--   '*/2 * * * *',  -- a cada 2 minutos; GitHub Actions continua rodando em paralelo como reforço
+--   $$
+--   select net.http_post(
+--     url := 'https://auraappia.lovable.app/api/cron/whatsapp-reminders',
+--     headers := jsonb_build_object(
+--       'Authorization', 'Bearer ' || (
+--         select decrypted_secret from vault.decrypted_secrets
+--         where name = 'whatsapp_cron_internal_secret'
+--       ),
+--       'Content-Type', 'application/json'
+--     ),
+--     body := '{}'::jsonb,
+--     timeout_milliseconds := 25000
+--   );
+--   $$
+-- );
+--
+-- Reversão (depois que estiver ligado, se for preciso desligar): select
+-- cron.unschedule('whatsapp-reminders-pg-cron');
