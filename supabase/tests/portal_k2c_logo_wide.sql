@@ -567,6 +567,8 @@ DECLARE
   v_result text;
   v_row public.portal_configurations;
   v_val text;
+  v_caso14_passou boolean;
+  v_caso14_detalhe text;
 BEGIN
   SELECT valor::uuid INTO v_owner_a FROM zzfx_k2c_ids WHERE chave = 'owner_a';
   SELECT valor::uuid INTO v_owner_b FROM zzfx_k2c_ids WHERE chave = 'owner_b';
@@ -680,22 +682,29 @@ BEGIN
      v_val = v_path_logo_wide_a);
 
   -- ===== 12: anon só lê pelo portal_obter_publico(), já incluindo logo_wide_path =====
+  -- (grava o resultado SÓ depois do RESET ROLE: a tabela temp zzfx_k2c_results
+  -- pertence ao role original da sessão, e anon não tem INSERT nela —
+  -- gravar enquanto ainda impersonando anon dá "permission denied for table
+  -- zzfx_k2c_results")
   RESET request.jwt.claim.sub;
   SET LOCAL ROLE anon;
   SELECT (public.portal_obter_publico('zzfx-k2c-empresa-a') ->> 'logo_wide_path') INTO v_val;
-  INSERT INTO zzfx_k2c_results (caso, detalhe, passou) VALUES
-    ('13_anon_le_logo_wide_via_portal_obter_publico', format('logo_wide_path=%s', v_val), v_val = v_path_logo_wide_a);
 
   -- ===== 13: anon NÃO lê portal_configurations direto (RLS intacta) =====
   BEGIN
     PERFORM 1 FROM public.portal_configurations WHERE owner_id = v_owner_a;
-    INSERT INTO zzfx_k2c_results (caso, detalhe, passou) VALUES
-      ('14_anon_sem_select_direto_em_portal_configurations', 'SELECT retornou linha (RLS não bloqueou!)', false);
+    v_caso14_passou := false;
+    v_caso14_detalhe := 'SELECT retornou linha (RLS não bloqueou!)';
   EXCEPTION WHEN insufficient_privilege THEN
-    INSERT INTO zzfx_k2c_results (caso, detalhe, passou) VALUES
-      ('14_anon_sem_select_direto_em_portal_configurations', 'erro:insufficient_privilege (esperado)', true);
+    v_caso14_passou := true;
+    v_caso14_detalhe := 'erro:insufficient_privilege (esperado)';
   END;
   RESET ROLE;
+
+  INSERT INTO zzfx_k2c_results (caso, detalhe, passou) VALUES
+    ('13_anon_le_logo_wide_via_portal_obter_publico', format('logo_wide_path=%s', v_val), v_val = v_path_logo_wide_a);
+  INSERT INTO zzfx_k2c_results (caso, detalhe, passou) VALUES
+    ('14_anon_sem_select_direto_em_portal_configurations', v_caso14_detalhe, v_caso14_passou);
 
   -- ===== 14 (controle): CHECK de formato cobre logo_wide_path =====
   BEGIN
