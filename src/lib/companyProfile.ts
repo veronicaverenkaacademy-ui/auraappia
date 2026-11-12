@@ -84,8 +84,15 @@ export async function fetchCompanySlugByOwnerId(ownerId: string): Promise<string
  * como `null`) para o formato do formulário da aba Empresa (onde tudo é
  * string) — sem isso, os valores `null` eram enviados de volta ao salvar e
  * rejeitados pela validação do servidor (FASE H, 08/11/2026).
+ *
+ * FASE K1b-B: NÃO inclui logo_url/cover_image_url — esses dois saíram do
+ * formulário da Empresa (o envio de logo/capa agora vive só em Personalizar
+ * meu portal); devolvê-los aqui incentivaria reenviar esses campos ao salvar
+ * a Empresa, arriscando apagá-los (ver upsertCompanyProfile).
  */
-export function normalizeProfileForForm(profile: CompanyProfile): Omit<CompanyProfile, "owner_id"> {
+export function normalizeProfileForForm(
+  profile: CompanyProfile,
+): Omit<CompanyProfile, "owner_id" | "logo_url" | "cover_image_url"> {
   return {
     slug: profile.slug,
     display_name: profile.display_name,
@@ -100,8 +107,6 @@ export function normalizeProfileForForm(profile: CompanyProfile): Omit<CompanyPr
     facebook: profile.facebook ?? "",
     tiktok: profile.tiktok ?? "",
     open_hours_text: profile.open_hours_text ?? "",
-    logo_url: profile.logo_url ?? "",
-    cover_image_url: profile.cover_image_url ?? "",
     business_hours: profile.business_hours ?? DEFAULT_BUSINESS_HOURS,
   };
 }

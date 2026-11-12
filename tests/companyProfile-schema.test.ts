@@ -6,7 +6,11 @@
 // sem preencher esses campos sempre falhava com um ZodError bruto.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { UpsertInput, friendlyUpsertError } from "../src/lib/companyProfile.schema.ts";
+import {
+  UpsertInput,
+  friendlyUpsertError,
+  optionalPreservingAbsence,
+} from "../src/lib/companyProfile.schema.ts";
 import { z } from "zod";
 
 const BASE = {
@@ -114,6 +118,39 @@ test("horário de funcionamento: dia fechado (null) é aceito", () => {
   };
   const parsed = UpsertInput.parse(input);
   assert.equal(parsed.business_hours?.sun, null);
+});
+
+// FASE K1b-B: logo_url/cover_image_url saíram da aba Empresa — diferente
+// dos outros campos opcionais (optionalText, que transforma ausência em
+// ""), estes dois precisam DISTINGUIR "não mandou o campo" (undefined) de
+// "mandou vazio/null" (quer limpar) — ver companyProfile-upsert.server.ts.
+test('logo_url/cover_image_url: chave ausente (undefined) continua undefined, nunca vira ""', () => {
+  const parsed = UpsertInput.parse({ ...BASE });
+  assert.equal(parsed.logo_url, undefined);
+  assert.equal(parsed.cover_image_url, undefined);
+  assert.ok(!("logo_url" in parsed) || parsed.logo_url === undefined);
+});
+
+test('logo_url/cover_image_url: null explícito permanece null (nunca vira "")', () => {
+  const parsed = UpsertInput.parse({ ...BASE, logo_url: null, cover_image_url: null });
+  assert.equal(parsed.logo_url, null);
+  assert.equal(parsed.cover_image_url, null);
+});
+
+test("logo_url/cover_image_url: string preenchida é aceita e aparadas (trim)", () => {
+  const parsed = UpsertInput.parse({
+    ...BASE,
+    logo_url: "  https://exemplo.com/logo.png  ",
+    cover_image_url: "https://exemplo.com/capa.png",
+  });
+  assert.equal(parsed.logo_url, "https://exemplo.com/logo.png");
+  assert.equal(parsed.cover_image_url, "https://exemplo.com/capa.png");
+});
+
+test("optionalPreservingAbsence: rejeita valores além do tamanho máximo", () => {
+  const schema = optionalPreservingAbsence(10);
+  assert.throws(() => schema.parse("12345678901"));
+  assert.doesNotThrow(() => schema.parse("1234567890"));
 });
 
 test("friendlyUpsertError nunca expõe o despejo técnico do Zod, só o nome do campo", () => {

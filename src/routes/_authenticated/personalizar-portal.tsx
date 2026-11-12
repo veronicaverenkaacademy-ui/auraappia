@@ -243,26 +243,41 @@ function PersonalizarPortalPage() {
         />
 
         {publicUrl && (
-          <div className="flex items-center gap-2 min-w-0 rounded-2xl bg-card border border-border/50 p-3">
-            <code className="text-xs px-3 py-1.5 rounded-full bg-muted/60 truncate flex-1">
-              {publicUrl}
-            </code>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-full h-8 w-8 shrink-0"
-              onClick={() => {
-                navigator.clipboard.writeText(publicUrl);
-                toast.success("Link copiado.");
-              }}
-            >
-              <Copy className="w-3.5 h-3.5" />
-            </Button>
-            <a href={publicUrl} target="_blank" rel="noreferrer">
-              <Button variant="ghost" size="icon" className="rounded-full h-8 w-8 shrink-0">
-                <ExternalLink className="w-3.5 h-3.5" />
+          <div className="rounded-2xl bg-card border border-border/50 p-3 space-y-2">
+            <p className="text-xs font-medium text-muted-foreground px-1">Link do seu portal</p>
+            <div className="flex items-center gap-2 min-w-0">
+              <code className="text-xs px-3 py-1.5 rounded-full bg-muted/60 truncate flex-1 min-w-0">
+                {publicUrl}
+              </code>
+              {/* FASE K1b-B: botões com alvo de toque >=44px (h-11 w-11) — o
+                  cartão antigo (na aba Empresa, agora removido) usava h-8
+                  w-8 (32px); reaproveitado aqui com o tamanho correto. Sem
+                  botão de compartilhar: o app não tem nenhum recurso de
+                  compartilhamento nativo hoje (nem navigator.share, nem
+                  plugin do Capacitor) — ver relatório da FASE K1b-B. */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="rounded-full h-11 w-11 shrink-0"
+                onClick={() => {
+                  navigator.clipboard.writeText(publicUrl);
+                  toast.success("Link copiado.");
+                }}
+                aria-label="Copiar link do portal"
+              >
+                <Copy className="w-4 h-4" />
               </Button>
-            </a>
+              <a href={publicUrl} target="_blank" rel="noreferrer">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full h-11 w-11 shrink-0"
+                  aria-label="Abrir portal em nova aba"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </Button>
+              </a>
+            </div>
           </div>
         )}
 

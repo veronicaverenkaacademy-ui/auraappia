@@ -9,11 +9,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PanelHeader, Field, Section } from "@/components/settings-ui";
 import { useControlCenter, type ControlCenterState } from "@/lib/control-center";
 
+// FASE K1b-B: renomeia só o que a dona VÊ ("Aparência do app") — a rota
+// continua /personalizacao de propósito (nunca renomeada pra /aparencia):
+// trocar a URL não traz benefício nenhum pra quem usa (app mobile, não se
+// digita/compartilha esse endereço) e só criaria trabalho extra (redirect,
+// atualizar o destino usado por governanca.tsx) sem motivo real. O nome
+// técnico do arquivo/rota é invisível pra dona; o que ela vê (menu, título,
+// cabeçalho) é que muda.
 export const Route = createFileRoute("/_authenticated/personalizacao")({
   head: () => ({
     meta: [
-      { title: "Personalização — AURA" },
-      { name: "description", content: "Identidade visual do sistema, portal e comunicações." },
+      { title: "Aparência do app — AURA" },
+      { name: "description", content: "Visual do sistema administrativo, para você e sua equipe." },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -35,7 +42,16 @@ function PersonalizacaoPage() {
       </Link>
 
       <div className="space-y-6">
-        <PanelHeader title="Personalização" desc="Identidade visual do sistema, portal e comunicações." />
+        <PanelHeader title="Aparência do app" desc="Visual do sistema administrativo, para você e sua equipe." />
+
+        <p className="text-xs text-muted-foreground -mt-2">
+          Aqui você personaliza o visual do sistema (para você e sua equipe). Para personalizar o
+          portal das clientes, vá em{" "}
+          <Link to="/personalizar-portal" className="text-primary underline underline-offset-4">
+            Personalizar meu portal
+          </Link>
+          .
+        </p>
 
         <Section title="Marca">
           <div className="grid md:grid-cols-2 gap-4 py-2">
@@ -83,6 +99,11 @@ function PersonalizacaoPage() {
           </div>
         </Section>
 
+        {/* FASE K1b-B: NÃO removida — a dona pediu pra tirar esta seção se
+            nada lesse esses dois valores, mas state.brand.portalCover É lido
+            fora daqui, em governanca.tsx (Centro de Governança), pra montar
+            o aviso "Portal da Cliente não personalizado". Ver relatório da
+            fase: decidimos parar e manter, em vez de remover. */}
         <Section title="Portal da Cliente">
           <div className="space-y-4 py-2">
             <Field label="Mensagem de boas-vindas">

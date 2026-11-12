@@ -4,6 +4,10 @@ import { z } from "zod";
 import type { CompanyProfile } from "@/lib/companyProfile";
 import { MarketingError } from "@/lib/marketing/types";
 import { SlugSchema, UpsertInput, friendlyUpsertError } from "@/lib/companyProfile.schema";
+import {
+  upsertCompanyProfileCore,
+  type CompanyProfileAdminDb,
+} from "@/lib/companyProfile-upsert.server";
 
 export const getMyCompanyProfile = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -44,45 +48,19 @@ export const upsertCompanyProfile = createServerFn({ method: "POST" })
     if (!parsed.success) throw friendlyUpsertError(parsed.error);
     return parsed.data;
   })
-  .handler(async ({ data, context }) => {
-    const { data: adminCheck } = await context.supabase.rpc("is_admin", {
-      _user_id: context.userId,
-    });
-    if (!adminCheck) throw new Error("Apenas administradores podem editar os dados da empresa.");
-
-    const { data: existing } = await context.supabase
-      .from("company_profiles")
-      .select("owner_id")
-      .eq("slug", data.slug)
-      .maybeSingle();
-    if (existing && existing.owner_id !== context.userId) {
-      throw new Error("Este endereço já está em uso por outra conta.");
-    }
-
-    const row = {
-      owner_id: context.userId,
-      ...data,
-      category: data.category || null,
-      description: data.description || null,
-      city: data.city || null,
-      state: data.state || null,
-      address: data.address || null,
-      phone: data.phone || null,
-      whatsapp: data.whatsapp || null,
-      instagram: data.instagram || null,
-      facebook: data.facebook || null,
-      tiktok: data.tiktok || null,
-      open_hours_text: data.open_hours_text || null,
-      logo_url: data.logo_url || null,
-      cover_image_url: data.cover_image_url || null,
-    };
-
-    const { error } = await context.supabase
-      .from("company_profiles")
-      .upsert(row, { onConflict: "owner_id" });
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
+  .handler(async ({ data, context }) =>
+    // Cast: o tsc não consegue casar a estrutura do SupabaseClient real
+    // (tipo gerado, generics profundos) com a interface mínima que
+    // upsertCompanyProfileCore espera sem "type instantiation excessively
+    // deep" — o shape em si (rpc/from/select/eq/maybeSingle/upsert) é
+    // exatamente o que o cliente real tem, confirmado pelo teste de
+    // contrato (tests/companyProfile-upsert-contract.test.ts).
+    upsertCompanyProfileCore(
+      context.supabase as unknown as CompanyProfileAdminDb,
+      context.userId,
+      data,
+    ),
+  );
 
 // Campo "Link de avaliação do Google" (item 3.7, mensagem pos_avaliacao_google).
 // company_profiles hoje só é acessível por owner_id = auth.uid() (RLS
