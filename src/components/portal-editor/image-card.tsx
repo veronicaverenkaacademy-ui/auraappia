@@ -48,7 +48,9 @@ export function ImageCard({
   currentPath: string | null;
   isProtected: boolean;
   altName: string;
-  aspect?: "square" | "wide";
+  /** "wide4" (~4:1) é usado só pela logo largo (K2c) — mais estreito que
+   * "wide" (3:1, capa/banner). */
+  aspect?: "square" | "wide" | "wide4";
   onUploaded: (path: string) => void;
   onDeleted: () => void;
 }) {
@@ -125,7 +127,11 @@ export function ImageCard({
       <div
         className={cn(
           "relative rounded-2xl border border-dashed overflow-hidden bg-secondary/40",
-          aspect === "square" ? "aspect-square w-32" : "aspect-[3/1] w-full",
+          aspect === "square"
+            ? "aspect-square w-32"
+            : aspect === "wide4"
+              ? "aspect-[4/1] w-full"
+              : "aspect-[3/1] w-full",
           "border-border/70",
         )}
       >

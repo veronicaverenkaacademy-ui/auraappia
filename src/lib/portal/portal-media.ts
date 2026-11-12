@@ -10,11 +10,19 @@
  */
 
 export type PortalMediaKind =
-  "logo" | "logo-light" | "cover" | "banner" | "services" | "professionals" | "categories";
+  | "logo"
+  | "logo-light"
+  | "logo-wide"
+  | "cover"
+  | "banner"
+  | "services"
+  | "professionals"
+  | "categories";
 
 export const PORTAL_MEDIA_KINDS: readonly PortalMediaKind[] = [
   "logo",
   "logo-light",
+  "logo-wide",
   "cover",
   "banner",
   "services",
@@ -45,6 +53,7 @@ export function maxDimensionForKind(kind: PortalMediaKind): number {
     case "logo":
     case "logo-light":
       return 512;
+    case "logo-wide":
     case "cover":
     case "banner":
       return 1600;
@@ -55,10 +64,11 @@ export function maxDimensionForKind(kind: PortalMediaKind): number {
   }
 }
 
-/** Só as logos preservam PNG (transparência importa pra elas); todo o
- * resto vira WEBP (se o navegador gerar de verdade) ou JPEG. */
+/** Só as logos (incluindo a logo largo) preservam PNG (transparência
+ * importa pra elas); todo o resto vira WEBP (se o navegador gerar de
+ * verdade) ou JPEG. */
 export function preferPngForKind(kind: PortalMediaKind): boolean {
-  return kind === "logo" || kind === "logo-light";
+  return kind === "logo" || kind === "logo-light" || kind === "logo-wide";
 }
 
 export function extensionForMimeType(mime: string): "jpg" | "png" | "webp" | null {

@@ -49,6 +49,14 @@ test("caminho de imagem precisa bater com o formato {uuid}/{kind}/{uuid}.{ext}",
   assert.throws(() => PortalDraftPatchSchema.parse({ logo_path: "../../etc/passwd" }));
 });
 
+test("FASE K2c: logo_wide_path aceita caminho válido, null (lição do PR #108) e rejeita formato errado", () => {
+  const valid =
+    "11111111-1111-1111-1111-111111111111/logo-wide/22222222-2222-2222-2222-222222222222.png";
+  assert.doesNotThrow(() => PortalDraftPatchSchema.parse({ logo_wide_path: valid }));
+  assert.doesNotThrow(() => PortalDraftPatchSchema.parse({ logo_wide_path: null }));
+  assert.throws(() => PortalDraftPatchSchema.parse({ logo_wide_path: "../../etc/passwd" }));
+});
+
 test("booleans show_* são aceitos", () => {
   const parsed = PortalDraftPatchSchema.parse({ show_banner: false, show_footer: true });
   assert.deepEqual(parsed, { show_banner: false, show_footer: true });

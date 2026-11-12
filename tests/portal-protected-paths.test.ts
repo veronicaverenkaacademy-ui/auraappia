@@ -47,6 +47,20 @@ test("caminho de serviço/categoria/profissional também protege", () => {
   assert.equal(isPathProtected("a/professionals/p1.jpg", protectedPaths), true);
 });
 
+test("FASE K2c: caminho do logo largo (draft/published/previous) também está protegido", () => {
+  const protectedPaths = buildProtectedPaths({
+    ...BASE,
+    config: {
+      draft_logo_wide_path: "a/logo-wide/novo.png",
+      published_logo_wide_path: "a/logo-wide/atual.png",
+    },
+    previousPublished: { logo_wide_path: "a/logo-wide/anterior.png" },
+  });
+  assert.equal(isPathProtected("a/logo-wide/novo.png", protectedPaths), true);
+  assert.equal(isPathProtected("a/logo-wide/atual.png", protectedPaths), true);
+  assert.equal(isPathProtected("a/logo-wide/anterior.png", protectedPaths), true);
+});
+
 test("caminho que não aparece em lugar nenhum NÃO está protegido (órfão de draft antigo)", () => {
   const protectedPaths = buildProtectedPaths({
     ...BASE,

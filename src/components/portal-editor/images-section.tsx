@@ -21,6 +21,7 @@ export function ImagesSection({
   usage,
   onUsageChanged,
   companyDisplayName,
+  supportsLogoWide = false,
 }: {
   form: PortalDraftForm;
   patchForm: (p: Partial<PortalDraftForm>) => void;
@@ -31,6 +32,11 @@ export function ImagesSection({
   usage: QuotaUsage;
   onUsageChanged: () => void;
   companyDisplayName: string;
+  /** FASE K2c: só true depois que a migração do logo largo for aplicada em
+   * produção (ver getPortalConfigCore) — até então o cartão "Logo largo"
+   * fica oculto, nunca desabilitado/quebrado, pra não sugerir uma troca que
+   * o servidor ainda ignoraria. */
+  supportsLogoWide?: boolean;
 }) {
   const qc = useQueryClient();
   const { data: services = [] } = useQuery({ queryKey: ["services"], queryFn: listServices });
@@ -101,6 +107,23 @@ export function ImagesSection({
             onUploaded={(path) => patchForm({ logo_light_path: path })}
             onDeleted={() => patchForm({ logo_light_path: null })}
           />
+          {supportsLogoWide && (
+            <ImageCard
+              label="Logo largo"
+              recommended="Larga, proporção ~4:1, PNG com transparência"
+              kind="logo-wide"
+              mediaKey={mediaKey}
+              mediaKeyLoading={mediaKeyLoading}
+              mediaKeyErrorMessage={mediaKeyErrorMessage}
+              usage={usage}
+              currentPath={form.logo_wide_path}
+              isProtected={isPathProtected(form.logo_wide_path ?? "", protectedPaths)}
+              altName={companyDisplayName}
+              aspect="wide4"
+              onUploaded={(path) => patchForm({ logo_wide_path: path })}
+              onDeleted={() => patchForm({ logo_wide_path: null })}
+            />
+          )}
           <ImageCard
             label="Capa"
             recommended="Larga, 1600×500px"
