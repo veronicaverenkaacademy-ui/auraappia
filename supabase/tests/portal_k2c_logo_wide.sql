@@ -117,7 +117,16 @@ BEGIN
     (v_owner_a, 'zzfx-k2c-empresa-a', 'ZZFX Empresa A', v_media_a),
     (v_owner_b, 'zzfx-k2c-empresa-b', 'ZZFX Empresa B', v_media_b);
 
-  INSERT INTO public.portal_configurations (owner_id) VALUES (v_owner_a), (v_owner_b);
+  -- Não precisa (e não pode, sem ON CONFLICT) inserir aqui: o trigger
+  -- portal_configurations_auto_create (AFTER INSERT em company_profiles,
+  -- função portal_configurations_init) já cria esta linha automaticamente,
+  -- com ON CONFLICT (owner_id) DO NOTHING — um INSERT explícito sem
+  -- ON CONFLICT logo depois do INSERT em company_profiles colide sempre
+  -- (defeito deste script de teste, não da migração: a suíte foi escrita
+  -- antes desse trigger existir no esquema). Confirmado por leitura:
+  -- information_schema.triggers mostra portal_configurations_auto_create
+  -- em company_profiles chamando portal_configurations_init(), que faz
+  -- exatamente esse INSERT ... ON CONFLICT (owner_id) DO NOTHING.
 
   v_path_logo_a := v_media_a || '/logo/' || gen_random_uuid() || '.png';
   INSERT INTO storage.objects (bucket_id, name) VALUES ('portal-media', v_path_logo_a);
