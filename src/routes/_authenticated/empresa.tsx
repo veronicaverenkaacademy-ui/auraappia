@@ -274,6 +274,7 @@ function EmpresaPage() {
                 <Input
                   value={form.city ?? ""}
                   onChange={(e) => patchForm({ city: e.target.value })}
+                  autoComplete="off"
                 />
               </Field>
               <Field label="Estado">
@@ -281,6 +282,7 @@ function EmpresaPage() {
                   value={form.state ?? ""}
                   onChange={(e) => patchForm({ state: e.target.value })}
                   maxLength={2}
+                  autoComplete="off"
                 />
               </Field>
               <div className="md:col-span-3">
@@ -288,6 +290,7 @@ function EmpresaPage() {
                   <Input
                     value={form.address ?? ""}
                     onChange={(e) => patchForm({ address: e.target.value })}
+                    autoComplete="off"
                   />
                 </Field>
               </div>
@@ -471,7 +474,11 @@ function EmpresaPage() {
         <Section title="Endereço fiscal & formatos">
           <div className="grid md:grid-cols-3 gap-4 py-2">
             <Field label="CEP">
-              <Input value={c.cep} onChange={(e) => update({ cep: e.target.value })} />
+              <Input
+                value={c.cep}
+                onChange={(e) => update({ cep: e.target.value })}
+                autoComplete="off"
+              />
             </Field>
             <Field label="País">
               <Input value={c.country} onChange={(e) => update({ country: e.target.value })} />
