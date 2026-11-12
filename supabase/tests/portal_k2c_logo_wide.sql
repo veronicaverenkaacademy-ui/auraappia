@@ -605,7 +605,7 @@ BEGIN
   PERFORM set_config('request.jwt.claim.sub', v_owner_a::text, true);
 
   -- ===== 4: salvar rascunho com logo_wide_path válido =====
-  SELECT version INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_a;
+  SELECT * INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_a;
   SELECT public.portal_salvar_rascunho(
     jsonb_build_object('logo_wide_path', v_path_logo_wide_a), v_row.version
   ) INTO v_result;
@@ -615,7 +615,7 @@ BEGIN
      v_result = 'ok' AND v_val = v_path_logo_wide_a);
 
   -- ===== 5: logo_wide_path de OUTRA empresa é recusado =====
-  SELECT version INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_a;
+  SELECT * INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_a;
   SELECT public.portal_salvar_rascunho(
     jsonb_build_object('logo_wide_path', v_media_b || '/logo-wide/' || gen_random_uuid() || '.png'), v_row.version
   ) INTO v_result;
@@ -623,7 +623,7 @@ BEGIN
     ('06_logo_wide_de_outra_empresa_recusado', format('resultado=%s', v_result), v_result = 'caminho_invalido');
 
   -- ===== 6: logo_wide_path de arquivo inexistente no storage é recusado =====
-  SELECT version INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_a;
+  SELECT * INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_a;
   SELECT public.portal_salvar_rascunho(
     jsonb_build_object('logo_wide_path', v_media_a || '/logo-wide/' || gen_random_uuid() || '.png'), v_row.version
   ) INTO v_result;
@@ -631,7 +631,7 @@ BEGIN
     ('07_logo_wide_arquivo_inexistente_recusado', format('resultado=%s', v_result), v_result = 'arquivo_inexistente');
 
   -- ===== 7: publicar com logo_wide_path preenchido =====
-  SELECT version INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_a;
+  SELECT * INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_a;
   SELECT public.portal_publicar(v_row.version) INTO v_result;
   SELECT published_logo_wide_path INTO v_val FROM public.portal_configurations WHERE owner_id = v_owner_a;
   INSERT INTO zzfx_k2c_results (caso, detalhe, passou) VALUES
@@ -642,11 +642,11 @@ BEGIN
   -- previous_published, incluindo logo_wide_path (reaproveita v_path_logo_a,
   -- já existente no storage, só pra variar o valor — não representa um
   -- logo-wide de verdade) =====
-  SELECT version INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_a;
+  SELECT * INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_a;
   SELECT public.portal_salvar_rascunho(
     jsonb_build_object('logo_wide_path', v_path_logo_a), v_row.version
   ) INTO v_result;
-  SELECT version INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_a;
+  SELECT * INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_a;
   SELECT public.portal_publicar(v_row.version) INTO v_result;
   SELECT previous_published ->> 'logo_wide_path' INTO v_val FROM public.portal_configurations WHERE owner_id = v_owner_a;
   INSERT INTO zzfx_k2c_results (caso, detalhe, passou) VALUES
@@ -663,9 +663,9 @@ BEGIN
   -- ===== 10: campo opcional — salvar/publicar SEM tocar em logo_wide_path
   -- continua funcionando (empresa B, nunca usou o campo) =====
   PERFORM set_config('request.jwt.claim.sub', v_owner_b::text, true);
-  SELECT version INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_b;
+  SELECT * INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_b;
   SELECT public.portal_salvar_rascunho(jsonb_build_object('welcome_message', 'Oi, sem logo largo'), v_row.version) INTO v_result;
-  SELECT version INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_b;
+  SELECT * INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_b;
   SELECT public.portal_publicar(v_row.version) INTO v_result;
   SELECT published_logo_wide_path INTO v_val FROM public.portal_configurations WHERE owner_id = v_owner_b;
   INSERT INTO zzfx_k2c_results (caso, detalhe, passou) VALUES
@@ -1629,7 +1629,7 @@ BEGIN
 
   -- ===== 25: round-trip funcional completo de novo (salvar + publicar) =====
   PERFORM set_config('request.jwt.claim.sub', v_owner_a::text, true);
-  SELECT version INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_a;
+  SELECT * INTO v_row FROM public.portal_configurations WHERE owner_id = v_owner_a;
   SELECT public.portal_salvar_rascunho(
     jsonb_build_object('logo_wide_path', v_media_a || '/logo-wide/' || gen_random_uuid() || '.png'), v_row.version
   ) INTO v_result;
