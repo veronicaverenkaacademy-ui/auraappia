@@ -101,8 +101,14 @@ BEGIN
   INSERT INTO public.appointments (owner_id, client_id, service_name, starts_at, ends_at, status, client_confirmation_status)
   VALUES (v_owner, v_client, 'ZZFX_LR_Corte2h', now() + interval '2 hours', now() + interval '3 hours', 'confirmed', 'pending')
   RETURNING id INTO v_appt_2h;
+  -- AJUSTE (13/11/2026, achado ao rodar a suíte de verdade em produção pela
+  -- 1ª vez): horário DIFERENTE de ZZFX_LR_Corte24h — mesmo owner_id e
+  -- professional_id (NULL nos dois, coalescido pro mesmo valor) com o
+  -- MESMO intervalo de horário colide com a exclusion constraint real
+  -- appointments_no_overlap (desconhecida desta suíte até agora; não é
+  -- defeito da migração, só da fixture).
   INSERT INTO public.appointments (owner_id, client_id, service_name, starts_at, ends_at, status, client_confirmation_status)
-  VALUES (v_owner, v_client, 'ZZFX_LR_SemMsg', now() + interval '20 hours', now() + interval '21 hours', 'confirmed', 'pending')
+  VALUES (v_owner, v_client, 'ZZFX_LR_SemMsg', now() + interval '22 hours', now() + interval '23 hours', 'confirmed', 'pending')
   RETURNING id INTO v_appt_sem_msg;
   INSERT INTO public.appointments (owner_id, client_id, service_name, starts_at, ends_at, status, client_confirmation_status)
   VALUES (v_owner, v_client, 'ZZFX_LR_IncertoVelho', now() + interval '48 hours', now() + interval '49 hours', 'confirmed', 'pending')
@@ -398,7 +404,7 @@ END $caso_bloqueio$;
 -- e uncertain_expired, ajuste da dona)
 -- ============================================================================
 DO $caso_cron_runs$
-DECLARE v_id uuid; v_ok boolean; v_source text; v_ue int;
+DECLARE v_id uuid; v_ok boolean; v_source text; v_ue int; v_unfinished_id uuid;
 BEGIN
   INSERT INTO public.whatsapp_cron_runs (started_at, finished_at, ok, trigger_source, scan_enqueued, processed_claimed, processed_sent, uncertain_expired)
   VALUES (now() - interval '2 seconds', now(), true, 'github', 0, 0, 0, 0)
@@ -420,8 +426,13 @@ BEGIN
     INSERT INTO zzfx_lr_results (caso, detalhe, passou) VALUES ('05_trigger_source_invalido_rejeitado', 'rejeitado por check_violation, como esperado', true);
   END;
 
-  INSERT INTO public.whatsapp_cron_runs (started_at) VALUES (now() - interval '1 hour');
-  SELECT count(*) = 1 INTO v_ok FROM public.whatsapp_cron_runs WHERE finished_at IS NULL;
+  -- DEFEITO CORRIGIDO (achado ao rodar a suíte de verdade em produção): o
+  -- INSERT de '05_trigger_source_db_aceito' (linha acima) TAMBÉM deixa
+  -- finished_at NULL — "count(*) = 1 WHERE finished_at IS NULL" já dava 2
+  -- antes mesmo deste INSERT, sempre falhando. Escopa a checagem ao ID
+  -- desta linha específica em vez de contar a tabela inteira.
+  INSERT INTO public.whatsapp_cron_runs (started_at) VALUES (now() - interval '1 hour') RETURNING id INTO v_unfinished_id;
+  SELECT count(*) = 1 INTO v_ok FROM public.whatsapp_cron_runs WHERE id = v_unfinished_id AND finished_at IS NULL;
   INSERT INTO zzfx_lr_results (caso, detalhe, passou) VALUES
     ('05_execucao_sem_terminar_e_visivel', 'uma execução iniciada sem finished_at aparece no índice de não-terminadas', v_ok);
 END $caso_cron_runs$;
@@ -446,37 +457,46 @@ DECLARE
   v_msg_incerto_velho uuid;
   v_outcome text; v_n int; v_status text; v_sent_at timestamptz; v_attempts int;
 BEGIN
+  -- DEFEITO CORRIGIDO (achado ao rodar a suíte de verdade em produção):
+  -- notification_jobs tem um trigger BEFORE UPDATE
+  -- (trg_notification_jobs_updated_at / update_updated_at_column()) que
+  -- força updated_at = now() em TODO UPDATE — a versão anterior tentava
+  -- "voltar no tempo" com um UPDATE logo depois do INSERT, e o trigger
+  -- simplesmente desfazia isso (updated_at sempre virava "agora"), fazendo
+  -- os jobs nunca parecerem presos de verdade para
+  -- recover_stuck_notification_jobs (que exige updated_at < now() - 10min)
+  -- — os 4 casos (06a/06b/06c/06e/06h) falhavam silenciosamente por isso,
+  -- não por nenhum defeito da função. Correção: grava updated_at já antigo
+  -- DIRETO no INSERT (o trigger só dispara em UPDATE, nunca em INSERT) e
+  -- nenhuma UPDATE separada depois.
+
   -- 6a) já foi enviado de verdade (whatsapp_messages 'sent'), só a escrita
   -- em notification_jobs travou -> deve RECONCILIAR como 'sent', nunca reenviar.
   INSERT INTO public.whatsapp_messages (owner_id, client_id, appointment_id, direction, message_type, recipient_phone, provider, provider_message_id, status, sent_at)
   VALUES (v_owner, v_client, v_appt_24h, 'outbound', 'lembrete_24h', '+5547999990199', 'meta_cloud_api_central', 'ZZFX_LR_WAMID_1', 'sent', now() - interval '15 minutes');
-  INSERT INTO public.notification_jobs (owner_id, appointment_id, client_id, type, recipient_phone, status, attempts, scheduled_for, next_attempt_at)
-  VALUES (v_owner, v_appt_24h, v_client, 'appointment_reminder_24h', '+5547999990199', 'processing', 1, now() - interval '20 minutes', now() - interval '20 minutes')
+  INSERT INTO public.notification_jobs (owner_id, appointment_id, client_id, type, recipient_phone, status, attempts, scheduled_for, next_attempt_at, updated_at)
+  VALUES (v_owner, v_appt_24h, v_client, 'appointment_reminder_24h', '+5547999990199', 'processing', 1, now() - interval '20 minutes', now() - interval '20 minutes', now() - interval '20 minutes')
   RETURNING id INTO v_job_reconcilia;
-  UPDATE public.notification_jobs SET updated_at = now() - interval '20 minutes' WHERE id = v_job_reconcilia;
 
   -- 6b) a Meta nunca confirmou (whatsapp_messages 'uncertain'), mas AINDA
   -- DENTRO das 24h -> deve deixar como está (processing), nunca reenviar.
   INSERT INTO public.whatsapp_messages (owner_id, client_id, appointment_id, direction, message_type, recipient_phone, provider, status)
   VALUES (v_owner, v_client, v_appt_2h, 'outbound', 'lembrete_2h', '+5547999990199', 'meta_cloud_api_central', 'uncertain');
-  INSERT INTO public.notification_jobs (owner_id, appointment_id, client_id, type, recipient_phone, status, attempts, scheduled_for, next_attempt_at)
-  VALUES (v_owner, v_appt_2h, v_client, 'appointment_reminder_2h', '+5547999990199', 'processing', 1, now() - interval '20 minutes', now() - interval '20 minutes')
+  INSERT INTO public.notification_jobs (owner_id, appointment_id, client_id, type, recipient_phone, status, attempts, scheduled_for, next_attempt_at, updated_at)
+  VALUES (v_owner, v_appt_2h, v_client, 'appointment_reminder_2h', '+5547999990199', 'processing', 1, now() - interval '20 minutes', now() - interval '20 minutes', now() - interval '20 minutes')
   RETURNING id INTO v_job_incerto;
-  UPDATE public.notification_jobs SET updated_at = now() - interval '20 minutes' WHERE id = v_job_incerto;
 
   -- 6c) nenhum whatsapp_messages pra este agendamento -> nunca chegou a
   -- tentar a Meta, seguro liberar de novo.
-  INSERT INTO public.notification_jobs (owner_id, appointment_id, client_id, type, recipient_phone, status, attempts, scheduled_for, next_attempt_at)
-  VALUES (v_owner, v_appt_sem_msg, v_client, 'appointment_reminder_24h', '+5547999990199', 'processing', 1, now() - interval '20 minutes', now() - interval '20 minutes')
+  INSERT INTO public.notification_jobs (owner_id, appointment_id, client_id, type, recipient_phone, status, attempts, scheduled_for, next_attempt_at, updated_at)
+  VALUES (v_owner, v_appt_sem_msg, v_client, 'appointment_reminder_24h', '+5547999990199', 'processing', 1, now() - interval '20 minutes', now() - interval '20 minutes', now() - interval '20 minutes')
   RETURNING id INTO v_job_reset;
-  UPDATE public.notification_jobs SET updated_at = now() - interval '20 minutes' WHERE id = v_job_reset;
 
   -- 6d) controle: 'processing' mas RECENTE (1 min) -> nunca deve ser
   -- tocado por um limite de 10 minutos.
-  INSERT INTO public.notification_jobs (owner_id, appointment_id, client_id, type, recipient_phone, status, attempts, scheduled_for, next_attempt_at)
-  VALUES (v_owner, v_appt_sem_msg, v_client, 'appointment_reminder_2h', '+5547999990199', 'processing', 1, now() - interval '1 minute', now() - interval '1 minute')
+  INSERT INTO public.notification_jobs (owner_id, appointment_id, client_id, type, recipient_phone, status, attempts, scheduled_for, next_attempt_at, updated_at)
+  VALUES (v_owner, v_appt_sem_msg, v_client, 'appointment_reminder_2h', '+5547999990199', 'processing', 1, now() - interval '1 minute', now() - interval '1 minute', now() - interval '1 minute')
   RETURNING id INTO v_job_recente;
-  UPDATE public.notification_jobs SET updated_at = now() - interval '1 minute' WHERE id = v_job_recente;
 
   -- 6e, AJUSTE da dona) 'uncertain' há mais de 24h -> deve expirar: mensagem
   -- vira 'incerto_expirado', job vira 'failed' (terminal, nunca reenviado).
@@ -484,10 +504,9 @@ BEGIN
   VALUES (v_owner, v_client, v_appt_uncertain_old, 'outbound', 'lembrete_24h', '+5547999990199', 'meta_cloud_api_central', 'uncertain')
   RETURNING id INTO v_msg_incerto_velho;
   UPDATE public.whatsapp_messages SET created_at = now() - interval '25 hours' WHERE id = v_msg_incerto_velho;
-  INSERT INTO public.notification_jobs (owner_id, appointment_id, client_id, type, recipient_phone, status, attempts, scheduled_for, next_attempt_at)
-  VALUES (v_owner, v_appt_uncertain_old, v_client, 'appointment_reminder_24h', '+5547999990199', 'processing', 1, now() - interval '20 minutes', now() - interval '20 minutes')
+  INSERT INTO public.notification_jobs (owner_id, appointment_id, client_id, type, recipient_phone, status, attempts, scheduled_for, next_attempt_at, updated_at)
+  VALUES (v_owner, v_appt_uncertain_old, v_client, 'appointment_reminder_24h', '+5547999990199', 'processing', 1, now() - interval '20 minutes', now() - interval '20 minutes', now() - interval '20 minutes')
   RETURNING id INTO v_job_incerto_velho;
-  UPDATE public.notification_jobs SET updated_at = now() - interval '20 minutes' WHERE id = v_job_incerto_velho;
 
   CREATE TEMP TABLE zzfx_lr_outcomes AS
     SELECT * FROM public.recover_stuck_notification_jobs(10, 50);
@@ -573,7 +592,7 @@ DROP TABLE IF EXISTS public.whatsapp_cron_runs;
 NOTIFY pgrst, 'reload schema';
 
 DO $passo8$
-DECLARE v_n int; v_def text; v_def_original text; v_unblocked_at timestamptz; v_source text;
+DECLARE v_n int; v_ok boolean; v_def text; v_def_original text; v_unblocked_at timestamptz; v_source text;
 BEGIN
   SELECT count(*) INTO v_n FROM information_schema.tables
     WHERE table_schema='public' AND table_name = 'whatsapp_cron_runs';
@@ -583,10 +602,14 @@ BEGIN
   -- AJUSTE (revisão da dona, 13/11/2026) — a tabela de bloqueios sobrevive
   -- ao rollback de propósito (guarda pedidos de PARAR reais; apagá-la
   -- reativaria envio pra quem pediu pra parar).
-  SELECT count(*) = 1 INTO v_n FROM information_schema.tables
+  -- DEFEITO CORRIGIDO (achado ao rodar a suíte de verdade em produção):
+  -- "count(*) = 1" é booleano — a 1ª versão deste bloco tentava gravar isso
+  -- direto em v_n (declarado int), o que o Postgres rejeita com "invalid
+  -- input syntax for type integer: 't'". Usa v_ok (boolean) aqui.
+  SELECT count(*) = 1 INTO v_ok FROM information_schema.tables
     WHERE table_schema='public' AND table_name = 'whatsapp_blocked_recipients';
   INSERT INTO zzfx_lr_results (caso, detalhe, passou) VALUES
-    ('08_whatsapp_blocked_recipients_SOBREVIVE_ao_rollback', 'tabela continua existindo depois do rollback (de propósito)', v_n);
+    ('08_whatsapp_blocked_recipients_SOBREVIVE_ao_rollback', 'tabela continua existindo depois do rollback (de propósito)', v_ok);
 
   -- Prova mais forte que só "a tabela existe": as LINHAS criadas no PASSO 4
   -- continuam lá, com os dados certos — não é só o esquema que sobreviveu.
@@ -623,9 +646,18 @@ BEGIN
     INSERT INTO zzfx_lr_results (caso, detalhe, passou) VALUES ('08_incerto_expirado_rejeitado_apos_rollback', 'rejeitado por check_violation, como esperado', true);
   END;
 
-  SELECT count(*) = 4 INTO v_n FROM public.notification_jobs WHERE appointment_id IN (SELECT valor FROM zzfx_lr_appt);
+  -- DEFEITO CORRIGIDO (achado ao rodar a suíte de verdade em produção,
+  -- pré-existente de uma rodada anterior): "count(*) = 4" é booleano;
+  -- a versão anterior tentava gravar isso em v_n (int) e falhava com
+  -- "invalid input syntax for type integer: 't'" antes mesmo de chegar ao
+  -- INSERT abaixo.
+  -- DEFEITO CORRIGIDO (achado ao rodar a suíte de verdade em produção,
+  -- pré-existente de uma rodada anterior): "esperado 4" estava errado —
+  -- ZZFX_LR_SemMsg (appt_sem_msg) tem DOIS jobs (6c e 6d, um de cada tipo
+  -- 24h/2h), então são 5 jobs no total pros 4 agendamentos, não 4.
+  SELECT count(*) INTO v_n FROM public.notification_jobs WHERE appointment_id IN (SELECT valor FROM zzfx_lr_appt);
   INSERT INTO zzfx_lr_results (caso, detalhe, passou) VALUES
-    ('08_fixtures_de_negocio_intactas_apos_rollback', format('%s jobs sintéticos (esperado 4)', v_n), v_n = 4);
+    ('08_fixtures_de_negocio_intactas_apos_rollback', format('%s jobs sintéticos (esperado 5)', v_n), v_n = 5);
 END $passo8$;
 
 -- ============================================================================
