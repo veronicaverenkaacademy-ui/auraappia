@@ -22,6 +22,7 @@ function baseInput(overrides: Partial<Parameters<typeof decideReminderJobAction>
     automationMetaTemplateName: "lembrete_24h",
     recipientPhoneValid: true,
     recipientPhoneE164: "+5547988887777",
+    recipientBlocked: false,
     remindersEnabled: true,
     testMode: false,
     testPhones: [],
@@ -120,6 +121,32 @@ test("sem meta_template_name: hold_pending", () => {
 
 test("telefone inválido: skip_terminal (nunca vai ficar válido sozinho)", () => {
   const r = decideReminderJobAction(baseInput({ recipientPhoneValid: false }));
+  assert.equal(r.action, "skip_terminal");
+});
+
+// ===== FASE LEMBRETES-1: bloqueio de opt-out (PARAR/SAIR) =====
+
+test("FASE LEMBRETES-1: telefone bloqueado (pediu PARAR) nunca recebe lembrete — skip_terminal", () => {
+  const r = decideReminderJobAction(baseInput({ recipientBlocked: true }));
+  assert.equal(r.action, "skip_terminal");
+  if (r.action === "skip_terminal") assert.match(r.reason, /parar de receber/i);
+});
+
+test("FASE LEMBRETES-1: bloqueio vale também pro lembrete_2h", () => {
+  const r = decideReminderJobAction(
+    baseInput({ templateKey: "lembrete_2h", recipientBlocked: true }),
+  );
+  assert.equal(r.action, "skip_terminal");
+});
+
+test("FASE LEMBRETES-1: bloqueio é checado mesmo em modo teste com telefone na lista — PARAR tem prioridade", () => {
+  const r = decideReminderJobAction(
+    baseInput({
+      recipientBlocked: true,
+      testMode: true,
+      testPhones: ["+5547988887777"],
+    }),
+  );
   assert.equal(r.action, "skip_terminal");
 });
 

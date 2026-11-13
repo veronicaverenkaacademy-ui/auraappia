@@ -1,0 +1,81 @@
+-- FASE LEMBRETES-1 (Pedido B) — ligar o agendador DENTRO do Postgres
+-- (pg_cron + pg_net), chamando o MESMO endpoint que o GitHub Actions já
+-- chama hoje (/api/cron/whatsapp-reminders). ESTE ARQUIVO É SÓ COMENTÁRIO —
+-- nenhum comando SQL executável abaixo. Mesmo se alguém rodar este arquivo
+-- como está, nada muda no banco (nenhum cron.schedule é criado).
+--
+-- Por quê um arquivo separado, desligado por padrão (pedido explícito da
+-- dona): a migration 20261112200000 só PREPARA o terreno (instala as
+-- extensões, cria as tabelas de apoio) — ligar um job que passa a rodar
+-- sozinho, de 1 em 1 ou de 5 em 5 minutos, pra sempre, é uma decisão
+-- operacional diferente (e maior) do que só ter a peça disponível. Fica
+-- para um passo de autorização PRÓPRIO, separado de "AUTORIZO APLICAR
+-- MIGRAÇÃO FASE LEMBRETES-1".
+--
+-- AJUSTE (revisão da dona, 12/11/2026) — segredo do agendador: a versão
+-- anterior deste arquivo pedia "copie o mesmo valor de CRON_SECRET pro
+-- Vault", mas o GitHub Actions NÃO permite ler de volta o valor de um
+-- secret já salvo — era inviável na prática. Design corrigido: DOIS
+-- segredos INDEPENDENTES, nenhum precisa ter o mesmo valor do outro —
+-- central-cron-auth.ts (TypeScript) aceita qualquer um dos dois:
+--   - CRON_SECRET          — já existe, usado pelo GitHub Actions.
+--   - CRON_SECRET_DB (novo) — usado só pelo pg_net.
+-- Pré-requisito antes de autorizar isto (a dona faz os dois passos, cada
+-- um só com NOMES, nunca valores — ela gera o valor aleatório ela mesma e
+-- nunca me envia):
+--   1. Lovable Cloud → Secrets do servidor → criar um secret chamado
+--      CRON_SECRET_DB, com um valor aleatório longo (ex.: 32+ caracteres),
+--      diferente do valor de CRON_SECRET.
+--   2. Supabase Dashboard → Project Settings → Vault (ou
+--      `select vault.create_secret(...)`) → criar um segredo chamado
+--      'whatsapp_cron_internal_secret' com O MESMO valor usado no passo 1
+--      (é assim que o pg_net, de dentro do SQL, consegue montar o cabeçalho
+--      Authorization sem que o valor fique solto em texto puro no
+--      cron.schedule em si — vault.decrypted_secrets é a única leitura).
+--
+-- Quando autorizado, o comando real (hoje só em comentário) seria algo
+-- como:
+--
+-- select cron.schedule(
+--   'whatsapp-reminders-pg-cron',
+--   '*/2 * * * *',  -- a cada 2 minutos; GitHub Actions continua rodando em paralelo como reforço
+--   $$
+--   select net.http_post(
+--     url := 'https://auraappia.lovable.app/api/cron/whatsapp-reminders',
+--     headers := jsonb_build_object(
+--       'Authorization', 'Bearer ' || (
+--         select decrypted_secret from vault.decrypted_secrets
+--         where name = 'whatsapp_cron_internal_secret'
+--       ),
+--       'Content-Type', 'application/json'
+--     ),
+--     body := '{}'::jsonb,
+--     timeout_milliseconds := 25000
+--   );
+--   $$
+-- );
+--
+-- Reversão (depois que estiver ligado, se for preciso desligar): select
+-- cron.unschedule('whatsapp-reminders-pg-cron');
+--
+-- ============================================================================
+-- AJUSTE (revisão da dona, 12/11/2026) — net._http_response cresce sem
+-- limite? CONFIRMADO QUE NÃO, nesta instância, por consulta direta (não
+-- suposição):
+--
+--   select name, setting from pg_settings where name like 'net.%';
+--   -- pg_net.ttl = '6 hours'  (lido em 12/11/2026)
+--
+-- pg_net (a partir da versão instalada aqui, 0.20.4) já roda um worker de
+-- fundo que apaga sozinho as linhas de net._http_response/
+-- net.http_request_queue mais antigas que pg_net.ttl — 6 horas nesta
+-- instância, bem mais curto que os 7 dias que seriam uma retenção razoável
+-- se a limpeza NÃO existisse. Por isso NENHUMA limpeza extra foi
+-- adicionada: adicionar uma segunda limpeza por cima de uma que já existe
+-- e já é mais agressiva (6h < 7 dias) não protegeria contra nada que a
+-- própria extensão não já proteja, e só acrescentaria uma rotina redundante
+-- pra manter. Se um dia pg_net.ttl for alterado pra um valor muito longo
+-- (ou removido), o comando abaixo FARIA sentido reavaliar — deixado aqui,
+-- comentado, só como referência, não como algo faltando:
+--
+-- delete from net._http_response where created < now() - interval '7 days';

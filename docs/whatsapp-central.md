@@ -152,5 +152,53 @@ mensagem nova sai, nada é perdido (os jobs continuam na fila).
   mesma infraestrutura de envio, só troca o template/gatilho.
 - `whatsapp_central_threads` — mesmo padrão de thread, se algum dia esses
   templates também tiverem botão.
-- `looksLikeStopRequest` já existe e já notifica — só falta a Etapa 2
-  decidir bloquear o envio de verdade (hoje só avisa).
+- `looksLikeStopRequest` já existe e já notifica — **FASE LEMBRETES-1
+  implementou o bloqueio de verdade** (`whatsapp_blocked_recipients`, ver
+  seção abaixo); a notificação continua existindo, só o texto mudou pra
+  refletir que o bloqueio já aconteceu.
+
+## FASE LEMBRETES-1 — disparo confiável dos lembretes (24h/2h)
+
+Achado central (mapa desta fase, 12/11/2026): o único "agendador" real é
+`.github/workflows/whatsapp-cron.yml` (GitHub Actions, `schedule: "*/5 * * *
+*"`) chamando `/api/cron/whatsapp-reminders`. Na prática ele NÃO roda a
+cada 5 minutos — intervalo mediano medido de 300min entre execuções, 88%
+com mais de 1h de buraco. Consequência real em produção: todos os
+`appointment_reminder_2h` já criados terminaram `cancelled` (zero
+`sent`) — a tolerância de atraso do lembrete de 2h (105min) é menor que o
+buraco típico do gatilho.
+
+Peças novas desta fase (migration
+`20261112200000_whatsapp_reminders_reliable_dispatch.sql`, nada ligado
+sem autorização):
+
+- **pg_cron + pg_net** instalados (disponíveis nesta instância, nunca
+  usados antes) — infraestrutura pra um agendador DENTRO do Postgres,
+  chamando o MESMO endpoint. O `cron.schedule()` que liga isso de fato
+  fica em `20261112210000_whatsapp_cron_schedule.sql`, comentado,
+  esperando autorização própria.
+- **`whatsapp_blocked_recipients`** — bloqueio real de opt-out por
+  (owner_id, telefone). `central-webhook-handler.server.ts` grava um
+  bloqueio quando `looksLikeStopRequest` dispara;
+  `central-reminder-policy.ts` (`recipientBlocked`) nunca envia pra quem
+  está bloqueado, nem em modo teste.
+- **`whatsapp_cron_runs`** — histórico mínimo de execuções (início/fim/
+  contagens, nunca telefone/texto), gravado por `central-cron-run-log.server.ts`
+  a cada chamada do endpoint.
+- **`recover_stuck_notification_jobs`** — recupera lembretes presos em
+  `'processing'` (processo anterior caiu/deu timeout) sem nunca reenviar
+  um que já tinha sido confirmado como entregue (reconcilia via
+  `whatsapp_messages`); chamado por `central-stuck-job-recovery.server.ts`
+  a cada execução do cron. Se o único registro for `'uncertain'` (timeout
+  da Meta) há mais de 24h sem resolução, marca a mensagem como
+  `'incerto_expirado'` e o job como `'failed'` — terminal, nunca reenviado
+  sozinho — e avisa a dona no sino (uma vez por job).
+- Comparação em tempo constante no endpoint (`central-constant-time-compare.ts`),
+  aceitando `CRON_SECRET` (GitHub Actions) OU `CRON_SECRET_DB` (pg_net) —
+  dois segredos INDEPENDENTES (`central-cron-auth.ts`): o GitHub Actions
+  não permite reler um secret já salvo, então "usar o mesmo valor nos
+  dois" nunca foi viável. `whatsapp_cron_runs.trigger_source` registra qual
+  dos dois autenticou (github|db), nunca o valor.
+- `net._http_response` (tabela interna do pg_net) já se limpa sozinha —
+  confirmado via `pg_net.ttl = 6 hours` nesta instância — nenhuma limpeza
+  extra foi adicionada.

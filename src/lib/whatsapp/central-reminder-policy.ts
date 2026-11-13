@@ -10,6 +10,7 @@
 //     já passou, telefone inválido, atrasado demais, silêncio sem janela)
 //     — nunca vai ficar diferente sozinho, marca como 'cancelled' de vez.
 import type { ReminderTemplateKey } from "./central-template-variables.ts";
+import { phoneMatchesByLast8 } from "./central-phone-match.ts";
 
 export type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled" | "no_show";
 export type MetaStatus = "NOT_SUBMITTED" | "PENDING" | "APPROVED" | "REJECTED";
@@ -29,6 +30,12 @@ export type ReminderPolicyInput = {
   automationMetaTemplateName: string | null;
   recipientPhoneValid: boolean;
   recipientPhoneE164: string;
+  /** FASE LEMBRETES-1: true quando este telefone tem um bloqueio ATIVO em
+   * whatsapp_blocked_recipients (cliente respondeu PARAR/SAIR pelo
+   * WhatsApp) — ver central-webhook-handler.server.ts e
+   * central-opt-out.server.ts. Nunca enviar lembrete pra quem pediu pra
+   * parar, mesmo em modo teste. */
+  recipientBlocked: boolean;
   remindersEnabled: boolean;
   testMode: boolean;
   testPhones: readonly string[];
@@ -166,10 +173,7 @@ export function isPhoneInTestList(
   recipientPhoneE164: string,
   testPhones: readonly string[],
 ): boolean {
-  const recipientDigits = recipientPhoneE164.replace(/\D/g, "");
-  if (!recipientDigits) return false;
-  const recipientLast8 = recipientDigits.slice(-8);
-  return testPhones.some((p) => p.replace(/\D/g, "").slice(-8) === recipientLast8);
+  return phoneMatchesByLast8(recipientPhoneE164, testPhones);
 }
 
 export function decideReminderJobAction(input: ReminderPolicyInput): ReminderPolicyDecision {
@@ -195,6 +199,17 @@ export function decideReminderJobAction(input: ReminderPolicyInput): ReminderPol
     return {
       action: "skip_terminal",
       reason: "Cliente já confirmou presença pelo WhatsApp — lembrete não é mais necessário.",
+    };
+  }
+
+  // FASE LEMBRETES-1: bloqueio de opt-out é terminal, nunca reversível pela
+  // própria varredura (só alguém desbloqueando manualmente muda isto) —
+  // por isso skip_terminal, não hold_pending. Checado ANTES do modo teste
+  // de propósito: mesmo um telefone de teste bloqueado não deve receber.
+  if (input.recipientBlocked) {
+    return {
+      action: "skip_terminal",
+      reason: "Cliente pediu para parar de receber mensagens pelo WhatsApp (bloqueio ativo).",
     };
   }
 

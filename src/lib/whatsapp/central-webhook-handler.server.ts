@@ -20,6 +20,7 @@ import {
   notificationForOutcome,
 } from "./central-reply-executor.server.ts";
 import { looksLikeStopRequest } from "./central-webhook-parser.ts";
+import { blockPhoneForStopRequest, type OptOutRecipientsDb } from "./central-opt-out.server.ts";
 import {
   countRecentOrphanMessagesForPhone,
   ORPHAN_MAX_PER_PHONE_PER_DAY,
@@ -387,6 +388,18 @@ async function handleTextOrOtherEvent(
   }
 
   if (event.kind === "text" && looksLikeStopRequest(event.text)) {
+    // FASE LEMBRETES-1: antes só avisava a dona ("o envio NÃO foi
+    // bloqueado automaticamente"); agora bloqueia de verdade
+    // (whatsapp_blocked_recipients) — melhor esforço, nunca lança (uma
+    // falha aqui não pode impedir o aviso nem a confirmação à Meta).
+    await blockPhoneForStopRequest(
+      // Cast: whatsapp_blocked_recipients ainda não existe em types.ts
+      // (migration não aplicada nesta fase) — ver OptOutRecipientsDb.
+      deps.supabaseAdmin as unknown as OptOutRecipientsDb,
+      resolved.ownerId,
+      event.fromPhone,
+      deps.logger,
+    );
     await createNotification(deps, {
       ownerId: resolved.ownerId,
       appointmentId: resolved.appointmentId,
@@ -394,7 +407,7 @@ async function handleTextOrOtherEvent(
       notif: {
         kind: "client_stop_request",
         title: "Cliente pediu para parar de receber mensagens",
-        body: "Isto é só um aviso — o envio NÃO foi bloqueado automaticamente (fica para uma etapa futura). Avalie contatar a cliente.",
+        body: "O envio de novos lembretes automáticos para este telefone foi bloqueado. Avalie contatar a cliente se quiser reverter.",
         dedupeKey: null,
       },
     });

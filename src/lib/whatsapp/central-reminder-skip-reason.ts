@@ -14,11 +14,13 @@ export type ReminderSkipCategory =
   | "atraso_excedido"
   | "incidente_aberto"
   | "data_nao_confere"
+  | "cliente_bloqueado"
   | "outro";
 
 const PATTERNS: ReadonlyArray<[RegExp, ReminderSkipCategory]> = [
   [/chave geral/i, "chave_geral_desligada"],
   [/cliente já confirmou/i, "cliente_ja_confirmou"],
+  [/pediu para parar de receber/i, "cliente_bloqueado"],
   [/automação de sistema/i, "automacao_nao_pronta"],
   [/telefone inválido/i, "telefone_invalido"],
   [/pulado: atraso/i, "atraso_excedido"],
@@ -48,6 +50,7 @@ export const REMINDER_SKIP_CATEGORIES: readonly ReminderSkipCategory[] = [
   "atraso_excedido",
   "incidente_aberto",
   "data_nao_confere",
+  "cliente_bloqueado",
   "outro",
 ];
 
@@ -87,6 +90,7 @@ export function emptyReminderSkipCounts(): Record<ReminderSkipCategory, number> 
     atraso_excedido: 0,
     incidente_aberto: 0,
     data_nao_confere: 0,
+    cliente_bloqueado: 0,
     outro: 0,
   };
 }

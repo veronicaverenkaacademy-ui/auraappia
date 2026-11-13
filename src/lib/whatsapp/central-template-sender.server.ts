@@ -18,6 +18,7 @@ import {
   type SendAttemptOutcome,
 } from "./central-send-error-classifier.ts";
 import { formatMetaErrorForHuman } from "./central-meta-error-detail.ts";
+import { notifyOwnersOfCentralIncident } from "./central-incident-notification.server.ts";
 import type { ReminderTemplateKey } from "./central-template-variables.ts";
 import {
   getSystemTemplate,
@@ -129,6 +130,9 @@ async function openIncident(
     console.error(
       `[ALERTA-WHATSAPP-CENTRAL] Novo incidente (${breaker.kind}): ${breaker.reason} — lote interrompido.`,
     );
+    // FASE LEMBRETES-1: além do log, avisa no sino — no máximo 1x/escopo/dia
+    // (dedupe_key), melhor esforço (nunca derruba o envio por falha aqui).
+    await notifyOwnersOfCentralIncident(supabaseAdmin, breaker);
   }
 }
 
