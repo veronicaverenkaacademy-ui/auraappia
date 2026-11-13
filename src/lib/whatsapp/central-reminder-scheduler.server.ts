@@ -302,13 +302,34 @@ export async function processCentralReminderJob(
   const templateKey: ReminderTemplateKey =
     job.type === "appointment_reminder_24h" ? "lembrete_24h" : "lembrete_2h";
   const phone = client?.phone ?? "";
-  const recipientBlocked = await isPhoneBlocked(
-    // Cast: whatsapp_blocked_recipients ainda não existe em types.ts
-    // (migration não aplicada nesta fase) — ver OptOutRecipientsDb.
-    supabaseAdmin as unknown as OptOutRecipientsDb,
-    job.owner_id,
-    phone,
-  );
+  let recipientBlocked: boolean;
+  try {
+    recipientBlocked = await isPhoneBlocked(
+      // Cast: whatsapp_blocked_recipients ainda não existe em types.ts
+      // (migration não aplicada nesta fase) — ver OptOutRecipientsDb.
+      supabaseAdmin as unknown as OptOutRecipientsDb,
+      job.owner_id,
+      phone,
+    );
+  } catch (e) {
+    // FASE LEMBRETES-1 ponto 3(d) — FALHA FECHADA: se a consulta à lista de
+    // bloqueados der erro, NUNCA seguimos "no escuro" pro envio (o contrário
+    // seria enviar pra alguém que pode ter pedido PARAR, exatamente o que
+    // esta tabela existe para evitar). Mesmo tratamento de hold_pending/
+    // defer/breaker_open: volta pra 'pending' (nunca 'sent', nunca uma
+    // tentativa real contra a Meta), com o motivo registrado, pra tentar de
+    // novo na próxima execução do cron.
+    const msg = e instanceof Error ? e.message : String(e);
+    await supabaseAdmin
+      .from("notification_jobs")
+      .update({
+        status: "pending",
+        attempts: Math.max(job.attempts - 1, 0),
+        last_error: `Falha fechada: não foi possível consultar a lista de bloqueio de opt-out — envio adiado por segurança: ${msg}`,
+      })
+      .eq("id", job.id);
+    return "held";
+  }
 
   const decision = decideReminderJobAction({
     templateKey,

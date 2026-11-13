@@ -24,6 +24,22 @@ export interface CronRunLogDb {
     update(row: Record<string, unknown>): {
       eq(col: string, val: unknown): PromiseLike<{ error: { message: string } | null }>;
     };
+    // FASE LEMBRETES-1 (ajuste 13/11/2026, ponto 2): retenção de 30 dias,
+    // em lote pequeno — ver cleanupOldCronRuns abaixo.
+    select(cols: string): {
+      lt(
+        col: string,
+        val: unknown,
+      ): {
+        limit(n: number): PromiseLike<{
+          data: Array<{ id: string }> | null;
+          error: { message: string } | null;
+        }>;
+      };
+    };
+    delete(): {
+      in(col: string, vals: unknown[]): PromiseLike<{ error: { message: string } | null }>;
+    };
   };
 }
 
@@ -111,4 +127,45 @@ export async function finishCronRun(
   if (error) {
     console.error("[whatsapp:cron] Falha ao registrar fim da execução", error.message);
   }
+}
+
+/** FASE LEMBRETES-1 (ajuste 13/11/2026, ponto 2): retenção das próprias
+ * linhas de histórico do cron — sem isto a tabela cresceria pra sempre (uma
+ * linha por execução). Sem alterar a migração SQL aprovada: service_role já
+ * tem GRANT ALL em whatsapp_cron_runs, nenhuma coluna/índice novo é
+ * necessário. */
+export const CRON_RUNS_RETENTION_DAYS = 30;
+const CRON_RUNS_CLEANUP_BATCH_SIZE = 200;
+// Teto de segurança: nunca um laço sem limite numa execução de cron de
+// poucos segundos, mesmo se um dia acumular muito mais do que o esperado
+// (200 * 20 = 4000 linhas por execução já é bem mais do que qualquer
+// cadência realista deixaria acumular entre duas limpezas).
+const CRON_RUNS_CLEANUP_MAX_BATCHES = 20;
+
+export async function cleanupOldCronRuns(
+  deps: { supabaseAdmin?: SupabaseAdmin; now?: () => Date } = {},
+): Promise<{ deleted: number }> {
+  const supabaseAdmin = await resolveDb(deps.supabaseAdmin);
+  const now = (deps.now ?? (() => new Date()))();
+  const cutoffIso = new Date(
+    now.getTime() - CRON_RUNS_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  let deleted = 0;
+  for (let batch = 0; batch < CRON_RUNS_CLEANUP_MAX_BATCHES; batch++) {
+    const { data: rows, error: selErr } = await supabaseAdmin
+      .from("whatsapp_cron_runs")
+      .select("id")
+      .lt("created_at", cutoffIso)
+      .limit(CRON_RUNS_CLEANUP_BATCH_SIZE);
+    if (selErr) throw new Error(selErr.message);
+    const ids = (rows ?? []).map((r) => r.id);
+    if (ids.length === 0) break;
+
+    const { error: delErr } = await supabaseAdmin.from("whatsapp_cron_runs").delete().in("id", ids);
+    if (delErr) throw new Error(delErr.message);
+    deleted += ids.length;
+    if (ids.length < CRON_RUNS_CLEANUP_BATCH_SIZE) break; // última página
+  }
+  return { deleted };
 }

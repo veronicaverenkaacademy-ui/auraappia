@@ -360,6 +360,22 @@ test("3d: context.id inexistente (nenhuma mensagem outbound corresponde) é igno
   assert.equal(appt.client_confirmation_status, "pending");
 });
 
+test("FASE LEMBRETES-1 ponto 3(a): botão 'Cancelar' é tratado como cancelamento do agendamento, NUNCA como PARAR (não bloqueia o telefone)", async () => {
+  const db = makeDb();
+  await run(db, [buttonEvent({ buttonPayload: "v1|x|thread-1", buttonText: "Cancelar" })]);
+  const appt = db.tables.appointments.find((a) => a.id === "appt-1")!;
+  // Tratado como cancelamento do agendamento (via apply_whatsapp_central_reply).
+  assert.equal(appt.status, "cancelled");
+  assert.equal(appt.client_confirmation_status, "declined");
+  assert.equal(db.tables.app_notifications[0].kind, "client_cancelled");
+  // NUNCA como pedido de PARAR: nenhuma linha de bloqueio foi criada, e o
+  // aviso gerado não é o de opt-out (looksLikeStopRequest/
+  // blockPhoneForStopRequest vivem só no caminho de TEXTO, nunca no de
+  // botão — handleButtonEvent nem importa essas funções).
+  assert.equal(db.tables.whatsapp_blocked_recipients?.length ?? 0, 0);
+  assert.ok(!db.tables.app_notifications.some((n) => n.kind === "client_stop_request"));
+});
+
 // ===== 3e — telefone brasileiro =====
 
 test("3e: telefone SEM o 9º dígito (formato antigo da Meta) ainda casa com cliente cadastrada COM o 9º dígito", async () => {

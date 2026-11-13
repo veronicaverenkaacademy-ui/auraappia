@@ -863,6 +863,41 @@ test("4/8 (mutação M-i): resultado 'incerto' (timeout) marca o job como held, 
   }
 });
 
+test("FASE LEMBRETES-1 ponto 3(d): FALHA FECHADA — erro ao consultar bloqueio de opt-out nunca envia o lembrete, job é adiado com motivo registrado", async () => {
+  const db = new FakeSupabaseAdmin({ tables: baseJobTables() });
+  const realFrom = db.from.bind(db);
+  db.from = ((table: string) => {
+    if (table === "whatsapp_blocked_recipients") {
+      return {
+        select() {
+          return {
+            eq() {
+              return {
+                is() {
+                  return Promise.resolve({
+                    data: null,
+                    error: { message: "falha simulada de conexão com o banco" },
+                  });
+                },
+              };
+            },
+          };
+        },
+      };
+    }
+    return realFrom(table);
+  }) as typeof db.from;
+
+  // Nenhum dublê de fetch é instalado — se o código seguisse "no escuro" e
+  // tentasse mandar a mensagem mesmo com a consulta de bloqueio falhando, o
+  // teste falharia por rede real (ENOTFOUND), não silenciosamente.
+  const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
+  assert.equal(outcome, "held");
+  assert.equal(db.tables.notification_jobs[0].status, "pending");
+  assert.equal(db.tables.notification_jobs[0].attempts, 0); // mesmo desconto de hold_pending/defer
+  assert.match(String(db.tables.notification_jobs[0].last_error ?? ""), /falha fechada/i);
+});
+
 // ===== M3 (corrige recálculo indevido, 28/10/2026) =====
 // A suíte acima (ex.: "M2: duas varreduras...") nunca pegou o bug porque o
 // banco simulado guarda `scheduled_for` EXATAMENTE como foi inserido (string

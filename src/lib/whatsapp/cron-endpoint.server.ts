@@ -20,7 +20,7 @@ import { processNotificationJobs } from "./scheduler.server";
 import { scanAndEnqueueCentralReminders } from "./central-reminder-scheduler.server";
 import { cleanupExpiredOrphanMessages } from "./central-orphan-retention.server.ts";
 import { recoverStuckReminderJobs } from "./central-stuck-job-recovery.server.ts";
-import { startCronRun, finishCronRun } from "./central-cron-run-log.server.ts";
+import { startCronRun, finishCronRun, cleanupOldCronRuns } from "./central-cron-run-log.server.ts";
 import { checkCronRequest } from "./central-cron-auth.ts";
 
 export async function handleWhatsappCronRequest(request: Request): Promise<Response> {
@@ -47,6 +47,10 @@ export async function handleWhatsappCronRequest(request: Request): Promise<Respo
     const stuckRecovery = await recoverStuckReminderJobs();
     const processed = await processNotificationJobs();
     const orphanCleanup = await cleanupExpiredOrphanMessages();
+    // FASE LEMBRETES-1 (ajuste 13/11/2026, ponto 2): retenção de 30 dias do
+    // próprio histórico do cron — sem coluna nova (nenhuma mudança na
+    // migração SQL aprovada), só reportado no JSON de resposta.
+    const cronRunsRetention = await cleanupOldCronRuns();
 
     await finishCronRun(runId, {
       ok: true,
@@ -64,7 +68,14 @@ export async function handleWhatsappCronRequest(request: Request): Promise<Respo
     });
 
     return new Response(
-      JSON.stringify({ ok: true, scan, stuckRecovery, processed, orphanCleanup }),
+      JSON.stringify({
+        ok: true,
+        scan,
+        stuckRecovery,
+        processed,
+        orphanCleanup,
+        cronRunsRetention,
+      }),
       { status: 200, headers: { "content-type": "application/json" } },
     );
   } catch (e) {

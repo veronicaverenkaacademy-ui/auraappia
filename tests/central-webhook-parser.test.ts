@@ -237,22 +237,46 @@ test("looksLikeStopRequest: variações de SAIR/STOP", () => {
 test("looksLikeStopRequest: com acento e sem, com espaços e pontuação", () => {
   assert.equal(looksLikeStopRequest("não quero receber"), true);
   assert.equal(looksLikeStopRequest("nao quero receber"), true);
-  assert.equal(looksLikeStopRequest("  PARAR,  por favor"), true);
+  // FASE LEMBRETES-1 (ajuste 13/11/2026): antes bloqueava porque "parar"
+  // aparecia como palavra isolada em qualquer lugar da frase; com a regra
+  // mais estrita (só bloqueia quando a palavra isolada É a mensagem
+  // inteira), "PARAR, por favor" tem mais de uma palavra e não bate mais em
+  // STOP_WORDS nem em nenhuma STOP_PHRASE — não bloqueia.
+  assert.equal(looksLikeStopRequest("  PARAR,  por favor"), false);
 });
 
-test("DEFEITO CORRIGIDO: 'não vou parar de ir aí' não é pedido de parar (negação nas 2 palavras antes)", () => {
-  // Bug original: a checagem era por substring puro (`.includes("parar")`),
-  // então qualquer frase contendo a palavra "parar" disparava o aviso,
-  // mesmo quando a cliente está negando que vai parar de frequentar o
-  // salão — o oposto de um pedido de opt-out.
+test("DEFEITO CORRIGIDO: 'não vou parar de ir aí' não é pedido de parar", () => {
+  // Bug original (antes desta fase): a checagem era por substring puro
+  // (`.includes("parar")`), então qualquer frase contendo a palavra "parar"
+  // disparava o aviso, mesmo quando a cliente está negando que vai parar de
+  // frequentar o salão — o oposto de um pedido de opt-out. Com a regra
+  // atual (palavra isolada só bloqueia quando é a mensagem inteira), isto
+  // nunca bloqueia nem precisa de lógica de negação: a frase tem mais de
+  // uma palavra.
   assert.equal(looksLikeStopRequest("não vou parar de ir aí"), false);
   assert.equal(looksLikeStopRequest("nao vou parar de ir ai"), false);
 });
 
 test("looksLikeStopRequest: falsos positivos adicionais não disparam", () => {
-  assert.equal(looksLikeStopRequest("estou saindo agora"), false); // "saindo" ≠ "sair" (palavra inteira)
+  assert.equal(looksLikeStopRequest("estou saindo agora"), false); // "saindo" ≠ "sair" (palavra inteira) e tem mais de uma palavra
   assert.equal(looksLikeStopRequest("paraíso"), false); // palavra totalmente diferente
-  assert.equal(looksLikeStopRequest("nunca vou parar de recomendar vocês"), false); // negação "nunca"
+  assert.equal(looksLikeStopRequest("nunca vou parar de recomendar vocês"), false); // mais de uma palavra
+});
+
+test("FASE LEMBRETES-1 ponto 3(b): frases comuns do dia a dia NUNCA podem bloquear", () => {
+  // Lista exata pedida pela dona na revisão — cada uma usa "sair"/"parar"/
+  // "cancelar" dentro de uma frase maior, nunca como pedido de opt-out.
+  assert.equal(looksLikeStopRequest("vou sair mais cedo"), false);
+  assert.equal(looksLikeStopRequest("posso sair às 10?"), false);
+  assert.equal(looksLikeStopRequest("não vou parar de ir"), false);
+  assert.equal(looksLikeStopRequest("cancelar meu horário"), false);
+  assert.equal(looksLikeStopRequest("cancelou?"), false);
+});
+
+test("FASE LEMBRETES-1 ponto 3(c): frases explícitas de opt-out continuam bloqueando", () => {
+  assert.equal(looksLikeStopRequest("parar de receber"), true);
+  assert.equal(looksLikeStopRequest("Cancelar inscrição"), true);
+  assert.equal(looksLikeStopRequest("cancelar inscrição, por favor"), true);
 });
 
 // ===== 3b/3c — corpo e origem, usando as fixtures reais =====

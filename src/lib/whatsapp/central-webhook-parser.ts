@@ -209,33 +209,39 @@ export function parseMetaWebhookEvents(payload: unknown): ParseResult {
 
 // Frases de várias palavras: risco baixo de falso positivo, comparação por
 // substring é suficiente ("quero parar de receber" nunca aparece por
-// acidente dentro de uma frase sobre outra coisa).
-const STOP_PHRASES = ["quero parar de receber", "não quero receber", "nao quero receber"];
-// Palavras isoladas: "parar"/"sair"/"stop" aparecem de verdade em frases que
-// NÃO são pedido de parar ("não vou parar de ir aí", "estou saindo agora").
-// Por isso exigem correspondência de PALAVRA INTEIRA (nunca substring dentro
-// de outra palavra, ex.: "saindo" não é "sair"), e são descartadas quando
-// antecedidas por uma negação nas até 2 palavras anteriores.
+// acidente dentro de uma frase sobre outra coisa). Observação: por causa da
+// normalização abaixo (NFD + remoção de diacríticos), uma entrada acentuada
+// nunca bate de verdade contra o texto normalizado — por isso toda frase com
+// acento tem também sua forma sem acento na lista; só essa forma sem acento
+// realmente compara.
+const STOP_PHRASES = [
+  "quero parar de receber",
+  "não quero receber",
+  "nao quero receber",
+  "parar de receber",
+  "cancelar inscricao",
+];
+// FASE LEMBRETES-1 (ajuste 13/11/2026, revisão da dona): a versão anterior
+// tratava "parar"/"sair"/"stop" como palavra isolada EM QUALQUER FRASE (só
+// descartando quando havia negação nas até 2 palavras anteriores) — isso
+// dava falso positivo em frases comuns sem nenhum pedido de parar e sem
+// nenhuma negação, como "vou sair mais cedo" ou "posso sair às 10?". Regra
+// nova, mais estrita: uma palavra isolada só bloqueia quando é a MENSAGEM
+// INTEIRA (afora espaços nas bordas e pontuação final) — "PARAR", "Sair!",
+// "  stop  " continuam bloqueando; qualquer mensagem com mais de uma
+// palavra só bloqueia via STOP_PHRASES acima.
 const STOP_WORDS = ["parar", "sair", "stop"];
-const NEGATION_WORDS = ["nao", "nunca", "jamais"];
-const NEGATION_LOOKBACK = 2;
 
 /** Comparação tolerante a acento/caixa/pontuação — "PARAR", "Parar!", "não quero receber mensagens" etc.
- *  Regra: frases completas (STOP_PHRASES) batem por substring; palavras
- *  isoladas e ambíguas (STOP_WORDS) só contam se não houver negação
- *  ("não"/"nunca"/"jamais") nas 2 palavras imediatamente anteriores — ver
- *  "Decisões que dependem de você" no relatório para o raciocínio completo. */
+ *  Regra: frases completas (STOP_PHRASES) batem por substring; as palavras
+ *  isoladas e ambíguas (STOP_WORDS) só contam quando são a mensagem INTEIRA
+ *  — nunca dentro de uma frase maior — ver "Decisões que dependem de você"
+ *  no relatório da FASE LEMBRETES-1 para o raciocínio completo. */
 export function looksLikeStopRequest(text: string): boolean {
   const normalized = text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
-  if (STOP_PHRASES.some((p) => normalized === p || normalized.includes(p))) return true;
   if (!normalized) return false;
+  if (STOP_PHRASES.some((p) => normalized === p || normalized.includes(p))) return true;
 
   const words = normalized.split(/\s+/).map((w) => w.replace(/[.,!?;:]+$/g, ""));
-  for (let i = 0; i < words.length; i++) {
-    if (!STOP_WORDS.includes(words[i])) continue;
-    const precedingWindow = words.slice(Math.max(0, i - NEGATION_LOOKBACK), i);
-    if (precedingWindow.some((w) => NEGATION_WORDS.includes(w))) continue; // negado, não conta
-    return true;
-  }
-  return false;
+  return words.length === 1 && STOP_WORDS.includes(words[0]);
 }

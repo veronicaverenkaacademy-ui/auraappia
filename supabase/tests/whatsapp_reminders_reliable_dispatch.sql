@@ -23,10 +23,14 @@
 -- ainda; 2) aplica a migração; 3) roda os casos funcionais (bloqueio de
 -- opt-out, histórico de execuções com trigger_source/uncertain_expired,
 -- recuperação de job preso nos 4 desfechos possíveis, incluindo o prazo de
--- 24h do 'uncertain'); 4) aplica o rollback; 5) confirma que os objetos
--- novos somem e que o CHECK de whatsapp_messages volta exatamente aos 6
--- valores antigos; 6) reaplica a migração; 7) confirma que volta a
--- funcionar. Nunca COMMIT.
+-- 24h do 'uncertain'); 4) aplica o rollback; 5) confirma que whatsapp_cron_runs/
+-- a função somem, que o CHECK de whatsapp_messages volta exatamente aos 6
+-- valores antigos, e — AJUSTE da dona em 13/11/2026 — que whatsapp_blocked_recipients
+-- e as linhas de bloqueio criadas no PASSO 4 SOBREVIVEM ao rollback (essa
+-- tabela é a ÚNICA das SEÇÕES B-E que o rollback NUNCA apaga, de propósito:
+-- guarda pedidos de PARAR/opt-out reais); 6) reaplica a migração; 7)
+-- confirma que volta a funcionar E que as mesmas linhas de bloqueio
+-- continuam intactas depois do ciclo completo. Nunca COMMIT.
 
 BEGIN;
 SET LOCAL lock_timeout = '3s';
@@ -34,6 +38,11 @@ SET LOCAL statement_timeout = '20s';
 
 CREATE TEMP TABLE zzfx_lr_results (ordem serial, caso text, detalhe text, passou boolean) ON COMMIT DROP;
 CREATE TEMP TABLE zzfx_lr_ids (chave text PRIMARY KEY, valor uuid) ON COMMIT DROP;
+-- AJUSTE (revisão da dona, 13/11/2026): guarda os ids dos bloqueios de
+-- opt-out criados no PASSO 4, pra provar no PASSO 8 (depois do rollback) e
+-- no PASSO 10 (depois de reaplicar) que as LINHAS sobreviveram de verdade
+-- (não só que a tabela continua existindo).
+CREATE TEMP TABLE zzfx_lr_block_ids (chave text PRIMARY KEY, valor uuid) ON COMMIT DROP;
 
 -- ============================================================================
 -- PASSO 0 — confirma que nada disto existe ainda (estado de produção hoje)
@@ -346,6 +355,7 @@ DO $caso_bloqueio$
 DECLARE
   v_owner uuid := (SELECT valor FROM zzfx_lr_ids WHERE chave='owner');
   v_block_id uuid;
+  v_block_id_2 uuid;
   v_duplicou boolean := false;
 BEGIN
   INSERT INTO public.whatsapp_blocked_recipients (owner_id, phone_e164)
@@ -367,13 +377,20 @@ BEGIN
   UPDATE public.whatsapp_blocked_recipients SET unblocked_at = now() WHERE id = v_block_id;
   BEGIN
     INSERT INTO public.whatsapp_blocked_recipients (owner_id, phone_e164, source, reason)
-    VALUES (v_owner, '+5547999990199', 'manual', 'ZZFX_teste_reautorizacao');
+    VALUES (v_owner, '+5547999990199', 'manual', 'ZZFX_teste_reautorizacao')
+    RETURNING id INTO v_block_id_2;
     v_duplicou := true;
   EXCEPTION WHEN unique_violation THEN
     v_duplicou := false;
   END;
   INSERT INTO zzfx_lr_results (caso, detalhe, passou) VALUES
     ('04_reautorizacao_depois_de_desbloquear', 'depois de desbloquear, um novo bloqueio ativo é aceito', v_duplicou);
+
+  -- AJUSTE (revisão da dona, 13/11/2026): guarda os dois ids pra provar nos
+  -- PASSOS 8/10 que as LINHAS (não só a tabela) sobrevivem ao rollback e ao
+  -- ciclo completo aplicar->rollback->reaplicar.
+  INSERT INTO zzfx_lr_block_ids (chave, valor) VALUES
+    ('original_desbloqueado', v_block_id), ('reautorizado_ativo', v_block_id_2);
 END $caso_bloqueio$;
 
 -- ============================================================================
@@ -549,16 +566,43 @@ ALTER TABLE public.whatsapp_messages
   CHECK (status IN ('pending', 'sent', 'delivered', 'read', 'failed', 'uncertain'));
 
 DROP TABLE IF EXISTS public.whatsapp_cron_runs;
-DROP TABLE IF EXISTS public.whatsapp_blocked_recipients;
+-- AJUSTE (revisão da dona, 13/11/2026): whatsapp_blocked_recipients
+-- PROPOSITALMENTE NÃO é apagada aqui — ver comentário no topo do arquivo
+-- de rollback real. Nenhum DROP desta tabela nesta suíte, de propósito,
+-- espelhando o arquivo de verdade.
 NOTIFY pgrst, 'reload schema';
 
 DO $passo8$
-DECLARE v_n int; v_def text; v_def_original text;
+DECLARE v_n int; v_def text; v_def_original text; v_unblocked_at timestamptz; v_source text;
 BEGIN
   SELECT count(*) INTO v_n FROM information_schema.tables
-    WHERE table_schema='public' AND table_name IN ('whatsapp_blocked_recipients', 'whatsapp_cron_runs');
+    WHERE table_schema='public' AND table_name = 'whatsapp_cron_runs';
   INSERT INTO zzfx_lr_results (caso, detalhe, passou) VALUES
-    ('08_tabelas_removidas_pelo_rollback', format('%s de 2 ainda existem (esperado 0)', v_n), v_n = 0);
+    ('08_whatsapp_cron_runs_removida_pelo_rollback', format('%s ainda existe (esperado 0)', v_n), v_n = 0);
+
+  -- AJUSTE (revisão da dona, 13/11/2026) — a tabela de bloqueios sobrevive
+  -- ao rollback de propósito (guarda pedidos de PARAR reais; apagá-la
+  -- reativaria envio pra quem pediu pra parar).
+  SELECT count(*) = 1 INTO v_n FROM information_schema.tables
+    WHERE table_schema='public' AND table_name = 'whatsapp_blocked_recipients';
+  INSERT INTO zzfx_lr_results (caso, detalhe, passou) VALUES
+    ('08_whatsapp_blocked_recipients_SOBREVIVE_ao_rollback', 'tabela continua existindo depois do rollback (de propósito)', v_n);
+
+  -- Prova mais forte que só "a tabela existe": as LINHAS criadas no PASSO 4
+  -- continuam lá, com os dados certos — não é só o esquema que sobreviveu.
+  SELECT unblocked_at INTO v_unblocked_at FROM public.whatsapp_blocked_recipients
+    WHERE id = (SELECT valor FROM zzfx_lr_block_ids WHERE chave = 'original_desbloqueado');
+  INSERT INTO zzfx_lr_results (caso, detalhe, passou) VALUES
+    ('08_linha_de_bloqueio_original_sobrevive_ao_rollback',
+     format('unblocked_at=%s (deveria continuar preenchido)', v_unblocked_at), v_unblocked_at IS NOT NULL);
+
+  SELECT unblocked_at, source INTO v_unblocked_at, v_source FROM public.whatsapp_blocked_recipients
+    WHERE id = (SELECT valor FROM zzfx_lr_block_ids WHERE chave = 'reautorizado_ativo');
+  INSERT INTO zzfx_lr_results (caso, detalhe, passou) VALUES
+    ('08_linha_de_bloqueio_reautorizado_sobrevive_ao_rollback',
+     format('unblocked_at=%s source=%s (deveria seguir ativo, source=manual)', v_unblocked_at, v_source),
+     v_unblocked_at IS NULL AND v_source = 'manual');
+
   SELECT count(*) INTO v_n FROM pg_proc WHERE proname = 'recover_stuck_notification_jobs';
   INSERT INTO zzfx_lr_results (caso, detalhe, passou) VALUES
     ('08_funcao_removida_pelo_rollback', format('%s ainda existe (esperado 0)', v_n), v_n = 0);
@@ -586,6 +630,12 @@ END $passo8$;
 
 -- ============================================================================
 -- PASSO 9 — reaplica a migração (DDL colado de novo) e confirma que volta
+-- AJUSTE (revisão da dona, 13/11/2026): whatsapp_blocked_recipients nunca
+-- foi apagada no PASSO 7 (ver comentário ali) — o CREATE TABLE IF NOT
+-- EXISTS abaixo é por isso um no-op pra ela (prova que reaplicar a
+-- migração de verdade sobre uma tabela que o rollback preservou nunca
+-- falha nem apaga/recria nada à toa); quem de fato foi removido e volta
+-- aqui é whatsapp_cron_runs + a função.
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.whatsapp_blocked_recipients (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -634,13 +684,30 @@ GRANT EXECUTE ON FUNCTION public.recover_stuck_notification_jobs(int, int) TO se
 NOTIFY pgrst, 'reload schema';
 
 DO $passo10$
-DECLARE v_ok boolean;
+DECLARE v_ok boolean; v_unblocked_at timestamptz; v_source text;
 BEGIN
   SELECT count(*) = 1 INTO v_ok FROM information_schema.tables
     WHERE table_schema='public' AND table_name = 'whatsapp_blocked_recipients';
   INSERT INTO zzfx_lr_results (caso, detalhe, passou) VALUES ('10_tabela_volta_depois_de_reaplicar', 'whatsapp_blocked_recipients existe de novo', v_ok);
   SELECT count(*) = 1 INTO v_ok FROM pg_proc WHERE proname = 'recover_stuck_notification_jobs';
   INSERT INTO zzfx_lr_results (caso, detalhe, passou) VALUES ('10_funcao_volta_depois_de_reaplicar', 'recover_stuck_notification_jobs existe de novo', v_ok);
+
+  -- AJUSTE (revisão da dona, 13/11/2026) — prova final do ciclo completo:
+  -- as MESMAS linhas de bloqueio do PASSO 4 sobrevivem a aplicar ->
+  -- rollback -> reaplicar, sem interrupção (nunca foram apagadas, então
+  -- nunca precisaram ser recriadas).
+  SELECT unblocked_at INTO v_unblocked_at FROM public.whatsapp_blocked_recipients
+    WHERE id = (SELECT valor FROM zzfx_lr_block_ids WHERE chave = 'original_desbloqueado');
+  INSERT INTO zzfx_lr_results (caso, detalhe, passou) VALUES
+    ('10_linha_de_bloqueio_original_sobrevive_ao_ciclo_completo',
+     format('unblocked_at=%s', v_unblocked_at), v_unblocked_at IS NOT NULL);
+
+  SELECT unblocked_at, source INTO v_unblocked_at, v_source FROM public.whatsapp_blocked_recipients
+    WHERE id = (SELECT valor FROM zzfx_lr_block_ids WHERE chave = 'reautorizado_ativo');
+  INSERT INTO zzfx_lr_results (caso, detalhe, passou) VALUES
+    ('10_linha_de_bloqueio_reautorizado_sobrevive_ao_ciclo_completo',
+     format('unblocked_at=%s source=%s', v_unblocked_at, v_source),
+     v_unblocked_at IS NULL AND v_source = 'manual');
 END $passo10$;
 
 SELECT ordem, caso, detalhe, passou FROM zzfx_lr_results ORDER BY ordem;

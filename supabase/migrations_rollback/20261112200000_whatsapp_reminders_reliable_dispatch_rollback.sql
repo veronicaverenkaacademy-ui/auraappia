@@ -9,10 +9,20 @@
 -- cron.job/net.http_request_queue são tabelas de sistema dessas extensões,
 -- não deste projeto) e, mais importante, instalar a extensão nunca ligou
 -- nada por si só (nenhum cron.schedule() foi criado por esta migration —
--- isso fica no arquivo separado, próprio passo de autorização). Reverter
--- as SEÇÕES B/C/D/E (as únicas que de fato criam/alteram objetos deste
--- projeto) já deixa o banco exatamente como estava antes, sem precisar
--- tocar nas extensões.
+-- isso fica no arquivo separado, próprio passo de autorização).
+--
+-- AJUSTE (revisão da dona, 13/11/2026) — NÃO apaga whatsapp_blocked_recipients
+-- (SEÇÃO B) nem suas linhas: essa tabela guarda pedidos de PARAR/opt-out de
+-- clientes de verdade. Se o rollback apagasse a tabela, qualquer bloqueio
+-- já registrado seria perdido e o próximo lembrete voltaria a ser enviado
+-- para quem pediu para parar de receber — o oposto do que o opt-out existe
+-- para garantir, e um risco real mesmo que o rollback só rode pouco depois
+-- da aplicação (um cliente pode pedir PARAR nesse intervalo). Reverter as
+-- SEÇÕES C/D/E (que não guardam nenhum dado de cliente, só histórico de
+-- execução/config técnica) já é suficiente para desfazer tudo que esta
+-- migration criou/alterou, EXCETO a SEÇÃO B, que fica de pé de propósito —
+-- a suíte de testes (PASSO 7/8) prova que as linhas de bloqueio sobrevivem
+-- a este rollback.
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '10s';
@@ -39,7 +49,9 @@ ALTER TABLE public.whatsapp_messages
 DROP TABLE IF EXISTS public.whatsapp_cron_runs;
 
 -- ---- SEÇÃO B — bloqueio de opt-out ----
-DROP TABLE IF EXISTS public.whatsapp_blocked_recipients;
+-- PROPOSITALMENTE NÃO REVERTIDA (ajuste 13/11/2026, ver comentário no topo
+-- do arquivo): whatsapp_blocked_recipients e suas linhas continuam de pé.
+-- Nenhum DROP/DELETE aqui — não é um esquecimento, é a regra.
 
 NOTIFY pgrst, 'reload schema';
 
