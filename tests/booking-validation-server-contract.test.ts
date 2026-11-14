@@ -327,20 +327,20 @@ test("GUARDA: rescheduleClientAppointment chama assertSlotAllowed só com o hor�
 });
 
 // ---------------------------------------------------------------------------
-// FASE LEMBRETES-5 (ajuste, Parte 4): quando a cliente remarca pelo portal,
-// client_confirmation_status='reschedule_requested' (flag obsoleta, deixada
-// por um toque antigo em "Reagendar" no WhatsApp) precisa voltar a 'pending'
-// na mesma atualização — qualquer outro valor fica intocado (ver docstring
-// de confirmationStatusResetOnReschedule em booking.functions.ts pra por que
-// 'confirmed' especificamente NÃO é tocado).
+// FASE LEMBRETES-5 (ajuste, Parte 4) / LEMBRETES-6 (Parte 2.5, decisão B):
+// quando o agendamento é remarcado pra outro horário, 'reschedule_requested'
+// E 'confirmed' voltam pra 'pending' na mesma atualização — qualquer outro
+// valor fica intocado. Decisão B (14/11/2026) revogou a reserva da
+// LEMBRETES-5 sobre 'confirmed' (ver docstring de
+// confirmationStatusResetOnReschedule em appointment-confirmation-reset.ts).
 // ---------------------------------------------------------------------------
-describe("confirmationStatusResetOnReschedule — só reschedule_requested volta a pending", () => {
+describe("confirmationStatusResetOnReschedule — reschedule_requested e confirmed voltam a pending", () => {
   test("reschedule_requested -> pending", () => {
     assert.equal(confirmationStatusResetOnReschedule("reschedule_requested"), "pending");
   });
 
-  test("confirmed fica intocado (undefined = nenhuma mudança no update)", () => {
-    assert.equal(confirmationStatusResetOnReschedule("confirmed"), undefined);
+  test("LEMBRETES-6 (decisão B): confirmed -> pending (antes, na LEMBRETES-5, ficava intocado)", () => {
+    assert.equal(confirmationStatusResetOnReschedule("confirmed"), "pending");
   });
 
   test("declined fica intocado", () => {
@@ -355,6 +355,96 @@ describe("confirmationStatusResetOnReschedule — só reschedule_requested volta
     assert.equal(confirmationStatusResetOnReschedule(null), undefined);
     assert.equal(confirmationStatusResetOnReschedule(undefined), undefined);
   });
+});
+
+// ---------------------------------------------------------------------------
+// FASE LEMBRETES-6 (Parte 3): prova de ponta a ponta de que resetar
+// 'confirmed' -> 'pending' muda de fato a decisão da política de lembretes
+// — decideReminderJobAction (central-reminder-policy.ts) só pula o lembrete
+// (skip_terminal) quando clientConfirmationStatus==='confirmed'; qualquer
+// outro valor, incluindo 'pending', deixa a política mandar o lembrete do
+// NOVO horário normalmente.
+// ---------------------------------------------------------------------------
+test("LEMBRETES-6 (Parte 3): remarcar um agendamento 'confirmed' faz a política de lembretes decidir 'send' (não 'skip_terminal') pro novo horário", async () => {
+  const { decideReminderJobAction } =
+    await import("../src/lib/whatsapp/central-reminder-policy.ts");
+  const now = new Date("2026-11-10T15:00:00.000Z");
+  const policyInput = {
+    templateKey: "lembrete_24h" as const,
+    now,
+    appointmentStartsAt: new Date("2026-11-11T15:00:00.000Z"),
+    appointmentStatus: "confirmed" as const,
+    timezone: "America/Sao_Paulo",
+    automationActive: true,
+    automationMetaStatus: "APPROVED" as const,
+    automationMetaTemplateName: "lembrete_24h",
+    recipientPhoneValid: true,
+    recipientPhoneE164: "+5547988887777",
+    recipientBlocked: false,
+    remindersEnabled: true,
+    testMode: false,
+    testPhones: [],
+  };
+
+  // ANTES de remarcar: client_confirmation_status ainda 'confirmed' (do
+  // horário antigo) -> lembrete do novo horário seria pulado.
+  const before = decideReminderJobAction({ ...policyInput, clientConfirmationStatus: "confirmed" });
+  assert.equal(before.action, "skip_terminal");
+
+  // confirmationStatusResetOnReschedule é exatamente o que
+  // rescheduleClientAppointment grava no lugar de 'confirmed'.
+  const resetValue = confirmationStatusResetOnReschedule("confirmed");
+  assert.equal(resetValue, "pending");
+
+  // DEPOIS de remarcar (com o valor resetado): a política volta a mandar o lembrete.
+  const after = decideReminderJobAction({
+    ...policyInput,
+    clientConfirmationStatus: resetValue as "pending",
+  });
+  assert.equal(after.action, "send");
+});
+
+// ---------------------------------------------------------------------------
+// GUARDA (LEMBRETES-6, Parte 2.5): os caminhos da PROFISSIONAL
+// (updateAppointment/updateAppointmentTime em agenda.ts) só aplicam o
+// mesmo reset quando o horário REALMENTE mudou — nunca incondicionalmente.
+// agenda.ts roda no navegador (import "@/integrations/supabase/client"
+// estático no topo do arquivo), por isso não pode ser importado direto por
+// node --test (mesma razão de booking.functions.ts) — a prova aqui é
+// estática, por texto-fonte, como já é o padrão deste arquivo para
+// rescheduleClientAppointment acima.
+// ---------------------------------------------------------------------------
+test("GUARDA: updateAppointment/updateAppointmentTime (agenda.ts) só resetam a confirmação quando starts_at muda de verdade (sameInstant), nunca incondicionalmente", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/lib/agenda.ts", import.meta.url), "utf8");
+
+  assert.match(
+    src,
+    /confirmationResetPatchIfStartsAtChanged/,
+    "deveria existir o helper de reset condicionado à mudança de horário",
+  );
+  assert.match(
+    src,
+    /sameInstant\(current\.starts_at,\s*newStartsAt\)/,
+    "a comparação deveria ser por INSTANTE (sameInstant), nunca por texto",
+  );
+
+  const updateApptBody = src.slice(
+    src.indexOf("export async function updateAppointment("),
+    src.indexOf("export async function updateAppointmentTime("),
+  );
+  assert.match(
+    updateApptBody,
+    /confirmationResetPatchIfStartsAtChanged\(id,\s*rest\.starts_at\)/,
+    "updateAppointment deveria usar o helper condicionado, não resetar sempre",
+  );
+
+  const updateTimeBody = src.slice(src.indexOf("export async function updateAppointmentTime("));
+  assert.match(
+    updateTimeBody,
+    /confirmationResetPatchIfStartsAtChanged\(id,\s*starts_at\)/,
+    "updateAppointmentTime deveria usar o mesmo helper condicionado",
+  );
 });
 
 // ---------------------------------------------------------------------------

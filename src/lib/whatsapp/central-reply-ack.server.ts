@@ -31,6 +31,14 @@
 // aceito (documentado no relatório da fase): estas linhas nunca recebem
 // atualização de status via webhook de status da Meta (delivered/read) —
 // só o resultado imediato do POST (sent/failed/uncertain) fica registrado.
+//
+// FASE LEMBRETES-6: 4ª ação "already_registered" ("Já registramos sua
+// resposta anterior. Para alterar, fale com o salão.") — dispara quando uma
+// thread JÁ resolvida por um botão anterior (a "primeira escolha" da
+// decisão A) recebe outro toque. Claim por THREAD (não por mensagem, como
+// as outras 3): "ack-claim:already_registered:<threadId>" — no máximo 1
+// aviso por lembrete, mesmo com várias retentativas/toques, cada um com um
+// resolvedByMessageId diferente.
 import { resolveCentralSender } from "./central-sender.server.ts";
 import { fetchMetaSend } from "./central-template-sender.server.ts";
 import { classifySendError } from "./central-send-error-classifier.ts";
@@ -49,7 +57,15 @@ export const REPLY_ACK_SEND_TIMEOUT_MS = 8_000;
 /** Parte 3.5: nunca responder a um evento de webhook reprocessado/antigo. */
 export const REPLY_ACK_EVENT_MAX_AGE_MS = 60 * 60 * 1000; // 60 minutos
 
-export type ReplyAckAction = "confirm" | "cancel" | "reschedule";
+// FASE LEMBRETES-6: "already_registered" é a resposta única de "já
+// registramos sua resposta anterior" quando uma thread já resolvida por
+// botão recebe outro toque — texto FIXO, sem variáveis.
+export type ReplyAckAction = "confirm" | "cancel" | "reschedule" | "already_registered";
+
+/** Pura (Parte 2 da LEMBRETES-6): texto EXATO pedido pela dona — sem emoji, sem variáveis. */
+export function buildAlreadyRegisteredAckText(): string {
+  return "Já registramos sua resposta anterior. Para alterar, fale com o salão.";
+}
 
 function rescheduleTestModeEnabled(env: { WHATSAPP_REMINDERS_TEST_MODE?: string }): boolean {
   // Mesma regra EXATA dos lembretes (central-reminder-scheduler.server.ts)
@@ -171,9 +187,14 @@ export type SendReplyAckInput = {
   eventOccurredAtIso: string;
   /** id da própria linha inbound já gravada por quem chama — usado como parte da chave de claim (Parte 3.2). */
   resolvedByMessageId: string;
+  /** Só para action="already_registered" (LEMBRETES-6): id da thread — a chave de claim é por THREAD, não por mensagem (Parte 2.2: "no máximo 1 aviso por lembrete", mesmo com vários toques/retentativas, cada um com um resolvedByMessageId diferente). */
+  threadId?: string;
 };
 
 function claimKeyFor(input: SendReplyAckInput): string {
+  if (input.action === "already_registered") {
+    return `ack-claim:already_registered:${input.threadId}`;
+  }
   return `ack-claim:${input.action}:${input.appointmentId}:${input.resolvedByMessageId}`;
 }
 
@@ -215,11 +236,20 @@ export async function sendReplyAck(
       .select("status, professional_id, owner_id, starts_at")
       .eq("id", input.appointmentId)
       .maybeSingle();
+    // FASE LEMBRETES-6 (Parte 2.2): "já registramos" só quando o
+    // agendamento ainda está ativo E é futuro — diferente dos outros 3
+    // (que só checam status), aqui "futuro" é checado explicitamente,
+    // porque esta ação pode ser invocada muito depois da thread ter sido
+    // resolvida (dias/semanas), quando o status ainda não mudou mas o
+    // horário já passou.
+    const appointmentAlreadyPassed =
+      !!appt && new Date(appt.starts_at as string).getTime() <= now().getTime();
     if (
       !appt ||
       appt.status === "cancelled" ||
       appt.status === "completed" ||
-      appt.status === "no_show"
+      appt.status === "no_show" ||
+      (input.action === "already_registered" && appointmentAlreadyPassed)
     ) {
       // DEFEITO EVITADO: Cancelar é a própria transição que CANCELA o
       // agendamento — por isso, só para a ação "cancel", um status já
@@ -305,34 +335,39 @@ export async function sendReplyAck(
       return { kind: "failed", reason: sender.error };
     }
 
-    // Mesmo campo/precedência que o lembrete usa pra variável do salão
-    // (central-reminder-scheduler.server.ts:286-299): nome do profissional
-    // do agendamento, senão o nome da empresa.
-    const { data: company } = await supabaseAdmin
-      .from("company_profiles")
-      .select("display_name, timezone")
-      .eq("owner_id", appt?.owner_id ?? input.ownerId)
-      .maybeSingle();
-    let salonName = company?.display_name ?? null;
-    if (appt?.professional_id) {
-      const { data: member } = await supabaseAdmin
-        .from("team_members")
-        .select("full_name")
-        .eq("id", appt.professional_id)
-        .maybeSingle();
-      if (member?.full_name) salonName = member.full_name;
-    }
-
     let text: string;
-    if (input.action === "confirm") {
-      const timezone = company?.timezone || "America/Sao_Paulo";
-      const { date, time } = formatApptDateTimeBR(appt!.starts_at as string, timezone);
-      text = buildConfirmAckText(salonName ?? "", date, time);
-    } else if (input.action === "cancel") {
-      text = buildCancelAckText();
+    if (input.action === "already_registered") {
+      // Texto fixo, sem variáveis — não precisa resolver salão/link.
+      text = buildAlreadyRegisteredAckText();
     } else {
-      const link = await resolvePortalLink(supabaseAdmin, appt?.owner_id ?? input.ownerId);
-      text = buildRescheduleAckText(salonName ?? "", link);
+      // Mesmo campo/precedência que o lembrete usa pra variável do salão
+      // (central-reminder-scheduler.server.ts:286-299): nome do profissional
+      // do agendamento, senão o nome da empresa.
+      const { data: company } = await supabaseAdmin
+        .from("company_profiles")
+        .select("display_name, timezone")
+        .eq("owner_id", appt?.owner_id ?? input.ownerId)
+        .maybeSingle();
+      let salonName = company?.display_name ?? null;
+      if (appt?.professional_id) {
+        const { data: member } = await supabaseAdmin
+          .from("team_members")
+          .select("full_name")
+          .eq("id", appt.professional_id)
+          .maybeSingle();
+        if (member?.full_name) salonName = member.full_name;
+      }
+
+      if (input.action === "confirm") {
+        const timezone = company?.timezone || "America/Sao_Paulo";
+        const { date, time } = formatApptDateTimeBR(appt!.starts_at as string, timezone);
+        text = buildConfirmAckText(salonName ?? "", date, time);
+      } else if (input.action === "cancel") {
+        text = buildCancelAckText();
+      } else {
+        const link = await resolvePortalLink(supabaseAdmin, appt?.owner_id ?? input.ownerId);
+        text = buildRescheduleAckText(salonName ?? "", link);
+      }
     }
 
     // Parte 2 (g): nunca inclui telefone/nome da cliente/serviço/ID — só o

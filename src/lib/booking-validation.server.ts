@@ -136,25 +136,26 @@ export function assertSlotAllowed(
   if (!evaluation.allowed) throw bookingRejectionError(evaluation.reason);
 }
 
-// FASE LEMBRETES-5 (ajuste, Parte 4): decisão pura (sem I/O) sobre o que
-// fazer com appointments.client_confirmation_status quando a cliente
-// remarca pelo portal (rescheduleClientAppointment, em booking.functions.ts)
-// — vive aqui (não em booking.functions.ts) pelo mesmo motivo do resto deste
-// arquivo: só imports relativos, então node --test consegue importar direto.
+// FASE LEMBRETES-5 (ajuste, Parte 4) / LEMBRETES-6 (Parte 2.5, decisão B da
+// dona): reexportado de appointment-confirmation-reset.ts, que não tem
+// NENHUM import — pode ser usado tanto aqui (servidor, rescheduleClientAppointment)
+// quanto em agenda.ts (navegador, updateAppointment/updateAppointmentTime),
+// já que um arquivo `.server.ts` nunca pode ser importado por código de
+// navegador. Mantido reexportado aqui (em vez de mudar o import em
+// booking.functions.ts/nos testes) só pra não quebrar quem já importa deste
+// caminho.
 //
-// Só 'reschedule_requested' é resetado pra 'pending' — essa flag não tem
-// nenhum efeito em central-reminder-policy.ts (que trata qualquer valor
-// diferente de 'confirmed' como "ainda sem resposta definitiva") nem em
-// nenhuma tela hoje (agenda-card-style.ts não dá cor/badge a
-// reschedule_requested) — resetá-la é só higiene do dado, sem mudar nenhum
-// comportamento. 'confirmed'/'declined'/'pending' ficam como estão:
-// 'confirmed' TEM efeito direto (central-reminder-policy.ts pula o lembrete
-// do agendamento quando clientConfirmationStatus==='confirmed') e não há
-// regra explícita da dona sobre se uma confirmação antiga deveria "zerar" ao
-// remarcar pra um novo horário — mudar isso sem a decisão dela poderia tanto
-// corrigir quanto quebrar uma expectativa.
-export function confirmationStatusResetOnReschedule(
-  current: string | null | undefined,
-): "pending" | undefined {
-  return current === "reschedule_requested" ? "pending" : undefined;
-}
+// 'reschedule_requested' E 'confirmed' voltam pra 'pending' — a confirmação
+// ou o pedido de remarcação anteriores eram sobre o horário ANTIGO; pro
+// horário NOVO a cliente ainda não respondeu nada. Decisão B explícita da
+// dona (14/11/2026) revoga a reserva anterior sobre 'confirmed' (LEMBRETES-5
+// não tocava nele por falta de uma decisão explícita — agora existe).
+// Efeito prático em central-reminder-policy.ts (decideReminderJobAction):
+// como só clientConfirmationStatus==='confirmed' pula o lembrete
+// (skip_terminal), resetar pra 'pending' faz a política voltar a decidir
+// 'send' pro lembrete do NOVO horário — exatamente o efeito pedido ("para a
+// cliente receber o lembrete do novo horário"). 'declined'/'pending' ficam
+// como estão (não há pedido pra mudá-los, e 'declined' nem chega aqui: um
+// agendamento com confirmação 'declined' já está com status='cancelled',
+// que rescheduleClientAppointment rejeita antes de chegar a este ponto).
+export { confirmationStatusResetOnReschedule } from "./appointment-confirmation-reset.ts";
