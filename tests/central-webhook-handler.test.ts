@@ -99,6 +99,19 @@ function baseTables(): Record<string, Row[]> {
       },
     ],
     app_notifications: [],
+    // FASE LEMBRETES-5: usados pela resposta de texto livre (salão/fuso/
+    // link do portal) — portal_configurations vazio = nunca publicado
+    // (variante SEM link), mesmo padrão "seguro por padrão" do resto do projeto.
+    company_profiles: [
+      {
+        owner_id: "owner-1",
+        display_name: "Studio Aura",
+        slug: "studio-aura",
+        timezone: "America/Sao_Paulo",
+      },
+    ],
+    portal_configurations: [],
+    whatsapp_blocked_recipients: [],
   };
 }
 
@@ -702,4 +715,176 @@ test("3c: mistura de evento central + evento de outro número — só o central 
   const inbound = db.tables.whatsapp_messages.filter((m) => m.direction === "inbound");
   assert.equal(inbound.length, 1);
   assert.equal(inbound[0].provider_message_id, "wamid.CENTRAL_1");
+});
+
+// ===== FASE LEMBRETES-5 — resposta curta de texto livre a Confirmar/Cancelar/Reagendar =====
+// Estes testes precisam de META_WHATSAPP_CENTRAL_ACCESS_TOKEN configurado
+// (os demais testes deste arquivo NÃO configuram — resolveCentralSender
+// falha fechado sem ele, então sendReplyAck nunca chama fetch nos testes
+// acima) e de um dublê de globalThis.fetch (nunca rede de verdade) —
+// salvos/restaurados em cada teste, pra não vazar para os outros testes.
+function withReplyAckFetch(
+  responder: (call: { url: string; init: RequestInit }) => Response | Promise<Response>,
+) {
+  const prevToken = process.env.META_WHATSAPP_CENTRAL_ACCESS_TOKEN;
+  const prevVersion = process.env.META_GRAPH_API_VERSION;
+  const prevTestMode = process.env.WHATSAPP_REMINDERS_TEST_MODE;
+  const realFetch = globalThis.fetch;
+  process.env.META_WHATSAPP_CENTRAL_ACCESS_TOKEN = "zzfx-token-de-teste-nunca-real";
+  process.env.META_GRAPH_API_VERSION = "v26.0";
+  // Desliga o modo teste dos lembretes só pra estes testes — a regra de
+  // TEST_MODE em si já é coberta em tests/central-reply-ack.test.ts; aqui o
+  // foco é a integração com o webhook.
+  process.env.WHATSAPP_REMINDERS_TEST_MODE = "false";
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+    const call = { url: String(url), init: init ?? {} };
+    calls.push(call);
+    if (!call.url.includes(`/${CENTRAL_PNID}/messages`)) {
+      throw new Error(`fetch chamado com URL não prevista pelo teste: ${call.url}`);
+    }
+    return responder(call);
+  }) as typeof fetch;
+  return {
+    calls,
+    restore() {
+      if (prevToken === undefined) delete process.env.META_WHATSAPP_CENTRAL_ACCESS_TOKEN;
+      else process.env.META_WHATSAPP_CENTRAL_ACCESS_TOKEN = prevToken;
+      if (prevVersion === undefined) delete process.env.META_GRAPH_API_VERSION;
+      else process.env.META_GRAPH_API_VERSION = prevVersion;
+      if (prevTestMode === undefined) delete process.env.WHATSAPP_REMINDERS_TEST_MODE;
+      else process.env.WHATSAPP_REMINDERS_TEST_MODE = prevTestMode;
+      globalThis.fetch = realFetch;
+    },
+  };
+}
+
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+test("LEMBRETES-5: botão Confirmar envia a resposta de texto livre (REVOGA a regra antiga de Cancelar mudar, mas Confirmar sempre respondeu normalmente)", async () => {
+  const { calls, restore } = withReplyAckFetch(() =>
+    jsonResponse(200, { messages: [{ id: "wamid.ACK_CONFIRM" }] }),
+  );
+  try {
+    const db = makeDb();
+    await run(db, [buttonEvent()]); // payload padrão = confirm
+    assert.equal(calls.length, 1);
+    const body = JSON.parse(String(calls[0].init.body));
+    assert.equal(body.type, "text");
+    assert.match(body.text.body, /Presença confirmada!/);
+    const ack = db.tables.whatsapp_messages.find((m) => m.message_type === "confirm_ack");
+    assert.ok(ack);
+    assert.equal(ack!.status, "sent");
+  } finally {
+    restore();
+  }
+});
+
+test("LEMBRETES-5: botão Cancelar AGORA envia resposta de texto livre (revoga a regra antiga 'Cancelar não envia mensagem')", async () => {
+  const { calls, restore } = withReplyAckFetch(() =>
+    jsonResponse(200, { messages: [{ id: "wamid.ACK_CANCEL" }] }),
+  );
+  try {
+    const db = makeDb();
+    await run(db, [buttonEvent({ buttonPayload: "v1|x|thread-1", buttonText: "Cancelar" })]);
+    assert.equal(calls.length, 1);
+    const body = JSON.parse(String(calls[0].init.body));
+    assert.equal(
+      body.text.body,
+      "Cancelamento recebido. Seu horário foi liberado. Quando quiser agendar novamente, é só nos chamar 💛",
+    );
+    const appt = db.tables.appointments.find((a) => a.id === "appt-1")!;
+    assert.equal(appt.status, "cancelled"); // comportamento de Cancelar em si, intocado
+    const ack = db.tables.whatsapp_messages.find((m) => m.message_type === "cancel_ack");
+    assert.ok(ack);
+  } finally {
+    restore();
+  }
+});
+
+test("LEMBRETES-5: botão Reagendar (1ª vez) envia a resposta de texto livre", async () => {
+  const { calls, restore } = withReplyAckFetch(() =>
+    jsonResponse(200, { messages: [{ id: "wamid.ACK_RESCHED" }] }),
+  );
+  try {
+    const db = makeDb();
+    await run(db, [buttonEvent({ buttonPayload: "v1|r|thread-1", buttonText: "Reagendar" })]);
+    assert.equal(calls.length, 1);
+    const body = JSON.parse(String(calls[0].init.body));
+    assert.match(body.text.body, /Recebemos seu pedido de remarcação/);
+    const ack = db.tables.whatsapp_messages.find((m) => m.message_type === "reschedule_ack");
+    assert.ok(ack);
+  } finally {
+    restore();
+  }
+});
+
+test("LEMBRETES-5: segundo toque em Reagendar (apply_reschedule_request_repeat) NÃO manda outra resposta", async () => {
+  const { calls, restore } = withReplyAckFetch(() =>
+    jsonResponse(200, { messages: [{ id: "wamid.ACK_R2" }] }),
+  );
+  try {
+    const db = makeDb();
+    await run(db, [buttonEvent({ buttonPayload: "v1|r|thread-1", buttonText: "Reagendar" })]);
+    assert.equal(calls.length, 1);
+    await run(db, [
+      buttonEvent({
+        messageId: "wamid.BTN_002",
+        buttonPayload: "v1|r|thread-1",
+        buttonText: "Reagendar",
+      }),
+    ]);
+    assert.equal(calls.length, 1, "não deveria ter chamado a Meta de novo no segundo toque");
+  } finally {
+    restore();
+  }
+});
+
+test("LEMBRETES-5: Confirmar de novo em agendamento já confirmado (no_op_already_confirmed) NÃO manda outra resposta", async () => {
+  const { calls, restore } = withReplyAckFetch(() =>
+    jsonResponse(200, { messages: [{ id: "wamid.ACK_C2" }] }),
+  );
+  try {
+    const db = makeDb();
+    await run(db, [buttonEvent()]); // confirm
+    assert.equal(calls.length, 1);
+    await run(db, [buttonEvent({ messageId: "wamid.BTN_002" })]); // confirm de novo
+    assert.equal(calls.length, 1, "no_op_already_confirmed nunca deveria chamar a Meta");
+  } finally {
+    restore();
+  }
+});
+
+test("LEMBRETES-5: repetição do MESMO evento (idempotência por messageId do INBOUND) não reenvia a resposta", async () => {
+  const { calls, restore } = withReplyAckFetch(() =>
+    jsonResponse(200, { messages: [{ id: "wamid.ACK_DUP" }] }),
+  );
+  try {
+    const db = makeDb();
+    await run(db, [buttonEvent()]);
+    await run(db, [buttonEvent()]); // reentrega da Meta, mesmo messageId
+    assert.equal(calls.length, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("LEMBRETES-5: sem ACCESS_TOKEN central configurado (estado padrão dos outros testes deste arquivo), nenhum botão chama fetch e nenhum lança", async () => {
+  const db = makeDb();
+  const { logger } = createCapturingLogger();
+  for (const payload of ["v1|c|thread-1", "v1|x|thread-1", "v1|r|thread-1"]) {
+    const freshDb = makeDb();
+    await assert.doesNotReject(() =>
+      run(
+        freshDb,
+        [buttonEvent({ buttonPayload: payload, messageId: `wamid.${payload}` })],
+        logger,
+      ),
+    );
+  }
 });

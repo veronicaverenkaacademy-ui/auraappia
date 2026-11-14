@@ -142,13 +142,20 @@ async function openIncident(
 
 // Exportada pro envio de OTP (FASE G6.2) reaproveitar o mesmo transporte
 // HTTP/timeout — nenhuma mudança de comportamento, só visibilidade.
+// FASE LEMBRETES-5 (14/11/2026): 4º parâmetro opcional `timeoutMs` — nenhum
+// chamador existente (sendCentralTemplate/send-otp-meta.server.ts) o passa,
+// então continuam com exatamente os mesmos 15s de sempre; a resposta de
+// texto livre ao toque de botão (central-reply-ack.server.ts) passa um
+// valor menor (8s) porque esse envio acontece DENTRO do tempo de resposta
+// do webhook à Meta — nunca os 15s de uma reminder assíncrona.
 export async function fetchMetaSend(
   phoneNumberId: string,
   accessToken: string,
   body: unknown,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
 ): Promise<SendAttemptOutcome & { body?: unknown }> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(`${getGraphApiBase()}/${phoneNumberId}/messages`, {
       method: "POST",
