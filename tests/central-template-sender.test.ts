@@ -76,8 +76,10 @@ function makeDb(overrides: Partial<Record<string, Row[]>> = {}) {
       whatsapp_messages: [],
       whatsapp_central_threads: [],
       whatsapp_central_incidents: [],
+      app_notifications: [],
       ...overrides,
     },
+    uniqueKeys: { app_notifications: [["owner_id", "dedupe_key"]] },
   });
 }
 
@@ -182,6 +184,9 @@ test("DEFEITO CORRIGIDO: ordem real dos botões é índice 0=Confirmar(confirm/'
     template: { components: Array<{ index?: string; parameters: Array<{ payload?: string }> }> };
   };
   const buttons = body.template.components.slice(1);
+  // FASE LEMBRETES-3 ponto C: prova de contrato — exatamente 3 botões (nem
+  // mais, nem menos), nesta ordem (c=Confirmar, x=Cancelar, r=Reagendar).
+  assert.equal(buttons.length, 3, "lembrete_24h deve enviar exatamente 3 botões");
   const codes = buttons.map((b) => b.parameters[0].payload!.split("|")[1]);
   assert.deepEqual(
     codes,
@@ -191,13 +196,23 @@ test("DEFEITO CORRIGIDO: ordem real dos botões é índice 0=Confirmar(confirm/'
 });
 
 test("lembrete_2h: corpo sem nenhum botão, nenhuma thread aberta", async () => {
-  stubFetch(() => jsonResponse(200, { messages: [{ id: "wamid.X" }] }));
+  const calls = stubFetch(() => jsonResponse(200, { messages: [{ id: "wamid.X" }] }));
   const db = makeDb();
   await sendCentralTemplate({
     ...baseInput({ templateKey: "lembrete_2h", variables: ["Ana", "Corte", "15:00", "Salão X"] }),
     supabaseAdmin: db as never,
   });
   assert.equal(db.tables.whatsapp_central_threads.length, 0);
+  // FASE LEMBRETES-3 ponto C: prova de contrato — lembrete_2h envia só o
+  // componente "body", nenhum componente "button" (0 botões), diferente do
+  // 24h (teste acima, exatamente 3 botões c/x/r).
+  const body = JSON.parse(String(calls[0].init.body)) as {
+    template: { components: Array<{ type: string }> };
+  };
+  assert.deepEqual(
+    body.template.components.map((c) => c.type),
+    ["body"],
+  );
 });
 
 // ===== DEFEITO: 200 sem messages[0].id ou corpo não-JSON deveria ser "incerto", nunca "sent" =====
@@ -267,6 +282,77 @@ test("M3: error_data.details (quando presente) é preferido sobre message, e sai
     assert.ok(!result.error.includes("554799998888"), "telefone não deveria vazar no texto");
     assert.ok(!result.error.includes("fallback genérico"), "details tem prioridade sobre message");
   }
+});
+
+// ===== FASE LEMBRETES-3 ponto A — aviso no sino para erro de modelo =====
+
+test("132000 (erro de modelo, sem freio) avisa a dona do envio no sino, uma vez", async () => {
+  stubFetch(() => jsonResponse(400, { error: { code: 132000, message: "x" } }));
+  const db = makeDb();
+  await sendCentralTemplate({ ...baseInput(), supabaseAdmin: db as never });
+  assert.equal(db.tables.app_notifications.length, 1);
+  assert.equal(db.tables.app_notifications[0].owner_id, "owner-1");
+  assert.equal(db.tables.app_notifications[0].kind, "whatsapp_template_rejected");
+  assert.match(db.tables.app_notifications[0].body as string, /132000/);
+});
+
+test("132018 (achado real, não catalogado) também avisa a dona no sino", async () => {
+  stubFetch(() => jsonResponse(400, { error: { code: 132018, message: "x" } }));
+  const db = makeDb();
+  await sendCentralTemplate({ ...baseInput(), supabaseAdmin: db as never });
+  assert.equal(db.tables.app_notifications.length, 1);
+  assert.match(db.tables.app_notifications[0].body as string, /132018/);
+});
+
+test("131026 (número inválido — problema do destinatário, não do modelo) NÃO avisa no sino", async () => {
+  stubFetch(() => jsonResponse(400, { error: { code: 131026, message: "x" } }));
+  const db = makeDb();
+  await sendCentralTemplate({ ...baseInput(), supabaseAdmin: db as never });
+  assert.equal(db.tables.app_notifications.length, 0);
+});
+
+test("190 (token inválido) já avisa via incidente de circuito — nunca duplica com o aviso de modelo", async () => {
+  stubFetch(() => jsonResponse(401, { error: { code: 190, message: "x" } }));
+  const db = makeDb();
+  await sendCentralTemplate({ ...baseInput(), supabaseAdmin: db as never });
+  // dbWithAutomations não é usado aqui (makeDb não tem a tabela automations
+  // populada), então o broadcast do incidente global não encontra ninguém —
+  // o que importa é confirmar que NENHUM aviso de "modelo rejeitado" extra
+  // foi criado por cima do caminho de incidente já existente.
+  const kinds = db.tables.app_notifications.map((n) => n.kind);
+  assert.ok(!kinds.includes("whatsapp_template_rejected"));
+});
+
+test("5xx (transitório) nunca avisa no sino", async () => {
+  stubFetch(() => jsonResponse(503, { error: { message: "unavailable" } }));
+  const db = makeDb();
+  await sendCentralTemplate({ ...baseInput(), supabaseAdmin: db as never });
+  assert.equal(db.tables.app_notifications.length, 0);
+});
+
+test("dezenas de falhas seguidas (mesmo modelo+código) geram só 1 aviso no sino", async () => {
+  stubFetch(() => jsonResponse(400, { error: { code: 132018, message: "x" } }));
+  const db = makeDb();
+  for (let i = 0; i < 20; i++) {
+    await sendCentralTemplate({ ...baseInput(), supabaseAdmin: db as never });
+  }
+  assert.equal(db.tables.app_notifications.length, 1);
+});
+
+test("falha ao gravar o aviso no sino nunca derruba o resultado do envio (melhor esforço)", async () => {
+  stubFetch(() => jsonResponse(400, { error: { code: 132018, message: "x" } }));
+  const db = makeDb();
+  const realFrom = db.from.bind(db);
+  db.from = ((table: string) => {
+    if (table === "app_notifications") {
+      return { insert: () => Promise.resolve({ error: { message: "indisponível" } }) };
+    }
+    return realFrom(table);
+  }) as typeof db.from;
+
+  const result = await sendCentralTemplate({ ...baseInput(), supabaseAdmin: db as never });
+  assert.equal(result.kind, "failed");
+  if (result.kind === "failed") assert.equal(result.errorClass, "permanent");
 });
 
 test("4xx: template inexistente (132001) -> permanent, sem freio", async () => {

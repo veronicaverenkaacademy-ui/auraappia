@@ -22,6 +22,8 @@ import { cleanupExpiredOrphanMessages } from "./central-orphan-retention.server.
 import { recoverStuckReminderJobs } from "./central-stuck-job-recovery.server.ts";
 import { startCronRun, finishCronRun, cleanupOldCronRuns } from "./central-cron-run-log.server.ts";
 import { checkCronRequest } from "./central-cron-auth.ts";
+import { cleanupOldOtpSendLogs } from "../otp/otp-send-log.server.ts";
+import { cleanupBestEffort } from "./central-cron-retention.server.ts";
 
 export async function handleWhatsappCronRequest(request: Request): Promise<Response> {
   // Guarda (método + CRON_SECRET/CRON_SECRET_DB) extraída pra
@@ -47,10 +49,21 @@ export async function handleWhatsappCronRequest(request: Request): Promise<Respo
     const stuckRecovery = await recoverStuckReminderJobs();
     const processed = await processNotificationJobs();
     const orphanCleanup = await cleanupExpiredOrphanMessages();
-    // FASE LEMBRETES-1 (ajuste 13/11/2026, ponto 2): retenção de 30 dias do
-    // próprio histórico do cron — sem coluna nova (nenhuma mudança na
-    // migração SQL aprovada), só reportado no JSON de resposta.
-    const cronRunsRetention = await cleanupOldCronRuns();
+    // FASE LEMBRETES-1 (ajuste 13/11/2026, ponto 2) + FASE LEMBRETES-3
+    // (ajuste 14/11/2026, melhor esforço): retenção de 30 dias do histórico
+    // do cron e do log de envio de OTP — SEMPRE DEPOIS do disparo dos
+    // lembretes acima (scan/recovery/processed/orphanCleanup), nunca antes.
+    // cleanupBestEffort nunca lança: uma tabela ainda não migrada
+    // (whatsapp_otp_send_log, Parte B desta fase) ou qualquer outra falha
+    // de limpeza nunca marca esta execução como falha nem impede que os
+    // lembretes já processados acima contem como enviados — só aparece
+    // como {ok:false, error} no JSON de resposta, pra investigar depois.
+    const cronRunsRetention = await cleanupBestEffort("whatsapp_cron_runs", () =>
+      cleanupOldCronRuns(),
+    );
+    const otpSendLogRetention = await cleanupBestEffort("whatsapp_otp_send_log", () =>
+      cleanupOldOtpSendLogs(),
+    );
 
     await finishCronRun(runId, {
       ok: true,
@@ -75,6 +88,7 @@ export async function handleWhatsappCronRequest(request: Request): Promise<Respo
         processed,
         orphanCleanup,
         cronRunsRetention,
+        otpSendLogRetention,
       }),
       { status: 200, headers: { "content-type": "application/json" } },
     );
