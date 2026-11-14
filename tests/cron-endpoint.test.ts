@@ -84,3 +84,45 @@ test("guard.origin NUNCA é passado para scanAndEnqueueCentralReminders/processN
   assert.doesNotMatch(src, /scanAndEnqueueCentralReminders\([^)]*guard/);
   assert.doesNotMatch(src, /processNotificationJobs\([^)]*guard/);
 });
+
+// ===== FASE LEMBRETES-3 (ajuste 14/11/2026) — limpeza de retenção em
+// melhor esforço, nunca afeta o resultado do cron. cleanupBestEffort em si
+// já é testado direto (sem esta limitação de import) em
+// tests/central-cron-retention.test.ts — aqui só provamos, lendo a fonte,
+// que cron-endpoint.server.ts de fato USA esse wrapper do jeito certo:
+// nunca chama as duas limpezas sem passar por cleanupBestEffort, e só
+// DEPOIS do disparo real dos lembretes (scan/stuckRecovery/processed) —
+// mesma técnica (readFileSync + regex) do teste acima, pelo mesmo motivo
+// (este arquivo arrasta imports sem extensão e não pode ser importado
+// direto por `node --test`).
+
+test("c) cleanupOldCronRuns/cleanupOldOtpSendLogs só são chamados DENTRO de cleanupBestEffort — nunca direto, desprotegidos", () => {
+  const src = readFileSync("src/lib/whatsapp/cron-endpoint.server.ts", "utf8");
+  assert.doesNotMatch(src, /=\s*await\s*cleanupOldCronRuns\(/);
+  assert.doesNotMatch(src, /=\s*await\s*cleanupOldOtpSendLogs\(/);
+  assert.match(src, /cleanupBestEffort\(\s*"whatsapp_cron_runs"/);
+  assert.match(src, /cleanupBestEffort\(\s*"whatsapp_otp_send_log"/);
+});
+
+test("c) a limpeza de retenção roda DEPOIS do disparo dos lembretes (scan/stuckRecovery/processed), nunca antes", () => {
+  const src = readFileSync("src/lib/whatsapp/cron-endpoint.server.ts", "utf8");
+  const idxScan = src.indexOf("scanAndEnqueueCentralReminders()");
+  const idxProcessed = src.indexOf("processNotificationJobs()");
+  const idxCronRetention = src.indexOf('cleanupBestEffort("whatsapp_cron_runs"');
+  const idxOtpRetention = src.indexOf('cleanupBestEffort("whatsapp_otp_send_log"');
+  assert.ok(idxScan > -1 && idxProcessed > -1 && idxCronRetention > -1 && idxOtpRetention > -1);
+  assert.ok(idxScan < idxCronRetention, "scan deve vir ANTES da limpeza de whatsapp_cron_runs");
+  assert.ok(idxProcessed < idxCronRetention, "processNotificationJobs deve vir ANTES da limpeza");
+  assert.ok(idxCronRetention < idxOtpRetention, "ordem das duas limpezas, só por consistência");
+});
+
+test("a/b) finishCronRun(ok:true,...) NUNCA depende do resultado das limpezas de retenção (nenhum if/condicional envolvendo cronRunsRetention/otpSendLogRetention antes dele)", () => {
+  const src = readFileSync("src/lib/whatsapp/cron-endpoint.server.ts", "utf8");
+  const idxOtpRetention = src.indexOf('cleanupBestEffort("whatsapp_otp_send_log"');
+  const idxFinish = src.indexOf("finishCronRun(runId, {\n      ok: true,");
+  assert.ok(idxOtpRetention > -1 && idxFinish > -1);
+  const between = src.slice(idxOtpRetention, idxFinish);
+  // Nenhum "if" testando ok/error das limpezas entre a limpeza e o
+  // finishCronRun(ok:true) — ele é sempre chamado, incondicionalmente.
+  assert.doesNotMatch(between, /if\s*\(/);
+});
