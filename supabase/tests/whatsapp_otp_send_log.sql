@@ -265,9 +265,25 @@ BEGIN
     ('08_insert_funciona_normalmente_apos_reaplicar', format('id=%s', v_id), v_id IS NOT NULL);
 END $passo8$;
 
-SELECT ordem, caso, detalhe, passou FROM zzfx_otp_results ORDER BY ordem;
-
-SELECT 'RESUMO' AS linha, count(*) FILTER (WHERE passou) AS passaram, count(*) FILTER (WHERE NOT passou) AS falharam
-FROM zzfx_otp_results;
+-- Saída consolidada numa ÚNICA consulta (ferramentas que só devolvem o
+-- último result set de um script multi-statement precisam disto — nenhuma
+-- mudança de lógica/teste, só de formato de saída): um objeto JSON com a
+-- lista caso a caso (ordem/caso/detalhe/passou) e o resumo agregado.
+SELECT jsonb_build_object(
+  'casos', (
+    SELECT jsonb_agg(
+      jsonb_build_object('ordem', ordem, 'caso', caso, 'detalhe', detalhe, 'passou', passou)
+      ORDER BY ordem
+    )
+    FROM zzfx_otp_results
+  ),
+  'resumo', (
+    SELECT jsonb_build_object(
+      'passaram', count(*) FILTER (WHERE passou),
+      'falharam', count(*) FILTER (WHERE NOT passou)
+    )
+    FROM zzfx_otp_results
+  )
+) AS resultado;
 
 ROLLBACK;
