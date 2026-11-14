@@ -14,11 +14,15 @@ import { buildMetaTemplateBody, maskReminderVariablesForAudit } from "./central-
 import { buildButtonPayload } from "./central-button-payload.ts";
 import {
   classifySendError,
+  isPermanentTemplateRejectionError,
   type CircuitBreakerScope,
   type SendAttemptOutcome,
 } from "./central-send-error-classifier.ts";
 import { formatMetaErrorForHuman } from "./central-meta-error-detail.ts";
-import { notifyOwnersOfCentralIncident } from "./central-incident-notification.server.ts";
+import {
+  notifyOwnersOfCentralIncident,
+  notifyTemplateRejected,
+} from "./central-incident-notification.server.ts";
 import type { ReminderTemplateKey } from "./central-template-variables.ts";
 import {
   getSystemTemplate,
@@ -385,6 +389,27 @@ export async function sendCentralTemplate(
       classified.circuitBreaker,
       outcome.kind === "http_error" ? outcome.metaCode : undefined,
     );
+  }
+
+  // FASE LEMBRETES-3 (ponto A): erro permanente ESPECIFICAMENTE do modelo
+  // (132xxx, ou um código futuro desconhecido tratado como "revisar
+  // manualmente") nunca tinha nenhum aviso pra dona — só ficava visível
+  // olhando o banco direto (achado real: 3 falhas com erro 132018 em
+  // 01-02/11/2026, nenhuma delas chegou a avisar o sino). Nunca duplica o
+  // aviso de incidente de circuito acima (isPermanentTemplateRejectionError
+  // já exclui qualquer código com circuitBreaker.kind !== "none").
+  const metaCodeForAlert = outcome.kind === "http_error" ? outcome.metaCode : undefined;
+  if (
+    classified.class === "permanent" &&
+    isPermanentTemplateRejectionError(classified, metaCodeForAlert)
+  ) {
+    await notifyTemplateRejected(supabaseAdmin, {
+      ownerId: input.ownerId,
+      templateKey: input.templateKey,
+      templateName: template.metaTemplateName,
+      metaErrorCode: metaCodeForAlert ?? null,
+      context: "lembrete",
+    });
   }
 
   if (classified.class === "uncertain") {

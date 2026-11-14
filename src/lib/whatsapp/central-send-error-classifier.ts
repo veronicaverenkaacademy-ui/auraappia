@@ -216,3 +216,30 @@ export function classifySendError(
     reason: `HTTP ${status}${metaCode !== undefined ? ` (código Meta ${metaCode})` : ""} não mapeado — tratado como permanente por segurança; revisar manualmente.`,
   };
 }
+
+/**
+ * FASE LEMBRETES-3 (ponto A): identifica, de forma pura (sem I/O), se um
+ * erro permanente é especificamente um problema do MODELO em si (payload/
+ * configuração do template rejeitado pela Meta) — para decidir se vale
+ * avisar a dona no sino. Dois critérios, exatamente como a dona descreveu:
+ *   1. Qualquer código Meta na faixa 132000-132999 (família de erros de
+ *      template: variável errada, botão errado, texto grande demais, etc.)
+ *      que NÃO já abre um incidente de circuito (132015/132016 já notificam
+ *      via notifyOwnersOfCentralIncident — nunca duplicar o aviso aqui).
+ *   2. O caso "não mapeado" (ex.: 132018 antes de ser catalogado, ou um
+ *      código futuro desconhecido) — identificado pelo texto fixo "revisar
+ *      manualmente" que só aparece nesse fallback (ver função acima).
+ * Nunca chamada para erros "transient"/"uncertain" (quem chama já filtra
+ * por `class === "permanent"` antes) nem para erros que já têm freio de
+ * circuito próprio (190, 80007, 130429, 131048, 429, 401/403) — esses já são
+ * avisados pelo mecanismo existente, um aviso a mais seria duplicado e
+ * confuso.
+ */
+export function isPermanentTemplateRejectionError(
+  classified: Pick<ClassifiedSendError, "reason" | "circuitBreaker">,
+  metaCode: number | undefined,
+): boolean {
+  if (classified.circuitBreaker.kind !== "none") return false;
+  if (metaCode !== undefined && metaCode >= 132000 && metaCode < 133000) return true;
+  return classified.reason.includes("revisar manualmente");
+}

@@ -13,6 +13,7 @@ import {
   sendOtpViaMeta,
 } from "../src/lib/otp/send-otp-meta.server.ts";
 import { getSystemTemplate } from "../src/lib/marketing/system-templates.ts";
+import { FakeSupabaseAdmin } from "./helpers/fake-supabase.ts";
 
 const PHONE_NUMBER_ID = "888000111";
 const REAL_FETCH = globalThis.fetch;
@@ -69,6 +70,19 @@ function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "content-type": "application/json" },
+  });
+}
+
+// FASE LEMBRETES-3 (ponto B): sendOtpViaMeta agora registra cada tentativa
+// (melhor esforço) em whatsapp_otp_send_log — todo teste abaixo injeta este
+// banco simulado pra nunca depender do fallback real (que lançaria por
+// faltar SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY neste ambiente de teste,
+// mesmo coberto por try/catch), mesmo padrão já usado em
+// tests/central-cron-run-log.test.ts.
+function makeDb() {
+  return new FakeSupabaseAdmin({
+    tables: { whatsapp_otp_send_log: [], app_notifications: [], automations: [] },
+    uniqueKeys: { app_notifications: [["owner_id", "dedupe_key"]] },
   });
 }
 
@@ -179,7 +193,9 @@ test("modo teste ligado + telefone NA lista: não bloqueado (envia)", async () =
   process.env.WHATSAPP_OTP_META_TEST_MODE = "true";
   process.env.WHATSAPP_OTP_META_TEST_PHONES = "+5547988880000, +5547977770000";
   const calls = stubFetch(() => jsonResponse(200, { messages: [{ id: "wamid.OTP_001" }] }));
-  const result = await sendOtpViaMeta("+5547977770000", "123456");
+  const result = await sendOtpViaMeta("+5547977770000", "123456", {
+    supabaseAdmin: makeDb() as never,
+  });
   assert.deepEqual(result, { kind: "enviado" });
   assert.equal(calls.length, 1);
 });
@@ -188,7 +204,9 @@ test("formato recomendado pra dona (55+DDD+número, só dígitos, sem '+') é ac
   process.env.WHATSAPP_OTP_META_TEST_MODE = "true";
   process.env.WHATSAPP_OTP_META_TEST_PHONES = "5547977770000";
   const calls = stubFetch(() => jsonResponse(200, { messages: [{ id: "wamid.OTP_FORMATO" }] }));
-  const result = await sendOtpViaMeta("+5547977770000", "123456");
+  const result = await sendOtpViaMeta("+5547977770000", "123456", {
+    supabaseAdmin: makeDb() as never,
+  });
   assert.deepEqual(result, { kind: "enviado" });
   assert.equal(calls.length, 1);
 });
@@ -198,7 +216,9 @@ test("outros formatos na lista também funcionam (com '+', com espaço, com tra�
   for (const listado of ["5547977770000", "+5547977770000", " 5547977770000 ", "(47) 97777-0000"]) {
     process.env.WHATSAPP_OTP_META_TEST_PHONES = listado;
     const calls = stubFetch(() => jsonResponse(200, { messages: [{ id: "wamid.OTP_X" }] }));
-    const result = await sendOtpViaMeta("+5547977770000", "123456");
+    const result = await sendOtpViaMeta("+5547977770000", "123456", {
+      supabaseAdmin: makeDb() as never,
+    });
     assert.deepEqual(result, { kind: "enviado" }, `formato "${listado}" deveria ter sido aceito`);
     assert.equal(calls.length, 1);
   }
@@ -208,7 +228,9 @@ test("modo teste ligado + telefone FORA da lista: bloqueado, NUNCA chama fetch, 
   process.env.WHATSAPP_OTP_META_TEST_MODE = "true";
   process.env.WHATSAPP_OTP_META_TEST_PHONES = "+5547988880000";
   const calls = neverCallFetch();
-  const result = await sendOtpViaMeta("+5547999990001", "123456");
+  const result = await sendOtpViaMeta("+5547999990001", "123456", {
+    supabaseAdmin: makeDb() as never,
+  });
   assert.deepEqual(result, { kind: "bloqueado_modo_teste" });
   assert.equal(calls.length, 0, "fetch não deveria ter sido chamado");
 });
@@ -217,7 +239,9 @@ test('modo teste DESLIGADO ("false" explícito): envia pra qualquer telefone', a
   process.env.WHATSAPP_OTP_META_TEST_MODE = "false";
   process.env.WHATSAPP_OTP_META_TEST_PHONES = "";
   const calls = stubFetch(() => jsonResponse(200, { messages: [{ id: "wamid.OTP_002" }] }));
-  const result = await sendOtpViaMeta("+5547999990001", "123456");
+  const result = await sendOtpViaMeta("+5547999990001", "123456", {
+    supabaseAdmin: makeDb() as never,
+  });
   assert.deepEqual(result, { kind: "enviado" });
   assert.equal(calls.length, 1);
 });
@@ -231,7 +255,9 @@ test("chaves de lembrete (WHATSAPP_REMINDERS_ENABLED/_TEST_MODE/_TEST_PHONES) NU
   process.env.WHATSAPP_OTP_META_TEST_MODE = "true";
   process.env.WHATSAPP_OTP_META_TEST_PHONES = "+5547988880000";
   const calls = neverCallFetch();
-  const result = await sendOtpViaMeta("+5547999990001", "123456");
+  const result = await sendOtpViaMeta("+5547999990001", "123456", {
+    supabaseAdmin: makeDb() as never,
+  });
   assert.deepEqual(result, { kind: "bloqueado_modo_teste" });
   assert.equal(calls.length, 0);
 });
@@ -241,14 +267,18 @@ test("chaves de lembrete (WHATSAPP_REMINDERS_ENABLED/_TEST_MODE/_TEST_PHONES) NU
 test("sucesso (200 com messages[0].id): 'enviado'", async () => {
   process.env.WHATSAPP_OTP_META_TEST_MODE = "false";
   stubFetch(() => jsonResponse(200, { messages: [{ id: "wamid.OK" }] }));
-  const result = await sendOtpViaMeta("+5547999990001", "123456");
+  const result = await sendOtpViaMeta("+5547999990001", "123456", {
+    supabaseAdmin: makeDb() as never,
+  });
   assert.deepEqual(result, { kind: "enviado" });
 });
 
 test("erro 131026 (não entregável / sem WhatsApp): 'sem_whatsapp'", async () => {
   process.env.WHATSAPP_OTP_META_TEST_MODE = "false";
   stubFetch(() => jsonResponse(470, { error: { code: 131026, message: "Message undeliverable" } }));
-  const result = await sendOtpViaMeta("+5547999990001", "123456");
+  const result = await sendOtpViaMeta("+5547999990001", "123456", {
+    supabaseAdmin: makeDb() as never,
+  });
   assert.deepEqual(result, { kind: "sem_whatsapp" });
 });
 
@@ -257,7 +287,9 @@ test("erro 132001 (template inexistente/não aprovado): 'falha_generica' (nunca 
   stubFetch(() =>
     jsonResponse(400, { error: { code: 132001, message: "Template name does not exist" } }),
   );
-  const result = await sendOtpViaMeta("+5547999990001", "123456");
+  const result = await sendOtpViaMeta("+5547999990001", "123456", {
+    supabaseAdmin: makeDb() as never,
+  });
   assert.deepEqual(result, { kind: "falha_generica" });
 });
 
@@ -266,7 +298,9 @@ test("erro 190 (token inválido): 'falha_generica'", async () => {
   stubFetch(() =>
     jsonResponse(401, { error: { code: 190, message: "Invalid OAuth access token" } }),
   );
-  const result = await sendOtpViaMeta("+5547999990001", "123456");
+  const result = await sendOtpViaMeta("+5547999990001", "123456", {
+    supabaseAdmin: makeDb() as never,
+  });
   assert.deepEqual(result, { kind: "falha_generica" });
 });
 
@@ -275,7 +309,9 @@ test("timeout/erro de rede (fetch rejeita): 'falha_generica'", async () => {
   globalThis.fetch = (async () => {
     throw new Error("network down (simulado)");
   }) as typeof fetch;
-  const result = await sendOtpViaMeta("+5547999990001", "123456");
+  const result = await sendOtpViaMeta("+5547999990001", "123456", {
+    supabaseAdmin: makeDb() as never,
+  });
   assert.deepEqual(result, { kind: "falha_generica" });
 });
 
@@ -298,7 +334,9 @@ test("sem META_WHATSAPP_CENTRAL_PHONE_NUMBER_ID/ACCESS_TOKEN configurados: 'falh
   delete process.env.META_WHATSAPP_CENTRAL_PHONE_NUMBER_ID;
   delete process.env.META_WHATSAPP_CENTRAL_ACCESS_TOKEN;
   const calls = neverCallFetch();
-  const result = await sendOtpViaMeta("+5547999990001", "123456");
+  const result = await sendOtpViaMeta("+5547999990001", "123456", {
+    supabaseAdmin: makeDb() as never,
+  });
   assert.deepEqual(result, { kind: "falha_generica" });
   assert.equal(calls.length, 0);
 });
@@ -318,7 +356,7 @@ test("nenhuma chamada de console.error inclui o telefone completo ou o código O
     logged.push(args.map((a) => String(a)).join(" "));
   };
   try {
-    await sendOtpViaMeta(PHONE, CODE);
+    await sendOtpViaMeta(PHONE, CODE, { supabaseAdmin: makeDb() as never });
   } finally {
     console.error = originalError;
   }
@@ -330,4 +368,151 @@ test("nenhuma chamada de console.error inclui o telefone completo ou o código O
     );
     assert.ok(!line.includes(CODE), `log não deveria conter o código OTP: "${line}"`);
   }
+});
+
+// ===== FASE LEMBRETES-3 (ponto B) — registro em whatsapp_otp_send_log + aviso no sino =====
+
+test("sucesso grava 'sent' em whatsapp_otp_send_log, sem código/classe de erro", async () => {
+  process.env.WHATSAPP_OTP_META_TEST_MODE = "false";
+  stubFetch(() => jsonResponse(200, { messages: [{ id: "wamid.LOG_OK" }] }));
+  const db = makeDb();
+  await sendOtpViaMeta("+5547999990001", "123456", { supabaseAdmin: db as never });
+  assert.equal(db.tables.whatsapp_otp_send_log.length, 1);
+  const row = db.tables.whatsapp_otp_send_log[0];
+  assert.equal(row.outcome, "sent");
+  assert.equal(row.template_name, "autenti_");
+  assert.equal(row.owner_id, null);
+  assert.equal(row.meta_error_code, null);
+  assert.equal(row.error_class, null);
+});
+
+test("falha permanente (132012) grava 'failed' com meta_error_code=132012 e error_class='permanent'", async () => {
+  process.env.WHATSAPP_OTP_META_TEST_MODE = "false";
+  stubFetch(() =>
+    jsonResponse(400, { error: { code: 132012, message: "Parameter format mismatch" } }),
+  );
+  const db = makeDb();
+  await sendOtpViaMeta("+5547999990001", "123456", { supabaseAdmin: db as never });
+  const row = db.tables.whatsapp_otp_send_log[0];
+  assert.equal(row.outcome, "failed");
+  assert.equal(row.meta_error_code, 132012);
+  assert.equal(row.error_class, "permanent");
+});
+
+test("falha transitória (5xx sem código Meta) grava error_class='temporary'", async () => {
+  process.env.WHATSAPP_OTP_META_TEST_MODE = "false";
+  stubFetch(() => jsonResponse(503, { error: { message: "unavailable" } }));
+  const db = makeDb();
+  await sendOtpViaMeta("+5547999990001", "123456", { supabaseAdmin: db as never });
+  const row = db.tables.whatsapp_otp_send_log[0];
+  assert.equal(row.outcome, "failed");
+  assert.equal(row.error_class, "temporary");
+});
+
+test("timeout (nem permanente nem temporário) grava error_class=null", async () => {
+  process.env.WHATSAPP_OTP_META_TEST_MODE = "false";
+  globalThis.fetch = (() => {
+    const err = new Error("timeout simulado");
+    err.name = "AbortError";
+    return Promise.reject(err);
+  }) as typeof fetch;
+  const db = makeDb();
+  await sendOtpViaMeta("+5547999990001", "123456", { supabaseAdmin: db as never });
+  const row = db.tables.whatsapp_otp_send_log[0];
+  assert.equal(row.outcome, "failed");
+  assert.equal(row.meta_error_code, null);
+  assert.equal(row.error_class, null);
+});
+
+test("modo teste bloqueado (nunca chegou a tentar a Meta) NÃO grava nada em whatsapp_otp_send_log", async () => {
+  process.env.WHATSAPP_OTP_META_TEST_MODE = "true";
+  process.env.WHATSAPP_OTP_META_TEST_PHONES = "+5547988880000";
+  neverCallFetch();
+  const db = makeDb();
+  await sendOtpViaMeta("+5547999990001", "123456", { supabaseAdmin: db as never });
+  assert.equal(db.tables.whatsapp_otp_send_log.length, 0);
+});
+
+test("sem número central configurado (nunca chegou a tentar a Meta) NÃO grava nada em whatsapp_otp_send_log", async () => {
+  process.env.WHATSAPP_OTP_META_TEST_MODE = "false";
+  delete process.env.META_WHATSAPP_CENTRAL_PHONE_NUMBER_ID;
+  delete process.env.META_WHATSAPP_CENTRAL_ACCESS_TOKEN;
+  neverCallFetch();
+  const db = makeDb();
+  await sendOtpViaMeta("+5547999990001", "123456", { supabaseAdmin: db as never });
+  assert.equal(db.tables.whatsapp_otp_send_log.length, 0);
+});
+
+test("erro de modelo permanente (132018) dispara o MESMO aviso no sino da Parte A — broadcast pra TODAS as donas com automação de sistema ativa (sem ownerId)", async () => {
+  process.env.WHATSAPP_OTP_META_TEST_MODE = "false";
+  stubFetch(() => jsonResponse(400, { error: { code: 132018, message: "x" } }));
+  const db = new FakeSupabaseAdmin({
+    tables: {
+      whatsapp_otp_send_log: [],
+      app_notifications: [],
+      automations: [
+        { owner_id: "owner-1", is_system: true, active: true },
+        { owner_id: "owner-2", is_system: true, active: true },
+        { owner_id: "owner-3", is_system: true, active: false }, // inativa: nunca avisada
+      ],
+    },
+    uniqueKeys: { app_notifications: [["owner_id", "dedupe_key"]] },
+  });
+  await sendOtpViaMeta("+5547999990001", "123456", { supabaseAdmin: db as never });
+  assert.equal(db.tables.app_notifications.length, 2);
+  const owners = db.tables.app_notifications.map((n) => n.owner_id).sort();
+  assert.deepEqual(owners, ["owner-1", "owner-2"]);
+  for (const n of db.tables.app_notifications) {
+    assert.equal(n.kind, "whatsapp_template_rejected");
+    assert.match(n.body as string, /código de confirmação/i);
+  }
+});
+
+test("dedupe: 10 tentativas seguidas com o mesmo erro de modelo (132018) geram só 1 aviso no sino", async () => {
+  process.env.WHATSAPP_OTP_META_TEST_MODE = "false";
+  stubFetch(() => jsonResponse(400, { error: { code: 132018, message: "x" } }));
+  const db = new FakeSupabaseAdmin({
+    tables: {
+      whatsapp_otp_send_log: [],
+      app_notifications: [],
+      automations: [{ owner_id: "owner-1", is_system: true, active: true }],
+    },
+    uniqueKeys: { app_notifications: [["owner_id", "dedupe_key"]] },
+  });
+  for (let i = 0; i < 10; i++) {
+    await sendOtpViaMeta("+5547999990001", "123456", { supabaseAdmin: db as never });
+  }
+  assert.equal(db.tables.app_notifications.length, 1);
+  assert.equal(db.tables.whatsapp_otp_send_log.length, 10); // o LOG grava todas as 10, só o AVISO é deduplicado
+});
+
+test("131026 (número inválido — problema do destinatário, não do modelo) grava o log 'failed', mas NÃO dispara aviso no sino", async () => {
+  process.env.WHATSAPP_OTP_META_TEST_MODE = "false";
+  stubFetch(() => jsonResponse(470, { error: { code: 131026, message: "x" } }));
+  const db = new FakeSupabaseAdmin({
+    tables: {
+      whatsapp_otp_send_log: [],
+      app_notifications: [],
+      automations: [{ owner_id: "owner-1", is_system: true, active: true }],
+    },
+    uniqueKeys: { app_notifications: [["owner_id", "dedupe_key"]] },
+  });
+  await sendOtpViaMeta("+5547999990001", "123456", { supabaseAdmin: db as never });
+  assert.equal(db.tables.whatsapp_otp_send_log.length, 1);
+  assert.equal(db.tables.whatsapp_otp_send_log[0].outcome, "failed");
+  assert.equal(db.tables.app_notifications.length, 0);
+});
+
+test("falha ao gravar log/aviso (banco indisponível) NUNCA muda o resultado do login", async () => {
+  process.env.WHATSAPP_OTP_META_TEST_MODE = "false";
+  stubFetch(() => jsonResponse(400, { error: { code: 132018, message: "x" } }));
+  const throwingDb = {
+    from() {
+      throw new Error("Missing Supabase environment variable(s) (simulado)");
+    },
+  };
+  const result = await sendOtpViaMeta("+5547999990001", "123456", {
+    supabaseAdmin: throwingDb as never,
+  });
+  assert.deepEqual(result, { kind: "falha_generica" });
 });

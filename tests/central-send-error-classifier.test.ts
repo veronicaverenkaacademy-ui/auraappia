@@ -2,7 +2,10 @@
 // Rodar com: node --experimental-strip-types --test tests/central-send-error-classifier.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifySendError } from "../src/lib/whatsapp/central-send-error-classifier.ts";
+import {
+  classifySendError,
+  isPermanentTemplateRejectionError,
+} from "../src/lib/whatsapp/central-send-error-classifier.ts";
 
 test("erro de rede antes de qualquer resposta é transitório, sem freio", () => {
   const r = classifySendError({ kind: "network_error" }, "lembrete_24h");
@@ -90,4 +93,67 @@ test("código totalmente desconhecido é tratado como permanente, sem freio, por
   assert.equal(r.class, "permanent");
   assert.equal(r.circuitBreaker.kind, "none");
   assert.match(r.reason, /não mapeado/);
+});
+
+// ===== FASE LEMBRETES-3 ponto A — isPermanentTemplateRejectionError =====
+
+test("132000 (contagem de variáveis) é erro de modelo — deve avisar", () => {
+  const r = classifySendError(
+    { kind: "http_error", status: 400, metaCode: 132000 },
+    "lembrete_24h",
+  );
+  assert.equal(isPermanentTemplateRejectionError(r, 132000), true);
+});
+
+test("132018 (achado real, não catalogado em META_CODE_TABLE) é erro de modelo — deve avisar", () => {
+  const r = classifySendError(
+    { kind: "http_error", status: 400, metaCode: 132018 },
+    "lembrete_24h",
+  );
+  assert.equal(isPermanentTemplateRejectionError(r, 132018), true);
+});
+
+test("qualquer código totalmente desconhecido (fallback 'revisar manualmente') é erro de modelo — deve avisar", () => {
+  const r = classifySendError(
+    { kind: "http_error", status: 400, metaCode: 777777 },
+    "lembrete_24h",
+  );
+  assert.equal(isPermanentTemplateRejectionError(r, 777777), true);
+});
+
+test("HTTP sem metaCode nenhum (status desconhecido) ainda cai no fallback 'revisar manualmente' — deve avisar", () => {
+  const r = classifySendError({ kind: "http_error", status: 418 }, "lembrete_24h");
+  assert.equal(isPermanentTemplateRejectionError(r, undefined), true);
+});
+
+test("131026 (número inválido/não entregável) NÃO é erro de modelo — não deve avisar", () => {
+  const r = classifySendError(
+    { kind: "http_error", status: 400, metaCode: 131026 },
+    "lembrete_24h",
+  );
+  assert.equal(isPermanentTemplateRejectionError(r, 131026), false);
+});
+
+test("132015 (template pausado) já tem freio de circuito próprio — nunca duplica o aviso aqui", () => {
+  const r = classifySendError(
+    { kind: "http_error", status: 400, metaCode: 132015 },
+    "lembrete_24h",
+  );
+  assert.equal(r.circuitBreaker.kind, "template"); // confirma que o freio já cobre este caso
+  assert.equal(isPermanentTemplateRejectionError(r, 132015), false);
+});
+
+test("190 (token inválido) já tem freio global — nunca duplica o aviso aqui", () => {
+  const r = classifySendError({ kind: "http_error", status: 400, metaCode: 190 }, "lembrete_24h");
+  assert.equal(isPermanentTemplateRejectionError(r, 190), false);
+});
+
+test("erro transitório (rede/timeout/limite de taxa) nunca é erro de modelo", () => {
+  const rede = classifySendError({ kind: "network_error" }, "lembrete_24h");
+  assert.equal(isPermanentTemplateRejectionError(rede, undefined), false);
+  const taxa = classifySendError(
+    { kind: "http_error", status: 400, metaCode: 80007 },
+    "lembrete_24h",
+  );
+  assert.equal(isPermanentTemplateRejectionError(taxa, 80007), false);
 });

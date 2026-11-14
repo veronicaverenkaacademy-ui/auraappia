@@ -22,6 +22,7 @@ import { cleanupExpiredOrphanMessages } from "./central-orphan-retention.server.
 import { recoverStuckReminderJobs } from "./central-stuck-job-recovery.server.ts";
 import { startCronRun, finishCronRun, cleanupOldCronRuns } from "./central-cron-run-log.server.ts";
 import { checkCronRequest } from "./central-cron-auth.ts";
+import { cleanupOldOtpSendLogs } from "../otp/otp-send-log.server.ts";
 
 export async function handleWhatsappCronRequest(request: Request): Promise<Response> {
   // Guarda (método + CRON_SECRET/CRON_SECRET_DB) extraída pra
@@ -51,6 +52,11 @@ export async function handleWhatsappCronRequest(request: Request): Promise<Respo
     // próprio histórico do cron — sem coluna nova (nenhuma mudança na
     // migração SQL aprovada), só reportado no JSON de resposta.
     const cronRunsRetention = await cleanupOldCronRuns();
+    // FASE LEMBRETES-3 (ponto B): retenção de 30 dias do log de envio de OTP
+    // (whatsapp_otp_send_log) — mesmo padrão/motivo de cronRunsRetention
+    // acima. Só reportado no JSON de resposta, nenhuma coluna nova em
+    // whatsapp_cron_runs.
+    const otpSendLogRetention = await cleanupOldOtpSendLogs();
 
     await finishCronRun(runId, {
       ok: true,
@@ -75,6 +81,7 @@ export async function handleWhatsappCronRequest(request: Request): Promise<Respo
         processed,
         orphanCleanup,
         cronRunsRetention,
+        otpSendLogRetention,
       }),
       { status: 200, headers: { "content-type": "application/json" } },
     );
