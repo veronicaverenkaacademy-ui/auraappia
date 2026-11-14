@@ -20,6 +20,7 @@ import {
   assertServiceBookable,
   assertProfessionalBookable,
   assertSlotAllowed,
+  confirmationStatusResetOnReschedule,
   type SupabaseAdmin,
 } from "../src/lib/booking-validation.server.ts";
 import type { BusinessHours } from "../src/lib/booking-slots.ts";
@@ -322,5 +323,60 @@ test("GUARDA: rescheduleClientAppointment chama assertSlotAllowed só com o hor�
     args,
     /appt\.starts_at/,
     "nunca deveria usar appt.starts_at (horário ORIGINAL) na validação",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// FASE LEMBRETES-5 (ajuste, Parte 4): quando a cliente remarca pelo portal,
+// client_confirmation_status='reschedule_requested' (flag obsoleta, deixada
+// por um toque antigo em "Reagendar" no WhatsApp) precisa voltar a 'pending'
+// na mesma atualização — qualquer outro valor fica intocado (ver docstring
+// de confirmationStatusResetOnReschedule em booking.functions.ts pra por que
+// 'confirmed' especificamente NÃO é tocado).
+// ---------------------------------------------------------------------------
+describe("confirmationStatusResetOnReschedule — só reschedule_requested volta a pending", () => {
+  test("reschedule_requested -> pending", () => {
+    assert.equal(confirmationStatusResetOnReschedule("reschedule_requested"), "pending");
+  });
+
+  test("confirmed fica intocado (undefined = nenhuma mudança no update)", () => {
+    assert.equal(confirmationStatusResetOnReschedule("confirmed"), undefined);
+  });
+
+  test("declined fica intocado", () => {
+    assert.equal(confirmationStatusResetOnReschedule("declined"), undefined);
+  });
+
+  test("pending fica intocado (já é o valor, não precisa reescrever)", () => {
+    assert.equal(confirmationStatusResetOnReschedule("pending"), undefined);
+  });
+
+  test("null/undefined (agendamento nunca recebeu nenhuma resposta) fica intocado", () => {
+    assert.equal(confirmationStatusResetOnReschedule(null), undefined);
+    assert.equal(confirmationStatusResetOnReschedule(undefined), undefined);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GUARDA: a chamada real em rescheduleClientAppointment usa de fato
+// confirmationStatusResetOnReschedule (e não uma condição duplicada/divergente
+// escrita direto ali) e só inclui client_confirmation_status no update
+// quando o resultado não é undefined — protege contra um refactor futuro que
+// reintroduza a lógica inline e ela divergir silenciosamente da função
+// testada acima.
+// ---------------------------------------------------------------------------
+test("GUARDA: rescheduleClientAppointment usa confirmationStatusResetOnReschedule(appt.client_confirmation_status) e só grava quando truthy", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/lib/booking.functions.ts", import.meta.url), "utf8");
+  const rescheduleBody = src.slice(src.indexOf("export const rescheduleClientAppointment"));
+  assert.match(
+    rescheduleBody,
+    /confirmationStatusResetOnReschedule\(\s*appt\.client_confirmation_status\s*,?\s*\)/,
+    "deveria chamar confirmationStatusResetOnReschedule com appt.client_confirmation_status",
+  );
+  assert.match(
+    rescheduleBody,
+    /resetConfirmationStatus\s*\?\s*\{\s*client_confirmation_status:\s*resetConfirmationStatus\s*\}\s*:\s*\{\}/,
+    "só deveria incluir client_confirmation_status no update quando resetConfirmationStatus não é undefined",
   );
 });
