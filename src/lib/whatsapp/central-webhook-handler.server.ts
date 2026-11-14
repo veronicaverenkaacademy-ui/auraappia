@@ -21,6 +21,7 @@ import {
 } from "./central-reply-executor.server.ts";
 import { looksLikeStopRequest } from "./central-webhook-parser.ts";
 import { blockPhoneForStopRequest, type OptOutRecipientsDb } from "./central-opt-out.server.ts";
+import { sendReplyAck, type ReplyAckAction } from "./central-reply-ack.server.ts";
 import {
   countRecentOrphanMessagesForPhone,
   ORPHAN_MAX_PER_PHONE_PER_DAY,
@@ -274,6 +275,36 @@ async function handleButtonEvent(
       professionalId: appt?.professional_id ?? null,
       notif,
     });
+  }
+
+  // FASE LEMBRETES-5: resposta curta de texto livre à cliente — só nas
+  // transições REAIS (Parte 3.1), nunca em repetição/no-op (ex.:
+  // apply_reschedule_request_repeat, no_op_already_confirmed,
+  // confirm_after_cancel, stale_reminder, late_response). Sempre melhor
+  // esforço (ver docstring de sendReplyAck): uma falha aqui nunca desfaz a
+  // mudança de estado nem o aviso no sino acima, já aplicados e persistidos.
+  const ackActionByOutcome: Partial<Record<typeof outcome, ReplyAckAction>> = {
+    apply_confirm: "confirm",
+    apply_cancel: "cancel",
+    apply_cancel_late: "cancel",
+    apply_reschedule_request: "reschedule",
+  };
+  const ackAction = ackActionByOutcome[outcome];
+  if (ackAction) {
+    await sendReplyAck(
+      deps.supabaseAdmin,
+      {
+        action: ackAction,
+        ownerId: thread.owner_id,
+        clientId: outboundMessage.client_id,
+        appointmentId: outboundMessage.appointment_id,
+        toPhoneE164: event.fromPhone,
+        eventOccurredAtIso: event.occurredAt,
+        resolvedByMessageId: inserted.id,
+      },
+      deps.now,
+      deps.logger,
+    );
   }
 }
 

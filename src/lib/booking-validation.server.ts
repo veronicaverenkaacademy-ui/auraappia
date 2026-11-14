@@ -135,3 +135,26 @@ export function assertSlotAllowed(
   const evaluation = evaluateRequestedSlot(start, now, businessHours, timeZone, durationMs, busy);
   if (!evaluation.allowed) throw bookingRejectionError(evaluation.reason);
 }
+
+// FASE LEMBRETES-5 (ajuste, Parte 4): decisão pura (sem I/O) sobre o que
+// fazer com appointments.client_confirmation_status quando a cliente
+// remarca pelo portal (rescheduleClientAppointment, em booking.functions.ts)
+// — vive aqui (não em booking.functions.ts) pelo mesmo motivo do resto deste
+// arquivo: só imports relativos, então node --test consegue importar direto.
+//
+// Só 'reschedule_requested' é resetado pra 'pending' — essa flag não tem
+// nenhum efeito em central-reminder-policy.ts (que trata qualquer valor
+// diferente de 'confirmed' como "ainda sem resposta definitiva") nem em
+// nenhuma tela hoje (agenda-card-style.ts não dá cor/badge a
+// reschedule_requested) — resetá-la é só higiene do dado, sem mudar nenhum
+// comportamento. 'confirmed'/'declined'/'pending' ficam como estão:
+// 'confirmed' TEM efeito direto (central-reminder-policy.ts pula o lembrete
+// do agendamento quando clientConfirmationStatus==='confirmed') e não há
+// regra explícita da dona sobre se uma confirmação antiga deveria "zerar" ao
+// remarcar pra um novo horário — mudar isso sem a decisão dela poderia tanto
+// corrigir quanto quebrar uma expectativa.
+export function confirmationStatusResetOnReschedule(
+  current: string | null | undefined,
+): "pending" | undefined {
+  return current === "reschedule_requested" ? "pending" : undefined;
+}

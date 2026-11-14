@@ -9,6 +9,7 @@ import {
   assertServiceBookable,
   assertProfessionalBookable,
   assertSlotAllowed,
+  confirmationStatusResetOnReschedule,
   type SupabaseAdmin,
 } from "@/lib/booking-validation.server";
 import {
@@ -288,7 +289,9 @@ export const rescheduleClientAppointment = createServerFn({ method: "POST" })
 
     const { data: appt, error: apptErr } = await supabaseAdmin
       .from("appointments")
-      .select("id, client_id, service_id, service_name, professional_id, starts_at, status")
+      .select(
+        "id, client_id, service_id, service_name, professional_id, starts_at, status, client_confirmation_status",
+      )
       .eq("id", data.appointment_id)
       .eq("owner_id", data.owner_id)
       .maybeSingle();
@@ -336,12 +339,17 @@ export const rescheduleClientAppointment = createServerFn({ method: "POST" })
 
     const endsAt = new Date(startsAt.getTime() + durationMs);
 
+    const resetConfirmationStatus = confirmationStatusResetOnReschedule(
+      appt.client_confirmation_status,
+    );
+
     const { error } = await supabaseAdmin
       .from("appointments")
       .update({
         starts_at: startsAt.toISOString(),
         ends_at: endsAt.toISOString(),
         status: "pending",
+        ...(resetConfirmationStatus ? { client_confirmation_status: resetConfirmationStatus } : {}),
       })
       .eq("id", data.appointment_id);
 
