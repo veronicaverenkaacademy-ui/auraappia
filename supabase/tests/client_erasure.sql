@@ -154,8 +154,13 @@ BEGIN
   INSERT INTO public.appointments (owner_id, client_id, starts_at, ends_at, status, price, notes)
     VALUES (v_owner_a, v_client_x_a, now() - interval '10 days', now() - interval '10 days' + interval '1 hour', 'completed', 150, 'nota do agendamento passado')
     RETURNING id INTO v_appt_past_completed;
+  -- Horário deliberadamente DIFERENTE do agendamento futuro da cliente X
+  -- (acima, também 3 dias) — produção tem uma EXCLUSION CONSTRAINT real
+  -- (appointments_no_overlap, por owner_id+professional_id+intervalo) que
+  -- o bootstrap local não replicava; descoberto só ao rodar contra o banco
+  -- real (ver relatório da fase).
   INSERT INTO public.appointments (owner_id, client_id, starts_at, ends_at, status, price)
-    VALUES (v_owner_a, v_client_other_a, now() + interval '3 days', now() + interval '3 days 1 hour', 'pending', 100)
+    VALUES (v_owner_a, v_client_other_a, now() + interval '4 days', now() + interval '4 days 1 hour', 'pending', 100)
     RETURNING id INTO v_appt_other_a;
 
   INSERT INTO zzle_ids (chave, valor) VALUES
