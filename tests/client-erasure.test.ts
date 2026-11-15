@@ -85,6 +85,7 @@ function entry(overrides: Partial<ClientErasurePlanEntry> = {}): ClientErasurePl
     photo_storage_paths: [],
     consents_count: 0,
     whatsapp_messages_count: 0,
+    orphan_whatsapp_messages_count: 0,
     central_threads_count: 0,
     confirmation_threads_count: 0,
     notification_jobs_count: 0,
