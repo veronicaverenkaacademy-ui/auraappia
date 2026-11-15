@@ -221,6 +221,12 @@ test("looksLikeStopRequest não dá falso positivo em texto comum", () => {
   assert.equal(looksLikeStopRequest("Sim, confirmo"), false);
 });
 
+test("FASE OPTOUT-1 (regressão): 'vou sair mais cedo' e 'cancelar meu horário' continuam NÃO bloqueando — regra de PARAR/SAIR/STOP intocada", () => {
+  assert.equal(looksLikeStopRequest("vou sair mais cedo"), false);
+  assert.equal(looksLikeStopRequest("cancelar meu horário"), false);
+  assert.equal(looksLikeStopRequest("cancelar meu horario"), false);
+});
+
 test("looksLikeStopRequest: variações de PARAR (caixa, pontuação, frase)", () => {
   assert.equal(looksLikeStopRequest("PARAR"), true);
   assert.equal(looksLikeStopRequest("parar"), true);

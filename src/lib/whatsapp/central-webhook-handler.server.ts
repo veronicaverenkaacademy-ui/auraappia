@@ -64,6 +64,20 @@ async function resolveRecipientUserId(
   return data?.user_id ?? null;
 }
 
+/**
+ * Só o nome — nunca o telefone — pra compor o aviso do bloqueio de
+ * opt-out (Parte 2 da FASE OPTOUT-1). `null` se a cliente não existir
+ * mais (nunca bloqueia o aviso por isso; quem chama usa um texto genérico).
+ */
+async function fetchClientFullName(deps: ResolvedDeps, clientId: string): Promise<string | null> {
+  const { data } = await deps.supabaseAdmin
+    .from("clients")
+    .select("full_name")
+    .eq("id", clientId)
+    .maybeSingle();
+  return data?.full_name ?? null;
+}
+
 async function createNotification(
   deps: ResolvedDeps,
   params: {
@@ -86,6 +100,97 @@ async function createNotification(
   // 23505 = já existe notificação com essa dedupe_key (repetição) — esperado, não é erro.
   if (error && error.code !== "23505") {
     deps.logger.error("[whatsapp:central] Falha ao criar notificação", error.message);
+  }
+}
+
+/**
+ * FASE OPTOUT-1 (15/11/2026): bloqueia o telefone pra ESTE owner_id e, só se
+ * um bloqueio NOVO foi criado, avisa no sino — dedupe pelo id do bloqueio
+ * (created=false quando já havia um ativo, ex.: segundo "PARAR" em
+ * seguida) significa NENHUM aviso novo; só um bloqueio recém-criado
+ * (primeira vez, ou de novo depois de reativada) gera um aviso. Usada tanto
+ * pelo caminho resolvido (contextId ou exatamente 1 candidato) quanto pelo
+ * caso ambíguo (2+ candidatos — ver blockAndNotifyAmbiguousStopRequest),
+ * pra nunca duplicar o texto do aviso nos dois lugares.
+ */
+async function blockAndNotifyStopRequest(
+  deps: ResolvedDeps,
+  ownerId: string,
+  clientId: string | null,
+  appointmentId: string | null,
+  fromPhone: string,
+): Promise<void> {
+  const blockResult = await blockPhoneForStopRequest(
+    // Cast: whatsapp_blocked_recipients ainda não existe em types.ts
+    // (migration aplicada fora do fluxo normal da Lovable — ver
+    // OptOutRecipientsDb).
+    deps.supabaseAdmin as unknown as OptOutRecipientsDb,
+    ownerId,
+    fromPhone,
+    deps.logger,
+  );
+  if (!blockResult.created) return;
+  const clientName = clientId ? await fetchClientFullName(deps, clientId) : null;
+  // Nome da cliente é interno (só quem já vê avisos de agendamento) — o
+  // telefone NUNCA entra no título/corpo.
+  const who = clientName ?? "A cliente";
+  await createNotification(deps, {
+    ownerId,
+    appointmentId,
+    professionalId: null,
+    notif: {
+      kind: "client_stop_request",
+      title: "Cliente pediu para parar os lembretes",
+      body: `${who} pediu para não receber lembretes automáticos pelo WhatsApp. Ela não receberá mais lembretes. Se foi engano, você pode reativar na ficha da cliente.`,
+      dedupeKey: `client_stop_request:${blockResult.blockId}`,
+    },
+  });
+}
+
+const MAX_AMBIGUOUS_STOP_REQUEST_CANDIDATES = 5;
+
+/**
+ * FASE OPTOUT-1, Parte 1 (decisão da dona, 15/11/2026): quando um PARAR
+ * chega SEM contexto de mensagem específica e a resolução por telefone
+ * (findOrphanCandidates) encontra 2+ salões candidatos, bloquear em
+ * NENHUM deles (comportamento anterior) deixava o pedido se perder em
+ * silêncio — um risco pior do que bloquear de mais. Por isso bloqueia em
+ * TODOS os candidatos (um bloqueio por owner_id, cada um com seu próprio
+ * aviso no sino), com um limite de segurança de
+ * MAX_AMBIGUOUS_STOP_REQUEST_CANDIDATES — acima disso, só os mais recentes
+ * (candidates já vem ordenado por created_at desc, ver findOrphanCandidates)
+ * são bloqueados, e o excesso é só logado (nunca com telefone).
+ *
+ * Melhor esforço POR SALÃO: cada candidato é tratado em seu próprio
+ * try/catch — uma falha num nunca impede os outros, mesmo padrão já usado
+ * pelo loop de eventos em handleCentralWebhookEvents.
+ */
+async function blockAndNotifyAmbiguousStopRequest(
+  deps: ResolvedDeps,
+  candidates: { ownerId: string; clientId: string | null; appointmentId: string | null }[],
+  fromPhone: string,
+): Promise<void> {
+  if (candidates.length > MAX_AMBIGUOUS_STOP_REQUEST_CANDIDATES) {
+    deps.logger.error(
+      `[whatsapp:central] PARAR ambíguo com ${candidates.length} salões candidatos — bloqueando só nos ${MAX_AMBIGUOUS_STOP_REQUEST_CANDIDATES} mais recentes.`,
+    );
+  }
+  const targets = candidates.slice(0, MAX_AMBIGUOUS_STOP_REQUEST_CANDIDATES);
+  for (const candidate of targets) {
+    try {
+      await blockAndNotifyStopRequest(
+        deps,
+        candidate.ownerId,
+        candidate.clientId,
+        candidate.appointmentId,
+        fromPhone,
+      );
+    } catch (e) {
+      deps.logger.error(
+        "[whatsapp:central] Falha ao bloquear/avisar um dos salões candidatos (PARAR ambíguo) — melhor esforço, os outros salões continuam.",
+        e instanceof Error ? e.message : String(e),
+      );
+    }
   }
 }
 
@@ -406,8 +511,34 @@ async function handleTextOrOtherEvent(
         candidate_count: candidates.length,
         received_at: event.occurredAt,
       });
-      if (error && error.code !== "23505") {
+      // 23505 = esta MESMA mensagem (messageId) já foi processada antes —
+      // reentrega/retentativa da Meta do mesmo evento. Nunca reprocessa o
+      // PARAR ambíguo abaixo nesse caso (idempotência: repetir o mesmo
+      // evento não duplica bloqueio nem aviso); qualquer outro erro no
+      // insert (infra real) NÃO impede a tentativa de bloqueio — bloquear
+      // é o objetivo principal desta regra, uma falha ao só REGISTRAR a
+      // mensagem órfã não deveria custar isso.
+      const isRetryOfSameEvent = error?.code === "23505";
+      if (error && !isRetryOfSameEvent) {
         deps.logger.error("[whatsapp:central] Falha ao gravar mensagem órfã", error.message);
+      }
+
+      if (!isRetryOfSameEvent && event.kind === "text" && looksLikeStopRequest(event.text)) {
+        // FASE OPTOUT-1, Parte 1 (decisão da dona, 15/11/2026): um PARAR
+        // ambíguo (2+ salões candidatos) NUNCA pode se perder em silêncio —
+        // bloqueia em TODOS os candidatos (ver docstring de
+        // blockAndNotifyAmbiguousStopRequest). Zero candidatos: não há
+        // owner_id nenhum pra bloquear — fica só o registro acima (órfã) e
+        // este log, sem telefone; o próximo lembrete de verdade que algum
+        // salão mandar pra este número abre um contexto resolvível (ver
+        // relatório).
+        if (candidates.length === 0) {
+          deps.logger.error(
+            "[whatsapp:central] PARAR sem nenhum salão candidato nos últimos 7 dias — nenhum bloqueio criado (não há como saber o salão).",
+          );
+        } else {
+          await blockAndNotifyAmbiguousStopRequest(deps, candidates, event.fromPhone);
+        }
       }
       return;
     }
@@ -436,25 +567,13 @@ async function handleTextOrOtherEvent(
     // bloqueado automaticamente"); agora bloqueia de verdade
     // (whatsapp_blocked_recipients) — melhor esforço, nunca lança (uma
     // falha aqui não pode impedir o aviso nem a confirmação à Meta).
-    await blockPhoneForStopRequest(
-      // Cast: whatsapp_blocked_recipients ainda não existe em types.ts
-      // (migration não aplicada nesta fase) — ver OptOutRecipientsDb.
-      deps.supabaseAdmin as unknown as OptOutRecipientsDb,
+    await blockAndNotifyStopRequest(
+      deps,
       resolved.ownerId,
+      resolved.clientId,
+      resolved.appointmentId,
       event.fromPhone,
-      deps.logger,
     );
-    await createNotification(deps, {
-      ownerId: resolved.ownerId,
-      appointmentId: resolved.appointmentId,
-      professionalId: null,
-      notif: {
-        kind: "client_stop_request",
-        title: "Cliente pediu para parar de receber mensagens",
-        body: "O envio de novos lembretes automáticos para este telefone foi bloqueado. Avalie contatar a cliente se quiser reverter.",
-        dedupeKey: null,
-      },
-    });
     return;
   }
 

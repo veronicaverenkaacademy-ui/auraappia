@@ -15,6 +15,16 @@ export type Row = Record<string, unknown>;
 export type FakeSupabaseSeed = {
   tables?: Record<string, Row[]>;
   uniqueKeys?: Record<string, string[][]>;
+  /**
+   * Índice único PARCIAL de verdade (`CREATE UNIQUE INDEX ... WHERE col IS
+   * NULL`), ex.: whatsapp_blocked_recipients_active_idx (owner_id,
+   * phone_e164) WHERE unblocked_at IS NULL. Diferente de `uniqueKeys`
+   * (onde NULL numa coluna da chave nunca conflita, padrão Postgres comum):
+   * aqui `nullWhen` é a coluna cuja AUSÊNCIA de valor é a própria condição
+   * do índice — só conflita se a linha nova E a linha existente tiverem
+   * `nullWhen` nulo/ausente, além de `keys` baterem.
+   */
+  partialUniqueKeys?: Record<string, { keys: string[]; nullWhen: string }[]>;
   /** Função SQL chamada via .rpc() — simula apply_whatsapp_central_reply nos testes que não sobem um Postgres real. */
   rpcHandlers?: Record<string, (params: Record<string, unknown>, db: FakeSupabaseAdmin) => unknown>;
 };
@@ -39,6 +49,7 @@ function uniqueOrNoRowsError(rowCount: number): PgError {
 export class FakeSupabaseAdmin {
   tables: Record<string, Row[]> = {};
   private uniqueKeys: Record<string, string[][]>;
+  private partialUniqueKeys: Record<string, { keys: string[]; nullWhen: string }[]>;
   private rpcHandlers: Record<
     string,
     (params: Record<string, unknown>, db: FakeSupabaseAdmin) => unknown
@@ -52,6 +63,7 @@ export class FakeSupabaseAdmin {
       this.tables[name] = rows.map((r) => ({ ...r }));
     }
     this.uniqueKeys = seed.uniqueKeys ?? {};
+    this.partialUniqueKeys = seed.partialUniqueKeys ?? {};
     this.rpcHandlers = seed.rpcHandlers ?? {};
   }
 
@@ -62,13 +74,29 @@ export class FakeSupabaseAdmin {
   private matchesUnique(table: string, candidate: Row): boolean {
     const keysList = this.uniqueKeys[table] ?? [];
     const rows = this.tables[table] ?? [];
-    return keysList.some((keys) => {
+    const plainConflict = keysList.some((keys) => {
       // Padrão Postgres (índice único comum OU parcial "WHERE col IS NOT
       // NULL"): NULL nunca conflita com nada, nem com outro NULL — só
       // conta violação se TODAS as colunas da chave forem não-nulas na
       // linha nova.
       if (keys.some((k) => candidate[k] === null || candidate[k] === undefined)) return false;
       return rows.some((r) => keys.every((k) => r[k] === candidate[k]));
+    });
+    if (plainConflict) return true;
+
+    const partialList = this.partialUniqueKeys[table] ?? [];
+    return partialList.some(({ keys, nullWhen }) => {
+      // Índice parcial "WHERE nullWhen IS NULL": só participa se a linha
+      // nova TAMBÉM tiver nullWhen nulo/ausente (ela representa um estado
+      // "ativo" novo) — e só conflita com uma linha existente que também
+      // esteja "ativa" (nullWhen nulo nela).
+      if (candidate[nullWhen] !== null && candidate[nullWhen] !== undefined) return false;
+      if (keys.some((k) => candidate[k] === null || candidate[k] === undefined)) return false;
+      return rows.some(
+        (r) =>
+          (r[nullWhen] === null || r[nullWhen] === undefined) &&
+          keys.every((k) => r[k] === candidate[k]),
+      );
     });
   }
 

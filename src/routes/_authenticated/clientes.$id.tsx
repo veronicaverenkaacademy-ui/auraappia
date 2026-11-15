@@ -25,6 +25,7 @@ import {
   type Anamnesis, type Appointment,
 } from "@/lib/clients";
 import { ClientFormDialog } from "@/components/client-form";
+import { ReminderBlockBanner } from "@/components/reminder-block-banner";
 
 export const Route = createFileRoute("/_authenticated/clientes/$id")({
   head: () => ({
@@ -265,6 +266,10 @@ function ClientDetail() {
         <QuickAction icon={Phone} label="Ligar" href={client.phone ? `tel:${client.phone}` : null} />
         <QuickAction icon={Instagram} label="Instagram" />
         <QuickAction icon={Pencil} label="Editar" onClick={() => setEditOpen(true)} />
+      </div>
+
+      <div className="mt-4">
+        <ReminderBlockBanner clientId={id} />
       </div>
 
       {/* ============ AURA IA CARD ============ */}

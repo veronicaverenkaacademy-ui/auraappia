@@ -14,6 +14,17 @@ import { phoneMatchesByLast8 } from "./central-phone-match.ts";
 
 export type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled" | "no_show";
 export type MetaStatus = "NOT_SUBMITTED" | "PENDING" | "APPROVED" | "REJECTED";
+
+/**
+ * FASE OPTOUT-1 (15/11/2026): mesmo texto usado em `last_error` quando um job
+ * é cancelado por bloqueio (abaixo) — exportado pra ser reaproveitado por
+ * quem re-arma lembretes depois de uma reativação (central-opt-out-
+ * reactivation.server.ts), que precisa distinguir "cancelled por bloqueio"
+ * de qualquer outro motivo de cancelamento (agendamento não ativo, cliente
+ * já confirmou, telefone inválido etc.) — nunca re-armar os outros.
+ */
+export const BLOCKED_RECIPIENT_REASON =
+  "Cliente pediu para parar de receber mensagens pelo WhatsApp (bloqueio ativo).";
 /** Resposta da cliente ao botão do WhatsApp (central-reply-decision.ts) — lida de novo aqui pra decidir se AINDA vale mandar o lembrete. */
 export type ClientConfirmationStatus =
   "pending" | "confirmed" | "declined" | "reschedule_requested";
@@ -209,7 +220,7 @@ export function decideReminderJobAction(input: ReminderPolicyInput): ReminderPol
   if (input.recipientBlocked) {
     return {
       action: "skip_terminal",
-      reason: "Cliente pediu para parar de receber mensagens pelo WhatsApp (bloqueio ativo).",
+      reason: BLOCKED_RECIPIENT_REASON,
     };
   }
 

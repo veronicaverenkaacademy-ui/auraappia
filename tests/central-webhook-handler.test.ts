@@ -123,6 +123,12 @@ function makeDb(overrides: Partial<Record<string, Row[]>> = {}) {
       app_notifications: [["owner_id", "dedupe_key"]],
       whatsapp_central_orphan_messages: [["provider_message_id"]],
     },
+    // Mesmo índice parcial real (whatsapp_blocked_recipients_active_idx):
+    // só conflita enquanto não houver unblocked_at — reativar e bloquear de
+    // novo nunca bate em 23505 (ver FASE OPTOUT-1).
+    partialUniqueKeys: {
+      whatsapp_blocked_recipients: [{ keys: ["owner_id", "phone_e164"], nullWhen: "unblocked_at" }],
+    },
   });
 }
 
@@ -666,7 +672,70 @@ test("FASE LEMBRETES-1: 'PARAR' agora bloqueia de verdade (whatsapp_blocked_reci
   assert.equal(block.owner_id, "owner-1");
   assert.equal(block.phone_e164, "5547999990001");
   assert.equal(block.unblocked_at, undefined);
-  assert.match(db.tables.app_notifications[0].body as string, /bloqueado/i);
+  // FASE OPTOUT-1: o aviso não usa mais a palavra "bloqueado" no corpo —
+  // explica em PT simples que ela não vai mais receber lembretes e como
+  // reverter (ficha da cliente) — nunca o telefone.
+  const notif = db.tables.app_notifications[0];
+  assert.match(notif.body as string, /não receberá mais lembretes/i);
+  assert.match(notif.body as string, /reativar na ficha da cliente/i);
+  assert.doesNotMatch(notif.body as string, /\d{4,}/); // nunca o telefone
+  assert.equal(notif.dedupe_key, `client_stop_request:${block.id}`);
+});
+
+test("FASE OPTOUT-1: aviso de PARAR inclui o NOME da cliente quando disponível, nunca o telefone", async () => {
+  const db = makeDb({
+    clients: [{ id: "client-1", phone: "+55 47 9 9999-0001", full_name: "Mariana Silva" }],
+  });
+  await run(db, [textEvent({ contextId: "wamid.OUTBOUND_001", text: "PARAR" })]);
+  const notif = db.tables.app_notifications[0];
+  assert.match(notif.body as string, /Mariana Silva pediu para não receber lembretes/);
+  assert.doesNotMatch(notif.body as string, /5547999990001|\+55 47 9 9999-0001/);
+});
+
+test("FASE OPTOUT-1: repetir 'PARAR' num telefone já bloqueado NÃO gera um segundo aviso (dedupe por bloqueio)", async () => {
+  const db = makeDb();
+  await run(db, [
+    textEvent({ messageId: "wamid.STOP1", contextId: "wamid.OUTBOUND_001", text: "PARAR" }),
+  ]);
+  assert.equal(db.tables.app_notifications.length, 1);
+  await run(db, [
+    textEvent({ messageId: "wamid.STOP2", contextId: "wamid.OUTBOUND_001", text: "PARAR" }),
+  ]);
+  assert.equal(db.tables.whatsapp_blocked_recipients.length, 1); // não duplicou o bloqueio
+  assert.equal(db.tables.app_notifications.length, 1); // nenhum aviso novo
+});
+
+test("FASE OPTOUT-1: reativada e PARAR de novo -> gera um aviso NOVO (bloqueio novo, dedupe_key diferente)", async () => {
+  const db = makeDb();
+  await run(db, [
+    textEvent({ messageId: "wamid.STOP1", contextId: "wamid.OUTBOUND_001", text: "PARAR" }),
+  ]);
+  assert.equal(db.tables.app_notifications.length, 1);
+  const firstBlock = db.tables.whatsapp_blocked_recipients[0];
+
+  // Simula a reativação pelo app (Parte 3): desfaz o bloqueio ativo.
+  firstBlock.unblocked_at = "2026-11-15T00:00:00.000Z";
+
+  await run(db, [
+    textEvent({ messageId: "wamid.STOP2", contextId: "wamid.OUTBOUND_001", text: "PARAR" }),
+  ]);
+  assert.equal(db.tables.whatsapp_blocked_recipients.length, 2); // bloqueio NOVO, linha antiga preservada
+  assert.equal(db.tables.app_notifications.length, 2); // aviso NOVO
+  const secondBlock = db.tables.whatsapp_blocked_recipients.find((b) => b.id !== firstBlock.id)!;
+  assert.equal(db.tables.app_notifications[1].dedupe_key, `client_stop_request:${secondBlock.id}`);
+});
+
+test("FASE OPTOUT-1: falha ao criar o aviso NUNCA desfaz o bloqueio já gravado (melhor esforço)", async () => {
+  const db = makeDb();
+  db.failNextInsertOn.app_notifications = {
+    code: "XXYYY",
+    message: "falha de infraestrutura simulada",
+  };
+  const { logger, errors } = createCapturingLogger();
+  await run(db, [textEvent({ contextId: "wamid.OUTBOUND_001", text: "PARAR" })], logger);
+  assert.equal(db.tables.whatsapp_blocked_recipients.length, 1); // bloqueio gravado mesmo com a falha
+  assert.equal(db.tables.app_notifications.length, 0); // aviso não foi criado
+  assert.ok(errors.length > 0); // a falha foi registrada, nunca engolida em silêncio
 });
 
 test("3g: 'não vou parar de ir aí' NÃO dispara o aviso de opt-out (gera o aviso comum)", async () => {
@@ -1183,5 +1252,199 @@ test("LEMBRETES-5: sem ACCESS_TOKEN central configurado (estado padrão dos outr
         logger,
       ),
     );
+  }
+});
+
+// ===== 3h — PARAR AMBÍGUO (2+ salões candidatos, FASE OPTOUT-1 Parte 1) =====
+// Decisão da dona (15/11/2026): um PARAR sem contexto de mensagem
+// específica, quando a resolução por telefone encontra 2+ salões
+// candidatos, NUNCA pode se perder em silêncio — bloqueia em TODOS os
+// candidatos (um bloqueio por owner_id), cada um com seu próprio aviso.
+
+const AMBIGUOUS_PHONE = "5547999991234";
+
+function ambiguousCandidateTables(count: number): Record<string, Row[]> {
+  const whatsapp_messages: Row[] = [];
+  const clients: Row[] = [];
+  const appointments: Row[] = [];
+  for (let i = 1; i <= count; i++) {
+    whatsapp_messages.push({
+      id: `msg-amb-${i}`,
+      provider: "meta_cloud_api_central",
+      provider_message_id: `wamid.AMB_OUT_${i}`,
+      owner_id: `owner-amb-${i}`,
+      client_id: `client-amb-${i}`,
+      appointment_id: `appt-amb-${i}`,
+      status: "sent",
+      direction: "outbound",
+      recipient_phone: AMBIGUOUS_PHONE,
+      // horários distintos e todos recentes — i=1 é o MAIS recente (ordem
+      // decrescente), i=count o mais antigo; o corte de 5 mantém os de i
+      // menor.
+      created_at: new Date(NOW.getTime() - i * 60 * 60 * 1000).toISOString(),
+    });
+    clients.push({ id: `client-amb-${i}`, phone: AMBIGUOUS_PHONE, full_name: `Cliente Amb ${i}` });
+    appointments.push({
+      id: `appt-amb-${i}`,
+      owner_id: `owner-amb-${i}`,
+      status: "confirmed",
+      starts_at: "2026-11-12T12:00:00.000Z",
+      client_confirmation_status: "pending",
+      professional_id: null,
+    });
+  }
+  return {
+    whatsapp_messages,
+    clients,
+    appointments,
+    whatsapp_central_threads: [],
+    app_notifications: [],
+    company_profiles: [],
+    portal_configurations: [],
+    whatsapp_blocked_recipients: [],
+  };
+}
+
+function makeAmbiguousDb(count: number) {
+  return makeDb(ambiguousCandidateTables(count));
+}
+
+test("PARAR ambíguo com 2 candidatos -> bloqueia os 2 salões, 1 aviso cada, com o nome de cada cliente", async () => {
+  const db = makeAmbiguousDb(2);
+  await run(db, [textEvent({ fromPhone: AMBIGUOUS_PHONE, contextId: null, text: "PARAR" })]);
+
+  assert.equal(db.tables.whatsapp_blocked_recipients.length, 2);
+  assert.deepEqual(
+    new Set(db.tables.whatsapp_blocked_recipients.map((b) => b.owner_id)),
+    new Set(["owner-amb-1", "owner-amb-2"]),
+  );
+  assert.equal(db.tables.app_notifications.length, 2);
+  for (const ownerId of ["owner-amb-1", "owner-amb-2"]) {
+    const notif = db.tables.app_notifications.find((n) => n.owner_id === ownerId)!;
+    const block = db.tables.whatsapp_blocked_recipients.find((b) => b.owner_id === ownerId)!;
+    assert.equal(notif.dedupe_key, `client_stop_request:${block.id}`);
+    const idx = ownerId === "owner-amb-1" ? 1 : 2;
+    assert.match(notif.body as string, new RegExp(`Cliente Amb ${idx} pediu para não receber`));
+    assert.doesNotMatch(notif.body as string, /5547999991234/);
+  }
+});
+
+test("PARAR ambíguo com 3 candidatos -> bloqueia os 3 salões", async () => {
+  const db = makeAmbiguousDb(3);
+  await run(db, [textEvent({ fromPhone: AMBIGUOUS_PHONE, contextId: null, text: "PARAR" })]);
+  assert.equal(db.tables.whatsapp_blocked_recipients.length, 3);
+  assert.equal(db.tables.app_notifications.length, 3);
+});
+
+test("PARAR ambíguo com 6 candidatos -> bloqueia só os 5 MAIS RECENTES, o 6º fica de fora, log sem telefone", async () => {
+  const db = makeAmbiguousDb(6);
+  const { logger, errors } = createCapturingLogger();
+  await run(
+    db,
+    [textEvent({ fromPhone: AMBIGUOUS_PHONE, contextId: null, text: "PARAR" })],
+    logger,
+  );
+
+  assert.equal(db.tables.whatsapp_blocked_recipients.length, 5);
+  const blockedOwners = new Set(db.tables.whatsapp_blocked_recipients.map((b) => b.owner_id));
+  for (let i = 1; i <= 5; i++) assert.ok(blockedOwners.has(`owner-amb-${i}`));
+  assert.ok(!blockedOwners.has("owner-amb-6")); // o mais antigo, fora do corte
+  assert.equal(db.tables.app_notifications.length, 5);
+
+  const limitLog = errors
+    .flat()
+    .find((a) => typeof a === "string" && a.includes("5 mais recentes"));
+  assert.ok(limitLog, "deveria logar o excesso de candidatos");
+  assert.doesNotMatch(String(limitLog), /5547999991234/);
+});
+
+test("PARAR com exatamente 1 candidato resolvido por telefone (sem contextId) -> bloqueia só esse salão (regressão)", async () => {
+  const db = makeAmbiguousDb(1);
+  await run(db, [textEvent({ fromPhone: AMBIGUOUS_PHONE, contextId: null, text: "PARAR" })]);
+  assert.equal(db.tables.whatsapp_blocked_recipients.length, 1);
+  assert.equal(db.tables.whatsapp_blocked_recipients[0].owner_id, "owner-amb-1");
+  assert.equal(db.tables.app_notifications.length, 1);
+});
+
+test("PARAR com contextId explícito continua resolvendo direto pro salão daquela mensagem (regressão)", async () => {
+  const db = makeDb();
+  await run(db, [textEvent({ contextId: "wamid.OUTBOUND_001", text: "PARAR" })]);
+  assert.equal(db.tables.whatsapp_blocked_recipients.length, 1);
+  assert.equal(db.tables.whatsapp_blocked_recipients[0].owner_id, "owner-1");
+});
+
+test("PARAR com ZERO candidatos -> nenhum bloqueio (não há como saber o salão), log sem telefone, mensagem ainda cai como órfã", async () => {
+  const neverSeenPhone = "5547900000000";
+  const db = makeAmbiguousDb(0);
+  const { logger, errors } = createCapturingLogger();
+  await run(db, [textEvent({ fromPhone: neverSeenPhone, contextId: null, text: "PARAR" })], logger);
+
+  assert.equal(db.tables.whatsapp_blocked_recipients.length, 0);
+  assert.equal(db.tables.app_notifications.length, 0);
+  assert.equal(db.tables.whatsapp_central_orphan_messages?.length, 1); // comportamento atual de órfã mantido
+
+  const zeroLog = errors
+    .flat()
+    .find((a) => typeof a === "string" && a.includes("nenhum salão candidato"));
+  assert.ok(zeroLog, "deveria logar que não há como saber o salão");
+  assert.doesNotMatch(String(zeroLog), new RegExp(neverSeenPhone));
+});
+
+test("PARAR ambíguo: repetição do MESMO evento (retentativa da Meta, mesmo messageId) não duplica bloqueio nem aviso", async () => {
+  const db = makeAmbiguousDb(2);
+  const event = textEvent({ fromPhone: AMBIGUOUS_PHONE, contextId: null, text: "PARAR" });
+  await run(db, [event]);
+  assert.equal(db.tables.whatsapp_blocked_recipients.length, 2);
+  assert.equal(db.tables.app_notifications.length, 2);
+
+  await run(db, [event]); // exatamente o mesmo messageId — reentrega
+  assert.equal(db.tables.whatsapp_blocked_recipients.length, 2); // não duplicou
+  assert.equal(db.tables.app_notifications.length, 2); // não duplicou
+});
+
+test("PARAR ambíguo: falha ao bloquear o 1º salão NÃO impede o 2º (melhor esforço por salão)", async () => {
+  const db = makeAmbiguousDb(2);
+  db.failNextInsertOn.whatsapp_blocked_recipients = {
+    code: "XXYYY",
+    message: "falha de infraestrutura simulada no 1º salão",
+  };
+  const { logger, errors } = createCapturingLogger();
+  await run(
+    db,
+    [textEvent({ fromPhone: AMBIGUOUS_PHONE, contextId: null, text: "PARAR" })],
+    logger,
+  );
+
+  // owner-amb-1 (processado primeiro, falhou) não foi bloqueado nem avisado.
+  assert.equal(
+    db.tables.whatsapp_blocked_recipients.some((b) => b.owner_id === "owner-amb-1"),
+    false,
+  );
+  assert.equal(
+    db.tables.app_notifications.some((n) => n.owner_id === "owner-amb-1"),
+    false,
+  );
+  // owner-amb-2 (2º da lista) foi bloqueado e avisado normalmente.
+  assert.equal(
+    db.tables.whatsapp_blocked_recipients.some((b) => b.owner_id === "owner-amb-2"),
+    true,
+  );
+  assert.equal(
+    db.tables.app_notifications.some((n) => n.owner_id === "owner-amb-2"),
+    true,
+  );
+  assert.ok(errors.length > 0); // a falha do 1º foi registrada, nunca engolida
+});
+
+test("PARAR ambíguo: 'vou sair mais cedo' e 'cancelar meu horário' continuam NÃO bloqueando nenhum salão (regressão)", async () => {
+  for (const text of ["vou sair mais cedo", "cancelar meu horário"]) {
+    const db = makeAmbiguousDb(2);
+    await run(db, [textEvent({ fromPhone: AMBIGUOUS_PHONE, contextId: null, text })]);
+    assert.equal(
+      db.tables.whatsapp_blocked_recipients.length,
+      0,
+      `"${text}" não deveria bloquear nada`,
+    );
+    assert.equal(db.tables.app_notifications.length, 0);
   }
 });
