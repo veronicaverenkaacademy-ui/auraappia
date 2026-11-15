@@ -470,3 +470,68 @@ test("GUARDA: rescheduleClientAppointment usa confirmationStatusResetOnReschedul
     "só deveria incluir client_confirmation_status no update quando resetConfirmationStatus não é undefined",
   );
 });
+
+// ---------------------------------------------------------------------------
+// FASE LEMBRETES-6 (ajuste 2, 15/11/2026): confirma que o scanner
+// (scanAndEnqueueCentralReminders) de fato EXCLUI da varredura qualquer
+// agendamento cujo reminder_24h_sent_at/reminder_2h_sent_at não seja nulo —
+// é exatamente essa exclusão que faz o job 'sent' nunca mais ser
+// reconsiderado sozinho depois de uma remarcação (cenário "b" do
+// relatório), justificando por que o re-armamento precisa ser feito
+// explicitamente pelo próprio código de remarcação, nunca esperado do
+// scanner. Prova por texto-fonte (o scanner usa supabaseAdmin real, não dá
+// pra rodar sem Postgres de verdade — mesma limitação já documentada nos
+// testes de central-reminder-scheduler.server.ts).
+// ---------------------------------------------------------------------------
+test("GUARDA: o scanner de lembretes exclui agendamentos com reminder_*_sent_at já preenchido (por isso um job 'sent' nunca é reconsiderado sozinho numa remarcação)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(
+    new URL("../src/lib/whatsapp/central-reminder-scheduler.server.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    src,
+    /\.is\(sentAtColumn,\s*null\)/,
+    "o scanner deveria filtrar por reminder_*_sent_at IS NULL — é essa condição que exclui jobs já enviados",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// GUARDA (ajuste 2): rescheduleClientAppointment e agenda.ts
+// (updateAppointment/updateAppointmentTime) chamam o re-armamento de
+// notification_jobs 'sent' SÓ quando o horário realmente mudou, usando a
+// função pura testada em tests/reminder-job-rearm.test.ts — nunca uma
+// condição duplicada/divergente escrita direto ali.
+// ---------------------------------------------------------------------------
+test("GUARDA: rescheduleClientAppointment re-arma notification_jobs 'sent' só quando startsAtReallyChanged, via reminderJobRearmOnReschedule", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/lib/booking.functions.ts", import.meta.url), "utf8");
+  assert.match(
+    src,
+    /import\s*\{\s*reminderJobRearmOnReschedule/,
+    "deveria importar a função pura testada, não duplicar a lógica",
+  );
+  const rescheduleBody = src.slice(src.indexOf("export const rescheduleClientAppointment"));
+  assert.match(
+    rescheduleBody,
+    /if\s*\(startsAtReallyChanged\)\s*\{\s*await rearmSentReminderJobsOnReschedule/,
+    "o re-armamento só deveria rodar quando startsAtReallyChanged for true",
+  );
+});
+
+test("GUARDA: updateAppointment/updateAppointmentTime (agenda.ts) chamam o re-armamento de notification_jobs 'sent'", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/lib/agenda.ts", import.meta.url), "utf8");
+  assert.match(
+    src,
+    /import\s*\{\s*\n?\s*reminderJobRearmOnReschedule/,
+    "deveria importar a função pura testada, não duplicar a lógica",
+  );
+  const updateApptBody = src.slice(
+    src.indexOf("export async function updateAppointment("),
+    src.indexOf("export async function updateAppointmentTime("),
+  );
+  assert.match(updateApptBody, /rearmSentReminderJobsIfStartsAtChanged/);
+  const updateTimeBody = src.slice(src.indexOf("export async function updateAppointmentTime("));
+  assert.match(updateTimeBody, /rearmSentReminderJobsIfStartsAtChanged/);
+});

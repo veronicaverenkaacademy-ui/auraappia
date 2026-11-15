@@ -2,6 +2,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { isHiddenFromAgenda } from "@/lib/agenda-cancelled-actions";
 import { confirmationStatusResetOnReschedule } from "@/lib/appointment-confirmation-reset";
 import { sameInstant } from "@/lib/whatsapp/time-instant";
+import {
+  reminderJobRearmOnReschedule,
+  REMINDER_24H_OFFSET_MS,
+  REMINDER_2H_OFFSET_MS,
+} from "@/lib/reminder-job-rearm";
 
 export type AppointmentStatus = "pending" | "confirmed" | "completed" | "cancelled" | "no_show";
 
@@ -265,11 +270,64 @@ async function confirmationResetPatchIfStartsAtChanged(
   return reset ? { client_confirmation_status: reset } : {};
 }
 
+/**
+ * FASE LEMBRETES-6 (ajuste 2, 15/11/2026): mesmo re-armamento de
+ * notification_jobs que rescheduleClientAppointment já faz do lado da
+ * cliente (ver rearmSentReminderJobsOnReschedule em booking.functions.ts) —
+ * agora também do lado da PROFISSIONAL. Sem isto, um agendamento cujo
+ * lembrete de 24h/2h já foi ENVIADO (notification_jobs.status='sent') e é
+ * remarcado na Agenda nunca mais recebe lembrete pro novo horário (o
+ * scanner só olha agendamentos com reminder_*_sent_at nulo). Lê o
+ * starts_at de novo (chamada independente da de
+ * confirmationResetPatchIfStartsAtChanged — mais uma leitura, mas mantém
+ * os dois helpers simples e isolados) e só re-arma se o horário realmente
+ * mudou. Melhor esforço: nunca lança, nunca bloqueia a edição em si.
+ */
+async function rearmSentReminderJobsIfStartsAtChanged(
+  id: string,
+  newStartsAt: string,
+): Promise<void> {
+  const { data: current } = await supabase
+    .from("appointments")
+    .select("starts_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (!current || sameInstant(current.starts_at, newStartsAt)) return;
+  const jobTypes: Array<["appointment_reminder_24h" | "appointment_reminder_2h", number]> = [
+    ["appointment_reminder_24h", REMINDER_24H_OFFSET_MS],
+    ["appointment_reminder_2h", REMINDER_2H_OFFSET_MS],
+  ];
+  for (const [type, offsetMs] of jobTypes) {
+    try {
+      const { data: job } = await supabase
+        .from("notification_jobs")
+        .select("status")
+        .eq("appointment_id", id)
+        .eq("type", type)
+        .maybeSingle();
+      const patch = reminderJobRearmOnReschedule(job?.status, newStartsAt, offsetMs);
+      if (patch) {
+        await supabase
+          .from("notification_jobs")
+          .update(patch)
+          .eq("appointment_id", id)
+          .eq("type", type);
+      }
+    } catch (e) {
+      console.error(
+        `[agenda] Falha ao re-armar notification_jobs (${type}) depois de remarcar — melhor esforço.`,
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+  }
+}
+
 export async function updateAppointment(id: string, patch: EditAppointmentInput): Promise<Appointment> {
   const { forceOverlap, ...rest } = patch;
   const confirmationPatch = rest.starts_at
     ? await confirmationResetPatchIfStartsAtChanged(id, rest.starts_at)
     : {};
+  if (rest.starts_at) await rearmSentReminderJobsIfStartsAtChanged(id, rest.starts_at);
   const payload = {
     ...rest,
     ...(forceOverlap !== undefined ? { force_overlap: forceOverlap } : {}),
@@ -288,6 +346,7 @@ export async function updateAppointmentTime(
   forceOverlap = false,
 ): Promise<Appointment> {
   const confirmationPatch = await confirmationResetPatchIfStartsAtChanged(id, starts_at);
+  await rearmSentReminderJobsIfStartsAtChanged(id, starts_at);
   const { data, error } = await supabase
     .from("appointments")
     .update({ starts_at, ends_at, force_overlap: forceOverlap, ...confirmationPatch })

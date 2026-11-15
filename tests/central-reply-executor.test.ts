@@ -54,6 +54,10 @@ describe("notificationForOutcome", () => {
     assert.equal(notificationForOutcome("appointment_not_found", "t1"), null);
     assert.equal(notificationForOutcome("invalid_action", "t1"), null);
   });
+
+  test("AJUSTE (15/11/2026): write_failed NUNCA gera aviso no sino (efeito principal falhou, nada a comunicar)", () => {
+    assert.equal(notificationForOutcome("write_failed", "t1"), null);
+  });
 });
 
 const NOW = new Date("2026-11-10T15:00:00.000Z"); // 1 dia antes do agendamento
@@ -347,5 +351,201 @@ describe("applyCentralThreadReply — FASE LEMBRETES-6: 'primeira escolha vale'"
       () => NOW,
     );
     assert.equal(outcome, "late_response");
+  });
+});
+
+// ===== AJUSTE (15/11/2026): compensação quando a 2ª escrita (agendamento) falha =====
+// Depois que o CAS da thread já ganhou (1ª escrita), se a escrita no
+// agendamento (2ª escrita, o efeito de verdade) falhar, a thread precisa
+// voltar pra 'awaiting_reply' — senão fica resolvida pra sempre sem o
+// efeito ter sido aplicado.
+function throwOnNextAppointmentsUpdate(db: FakeSupabaseAdmin, n = 1): void {
+  const originalFrom = db.from.bind(db);
+  let remaining = n;
+  db.from = ((table: string) => {
+    const builder = originalFrom(table);
+    if (table === "appointments") {
+      const originalUpdate = builder.update.bind(builder);
+      builder.update = ((obj: Record<string, unknown>) => {
+        if (remaining > 0) {
+          remaining--;
+          throw new Error("falha simulada ao escrever no agendamento (rede/timeout)");
+        }
+        return originalUpdate(obj);
+      }) as typeof builder.update;
+    }
+    return builder;
+  }) as typeof db.from;
+}
+
+function makeCapturingLogger() {
+  const errors: unknown[][] = [];
+  return { logger: { error: (...args: unknown[]) => errors.push(args) }, errors };
+}
+
+describe("applyCentralThreadReply — AJUSTE: compensação quando a escrita no agendamento falha", () => {
+  test("Confirmar: 2ª escrita falha -> thread revertida pra awaiting_reply, nenhuma mutação no agendamento, outcome write_failed", async () => {
+    const db = makeDb();
+    throwOnNextAppointmentsUpdate(db);
+    const { logger, errors } = makeCapturingLogger();
+    const outcome = await applyCentralThreadReply(
+      db as never,
+      { threadId: "thread-1", action: "confirm", resolvedByMessageId: "msg-1" },
+      () => NOW,
+      logger,
+    );
+    assert.equal(outcome, "write_failed");
+    const thread = db.tables.whatsapp_central_threads[0];
+    assert.equal(thread.status, "awaiting_reply", "thread deveria ter sido revertida");
+    assert.equal(thread.resolved_at, null);
+    assert.equal(thread.resolved_by_message_id, null);
+    assert.equal(
+      db.tables.appointments[0].client_confirmation_status,
+      "pending",
+      "agendamento nunca deveria ter sido tocado",
+    );
+    assert.ok(errors.length >= 1, "deveria ter registrado o erro em log");
+    // nenhum dado pessoal (telefone/nome) no log — só a mensagem de erro técnica
+    const logged = errors.flat().join(" ");
+    assert.doesNotMatch(logged, /\+?\d{8,}/);
+  });
+
+  test("Cancelar (não tardio): 2ª escrita falha -> thread revertida, agendamento NUNCA cancelado (horário não liberado por engano)", async () => {
+    const db = makeDb();
+    throwOnNextAppointmentsUpdate(db);
+    const outcome = await applyCentralThreadReply(
+      db as never,
+      { threadId: "thread-1", action: "cancel", resolvedByMessageId: "msg-1" },
+      () => NOW,
+      { error: () => {} },
+    );
+    assert.equal(outcome, "write_failed");
+    assert.equal(db.tables.whatsapp_central_threads[0].status, "awaiting_reply");
+    assert.equal(db.tables.appointments[0].status, "pending");
+    assert.equal(db.tables.appointments[0].client_confirmation_status, "pending");
+  });
+
+  test("Cancelar TARDIO (dentro de LATE_CANCEL_HOURS): 2ª escrita falha -> mesma reversão, outcome write_failed (não apply_cancel_late)", async () => {
+    const db = makeDb();
+    throwOnNextAppointmentsUpdate(db);
+    const outcome = await applyCentralThreadReply(
+      db as never,
+      { threadId: "thread-1", action: "cancel", resolvedByMessageId: "msg-1" },
+      () => new Date("2026-11-11T12:00:00.000Z"), // 3h antes — seria tardio
+      { error: () => {} },
+    );
+    assert.equal(outcome, "write_failed");
+    assert.equal(db.tables.whatsapp_central_threads[0].status, "awaiting_reply");
+    assert.equal(db.tables.appointments[0].status, "pending");
+  });
+
+  test("Reagendar: 2ª escrita falha -> thread revertida, client_confirmation_status nunca vira reschedule_requested", async () => {
+    const db = makeDb();
+    throwOnNextAppointmentsUpdate(db);
+    const outcome = await applyCentralThreadReply(
+      db as never,
+      { threadId: "thread-1", action: "reschedule", resolvedByMessageId: "msg-1" },
+      () => NOW,
+      { error: () => {} },
+    );
+    assert.equal(outcome, "write_failed");
+    assert.equal(db.tables.whatsapp_central_threads[0].status, "awaiting_reply");
+    assert.equal(db.tables.appointments[0].client_confirmation_status, "pending");
+  });
+
+  test("depois da reversão, um NOVO toque funciona normalmente como primeira escolha", async () => {
+    const db = makeDb();
+    throwOnNextAppointmentsUpdate(db, 1); // só a 1ª tentativa falha
+    const first = await applyCentralThreadReply(
+      db as never,
+      { threadId: "thread-1", action: "confirm", resolvedByMessageId: "msg-1" },
+      () => NOW,
+      { error: () => {} },
+    );
+    assert.equal(first, "write_failed");
+    const second = await applyCentralThreadReply(
+      db as never,
+      { threadId: "thread-1", action: "confirm", resolvedByMessageId: "msg-2" },
+      () => NOW,
+      { error: () => {} },
+    );
+    assert.equal(
+      second,
+      "apply_confirm",
+      "depois da reversão, a próxima tentativa é tratada como primeira escolha de verdade",
+    );
+    assert.equal(db.tables.appointments[0].client_confirmation_status, "confirmed");
+    assert.equal(db.tables.whatsapp_central_threads[0].status, "resolved_confirmed");
+  });
+
+  test("a própria reversão falhando: registra incidente, nunca lança, devolve write_failed (estado pode ficar inconsistente, mas documentado)", async () => {
+    const db = makeDb();
+    throwOnNextAppointmentsUpdate(db, 1);
+    // Depois que a escrita do agendamento falhar e o código tentar reverter
+    // a thread, faz a PRÓPRIA reversão (update em whatsapp_central_threads)
+    // também falhar — simula uma falha total de banco no peor momento.
+    const originalFrom = db.from.bind(db);
+    let apptUpdateHappened = false;
+    db.from = ((table: string) => {
+      const builder = originalFrom(table);
+      if (table === "appointments") {
+        const originalUpdate = builder.update.bind(builder);
+        builder.update = ((obj: Record<string, unknown>) => {
+          apptUpdateHappened = true;
+          return originalUpdate(obj);
+        }) as typeof builder.update;
+      }
+      if (table === "whatsapp_central_threads" && apptUpdateHappened) {
+        const originalUpdate = builder.update.bind(builder);
+        builder.update = (() => {
+          throw new Error("falha simulada na própria reversão");
+        }) as typeof builder.update;
+      }
+      return builder;
+    }) as typeof db.from;
+    const { logger, errors } = makeCapturingLogger();
+    const outcome = await applyCentralThreadReply(
+      db as never,
+      { threadId: "thread-1", action: "confirm", resolvedByMessageId: "msg-1" },
+      () => NOW,
+      logger,
+    );
+    assert.equal(outcome, "write_failed");
+    assert.ok(
+      errors.some((e) => String(e[0]).includes("INCIDENTE CRÍTICO")),
+      "deveria ter registrado um incidente crítico quando a própria reversão falha",
+    );
+  });
+
+  test("CONCORRÊNCIA: vencedor falha e é revertido — o perdedor NUNCA 'ressuscita' um efeito indevido (ainda vê a thread como já resolvida no momento em que tentou, por isso também fica write_failed/already_registered, nunca aplica nada)", async () => {
+    // Cenário: confirm (vai falhar na 2ª escrita) e cancel correm
+    // concorrentes na mesma thread. O CAS do confirm ganha primeiro (grava
+    // resolved_confirmed), o cancel perde a corrida (vê resolved_confirmed,
+    // decide already_registered, nunca toca o agendamento). DEPOIS disso,
+    // o confirm falha na 2ª escrita e reverte a thread pra awaiting_reply.
+    // Resultado: nenhum dos dois efeitos foi aplicado, e a thread está de
+    // volta a awaiting_reply — pronta pra uma PRÓXIMA primeira escolha, sem
+    // que o cancelamento perdedor tenha sido indevidamente aplicado depois.
+    const db = makeDb();
+    throwOnNextAppointmentsUpdate(db, 1);
+    const [confirmResult, cancelResult] = await Promise.all([
+      applyCentralThreadReply(
+        db as never,
+        { threadId: "thread-1", action: "confirm", resolvedByMessageId: "msg-A" },
+        () => NOW,
+        { error: () => {} },
+      ),
+      applyCentralThreadReply(
+        db as never,
+        { threadId: "thread-1", action: "cancel", resolvedByMessageId: "msg-B" },
+        () => NOW,
+        { error: () => {} },
+      ),
+    ]);
+    const results = [confirmResult, cancelResult].sort();
+    assert.deepEqual(results, ["already_registered", "write_failed"]);
+    // O agendamento nunca foi tocado por nenhum dos dois.
+    assert.equal(db.tables.appointments[0].client_confirmation_status, "pending");
+    assert.equal(db.tables.appointments[0].status, "pending");
   });
 });

@@ -41,11 +41,14 @@ export type ApplyReplyOutcome =
   | "late_response"
   | "thread_not_found"
   | "appointment_not_found"
-  | "invalid_action";
+  | "invalid_action"
+  | "write_failed";
 
 type SupabaseAdmin = Awaited<
   typeof import("@/integrations/supabase/client.server")
 >["supabaseAdmin"];
+
+type ExecutorLogger = { error: (...args: unknown[]) => void };
 
 const LATE_CANCEL_HOURS = 4; // ver "Decisões que dependem de você" — a confirmar pela dona
 
@@ -61,6 +64,7 @@ export async function applyCentralThreadReply(
   supabaseAdmin: SupabaseAdmin,
   params: { threadId: string; action: ReplyAction; resolvedByMessageId: string },
   now: () => Date = () => new Date(),
+  logger: ExecutorLogger = console,
 ): Promise<ApplyReplyOutcome> {
   if (params.action !== "confirm" && params.action !== "cancel" && params.action !== "reschedule") {
     return "invalid_action";
@@ -172,15 +176,72 @@ export async function applyCentralThreadReply(
       : decision.kind === "apply_cancel"
         ? { client_confirmation_status: "declined", status: "cancelled" }
         : { client_confirmation_status: "reschedule_requested" };
-  // `as never`: o shape varia por decisão (confirm/cancel/reschedule têm
-  // campos diferentes) e o tipo gerado do supabase-js não aceita um union
-  // de shapes parciais aqui — mesmo problema, mesma solução pragmática já
-  // usada no restante do projeto quando o update é condicional.
-  const { error: apptUpdateErr } = await supabaseAdmin
-    .from("appointments")
-    .update(apptUpdate as never)
-    .eq("id", thread.appointment_id);
-  if (apptUpdateErr) throw new Error(apptUpdateErr.message);
+
+  // AJUSTE (15/11/2026): a thread já foi flipada pro estado final (CAS
+  // acima) — se ESTA escrita (o efeito de verdade no agendamento) falhar
+  // agora, por erro devolvido OU por exceção lançada (rede caiu no meio do
+  // POST, por exemplo), a thread ficaria resolvida PARA SEMPRE sem o efeito
+  // nunca ter sido aplicado: qualquer toque futuro (inclusive uma
+  // retentativa da Meta do MESMO evento, depois que o catch externo em
+  // central-webhook-handler.server.ts apaga a mensagem inbound de
+  // idempotência e ela é reprocessada) cairia em already_registered/
+  // late_response pra sempre, mentindo pra cliente que "já registramos"
+  // algo que nunca aconteceu de verdade.
+  //
+  // Compensação: reverte a thread pro estado anterior de forma atômica e
+  // CONDICIONAL (só desfaz se o status ainda for exatamente o que ESTE
+  // chamador acabou de gravar — nenhum outro processo pode estar
+  // competindo por esta thread nesse instante, já que só o vencedor do CAS
+  // chega até aqui, mas a condição no WHERE é uma segunda trava de
+  // segurança, nunca confiada "de cabeça"). `write_failed` nunca aparece em
+  // OUTCOME_NOTIFICATIONS nem no mapa de ackActionByOutcome do webhook
+  // handler — de propósito: nenhum aviso no sino, nenhuma resposta
+  // "Confirmar/Cancelar/Reagendar/Já registramos" é enviada quando o efeito
+  // principal falhou. NUNCA relança o erro (a resposta 200 ao webhook fica
+  // inalterada, como pedido) — relançar só causaria a Meta reentregar um
+  // evento cujo reprocessamento, sem esta compensação, bateria direto em
+  // already_registered (a thread já estaria resolvida), então relançar não
+  // ajudaria em nada; só a reversão (que já aconteceu aqui) permite que uma
+  // tentativa futura funcione como "primeira escolha" de novo.
+  try {
+    const { error: apptUpdateErr } = await supabaseAdmin
+      .from("appointments")
+      // `as never`: o shape varia por decisão (confirm/cancel/reschedule têm
+      // campos diferentes) e o tipo gerado do supabase-js não aceita um union
+      // de shapes parciais aqui — mesmo problema, mesma solução pragmática já
+      // usada no restante do projeto quando o update é condicional.
+      .update(apptUpdate as never)
+      .eq("id", thread.appointment_id);
+    if (apptUpdateErr) throw new Error(apptUpdateErr.message);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    logger.error(
+      "[whatsapp:central] Falha ao aplicar o efeito no agendamento depois de ganhar a corrida da thread — revertendo a thread pra awaiting_reply (melhor esforço, sem dados pessoais).",
+      msg,
+    );
+    try {
+      const { data: reverted, error: revertErr } = await supabaseAdmin
+        .from("whatsapp_central_threads")
+        .update({ status: "awaiting_reply", resolved_at: null, resolved_by_message_id: null })
+        .eq("id", params.threadId)
+        .eq("status", THREAD_STATUS_FOR_OUTCOME[outcome] as string)
+        .select("id");
+      if (revertErr) throw new Error(revertErr.message);
+      if (!reverted || reverted.length === 0) {
+        logger.error(
+          "[whatsapp:central] INCIDENTE: a thread não estava mais no estado esperado ao tentar revertê-la — não revertida, pode estar inconsistente; verificação manual necessária.",
+        );
+      }
+    } catch (revertCatchErr) {
+      const revertMsg =
+        revertCatchErr instanceof Error ? revertCatchErr.message : String(revertCatchErr);
+      logger.error(
+        "[whatsapp:central] INCIDENTE CRÍTICO: falha ao reverter a thread depois de falha ao aplicar o efeito no agendamento — estado pode estar inconsistente (thread resolvida sem o efeito ter sido aplicado); verificação manual necessária.",
+        revertMsg,
+      );
+    }
+    return "write_failed";
+  }
 
   return outcome;
 }

@@ -19,8 +19,60 @@ import {
   buildClientRescheduledNotification,
   isLateCancel,
 } from "@/lib/booking-notifications.server";
+import { sameInstant } from "@/lib/whatsapp/time-instant";
+import {
+  reminderJobRearmOnReschedule,
+  REMINDER_24H_OFFSET_MS,
+  REMINDER_2H_OFFSET_MS,
+} from "@/lib/reminder-job-rearm";
 
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
+
+// AJUSTE (15/11/2026, LEMBRETES-6 ajuste 2): quando um agendamento já teve
+// o lembrete de 24h/2h ENVIADO (notification_jobs.status='sent') e depois é
+// remarcado pra outro horário, o job fica parado em 'sent' pra sempre — o
+// scanner (scanAndEnqueueCentralReminders) só olha agendamentos com
+// reminder_24h_sent_at/reminder_2h_sent_at nulos, então nunca mais
+// reconsidera este agendamento, e o lembrete do NOVO horário nunca sai.
+// Re-arma (status='pending', attempts=0, last_error=null, scheduled_for/
+// next_attempt_at recalculados) só quando o job já estava 'sent' — job
+// ainda 'pending' já é recalculado pelo scanner normalmente; 'processing'/
+// 'cancelled'/'failed' ficam fora de propósito (ver docstring de
+// reminderJobRearmOnReschedule). Melhor esforço: nunca bloqueia a
+// remarcação em si (mesma filosofia do aviso de remarcação logo abaixo).
+async function rearmSentReminderJobsOnReschedule(
+  supabaseAdmin: SupabaseAdmin,
+  appointmentId: string,
+  newStartsAtIso: string,
+): Promise<void> {
+  const jobTypes: Array<["appointment_reminder_24h" | "appointment_reminder_2h", number]> = [
+    ["appointment_reminder_24h", REMINDER_24H_OFFSET_MS],
+    ["appointment_reminder_2h", REMINDER_2H_OFFSET_MS],
+  ];
+  for (const [type, offsetMs] of jobTypes) {
+    try {
+      const { data: job } = await supabaseAdmin
+        .from("notification_jobs")
+        .select("status")
+        .eq("appointment_id", appointmentId)
+        .eq("type", type)
+        .maybeSingle();
+      const patch = reminderJobRearmOnReschedule(job?.status, newStartsAtIso, offsetMs);
+      if (patch) {
+        await supabaseAdmin
+          .from("notification_jobs")
+          .update(patch)
+          .eq("appointment_id", appointmentId)
+          .eq("type", type);
+      }
+    } catch (e) {
+      console.error(
+        `[booking] Falha ao re-armar notification_jobs (${type}) depois de remarcar — melhor esforço, remarcação já concluída.`,
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+  }
+}
 
 /** Postgres SQLSTATE for exclusion_violation — mesma constraint appointments_no_overlap
  * já usada pela Agenda real (src/lib/agenda.ts). */
@@ -342,6 +394,9 @@ export const rescheduleClientAppointment = createServerFn({ method: "POST" })
     const resetConfirmationStatus = confirmationStatusResetOnReschedule(
       appt.client_confirmation_status,
     );
+    // AJUSTE (ajuste 2): só vale re-armar lembretes 'sent' se o horário
+    // REALMENTE mudou — nunca pra um reenvio no MESMO horário.
+    const startsAtReallyChanged = !sameInstant(appt.starts_at, startsAt.toISOString());
 
     const { error } = await supabaseAdmin
       .from("appointments")
@@ -357,6 +412,14 @@ export const rescheduleClientAppointment = createServerFn({ method: "POST" })
       if (error.code === EXCLUSION_VIOLATION)
         throw new Error("Esse horário acabou de ser preenchido, escolha outro.");
       throw new Error(error.message);
+    }
+
+    if (startsAtReallyChanged) {
+      await rearmSentReminderJobsOnReschedule(
+        supabaseAdmin,
+        data.appointment_id,
+        startsAt.toISOString(),
+      );
     }
 
     // Item 1.3 (FASE J): aviso de remarcação — a mudança já foi gravada

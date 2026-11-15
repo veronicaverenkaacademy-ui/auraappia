@@ -250,18 +250,23 @@ async function handleButtonEvent(
         resolvedByMessageId: inserted.id,
       },
       deps.now,
+      deps.logger,
     );
   } catch (e) {
     // DEFEITO CORRIGIDO (auditoria de testes desta etapa): a mensagem
     // inbound (registro de idempotência) já foi gravada ACIMA, antes de
-    // chamar a RPC — se a RPC falhar agora (rede, timeout), sem esta
-    // compensação a reentrega da Meta deste MESMO evento encontraria a
-    // mensagem já gravada e pararia no "já processado" sem NUNCA tentar de
-    // novo, perdendo o toque da cliente pra sempre. Remove o registro
-    // antes de repropagar, pra a próxima tentativa (a Meta reenvia por
-    // causa do erro abaixo) começar do zero — mesmo padrão de compensação
-    // já usado em central-template-sender.server.ts (thread sem pergunta
-    // entregue também é removida, nunca fica pela metade).
+    // chamar o executor — se ele falhar agora (rede, timeout) ANTES de
+    // ganhar o CAS da thread (ou no próprio CAS), sem esta compensação a
+    // reentrega da Meta deste MESMO evento encontraria a mensagem já
+    // gravada e pararia no "já processado" sem NUNCA tentar de novo,
+    // perdendo o toque da cliente pra sempre. Remove o registro antes de
+    // repropagar, pra a próxima tentativa (a Meta reenvia por causa do erro
+    // abaixo) começar do zero — mesmo padrão de compensação já usado em
+    // central-template-sender.server.ts (thread sem pergunta entregue
+    // também é removida, nunca fica pela metade). NOTA: uma falha DEPOIS de
+    // ganhar o CAS (na escrita do agendamento) nunca chega aqui — o
+    // executor já trata e reverte internamente (ver docstring de
+    // applyCentralThreadReply), devolvendo "write_failed" em vez de lançar.
     await deps.supabaseAdmin.from("whatsapp_messages").delete().eq("id", inserted.id);
     throw e;
   }

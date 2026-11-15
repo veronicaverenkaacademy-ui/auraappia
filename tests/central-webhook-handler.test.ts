@@ -264,6 +264,89 @@ test("depois da compensação, uma reentrega do MESMO evento tenta de novo e apl
   assert.equal(appt.client_confirmation_status, "confirmed");
 });
 
+/**
+ * AJUSTE (15/11/2026): simula falha na 2ª escrita (agendamento), DEPOIS do
+ * CAS da thread já ter ganho — diferente de throwOnNextThreadReads (que
+ * falha ANTES de qualquer mutação), aqui a thread já foi resolvida e
+ * precisa ser revertida pelo próprio applyCentralThreadReply.
+ */
+function throwOnNextAppointmentsUpdate(db: FakeSupabaseAdmin, n: number): void {
+  const originalFrom = db.from.bind(db);
+  let remaining = n;
+  db.from = ((table: string) => {
+    const builder = originalFrom(table);
+    if (table === "appointments") {
+      const originalUpdate = (builder as { update: (o: unknown) => unknown }).update.bind(builder);
+      (builder as { update: (o: unknown) => unknown }).update = (obj: unknown) => {
+        if (remaining > 0) {
+          remaining--;
+          throw new Error("falha simulada ao escrever no agendamento");
+        }
+        return originalUpdate(obj);
+      };
+    }
+    return builder;
+  }) as typeof db.from;
+}
+
+test("AJUSTE: falha na escrita do agendamento (depois do CAS da thread ganhar) nunca lança no webhook — resposta ao Meta fica 200 (sem exceção), sem ack, sem aviso no sino, thread revertida", async () => {
+  const db = makeDb();
+  throwOnNextAppointmentsUpdate(db, 1);
+  const { logger } = createCapturingLogger();
+
+  await assert.doesNotReject(() => run(db, [buttonEvent()], logger));
+
+  const thread = db.tables.whatsapp_central_threads.find((t) => t.id === "thread-1")!;
+  assert.equal(thread.status, "awaiting_reply", "thread deveria ter sido revertida");
+  assert.equal(
+    db.tables.appointments.find((a) => a.id === "appt-1")!.client_confirmation_status,
+    "pending",
+  );
+  assert.equal(
+    db.tables.app_notifications.length,
+    0,
+    "nenhum aviso no sino quando o efeito falhou",
+  );
+});
+
+test("AJUSTE: falha na escrita do agendamento -> NENHUMA resposta de texto livre é enviada à cliente (nem a de sucesso, nem 'já registramos')", async () => {
+  const { calls, restore } = withReplyAckFetch(() =>
+    jsonResponse(200, { messages: [{ id: "wamid.ACK" }] }),
+  );
+  try {
+    const db = makeDb();
+    throwOnNextAppointmentsUpdate(db, 1);
+    await run(db, [buttonEvent()]);
+    assert.equal(
+      calls.length,
+      0,
+      "write_failed nunca deveria disparar nenhuma resposta ao cliente",
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("AJUSTE: depois da reversão, um novo toque da cliente funciona normalmente (primeira escolha de verdade, com resposta enviada)", async () => {
+  const { calls, restore } = withReplyAckFetch(() =>
+    jsonResponse(200, { messages: [{ id: "wamid.ACK" }] }),
+  );
+  try {
+    const db = makeDb();
+    throwOnNextAppointmentsUpdate(db, 1); // só a 1ª tentativa falha
+    await run(db, [buttonEvent()]); // falha, reverte
+    assert.equal(calls.length, 0);
+    await run(db, [buttonEvent({ messageId: "wamid.BTN_002" })]); // novo toque
+    assert.equal(calls.length, 1, "agora deveria enviar a resposta normal de Confirmar");
+    assert.equal(
+      db.tables.appointments.find((a) => a.id === "appt-1")!.client_confirmation_status,
+      "confirmed",
+    );
+  } finally {
+    restore();
+  }
+});
+
 // ===== 3d — botões =====
 
 test("3d: botão Confirmar aplica apply_confirm e não gera aviso (caminho feliz)", async () => {
