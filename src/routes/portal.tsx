@@ -6,6 +6,6 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 // antigos que alguém possa ter salvo.
 export const Route = createFileRoute("/portal")({
   beforeLoad: () => {
-    throw redirect({ to: "/auth" });
+    throw redirect({ to: "/auth", search: { next: undefined, signup: false } });
   },
 });
