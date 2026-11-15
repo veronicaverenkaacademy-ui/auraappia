@@ -1,8 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { normalizePhoneBR, isValidPhoneBR } from "@/lib/phone";
 import { verifyClientOtpCore } from "@/lib/verify-client-otp.server";
+import { getRequestIp } from "@/lib/server/request-signature";
 
 const RATE_LIMIT_MSG = "Por segurança, aguarde alguns minutos antes de tentar novamente.";
 const SEND_FAILED_MSG = "Não conseguimos enviar o código agora. Tente novamente em instantes.";
@@ -15,14 +15,11 @@ const WINDOW_MS = 15 * 60 * 1000;
 const MAX_REQUESTS_PER_PHONE_IN_WINDOW = 5;
 const MAX_REQUESTS_PER_IP_IN_WINDOW = 10;
 
-function clientIp(): string | null {
-  const request = getRequest();
-  const headers = request?.headers;
-  if (!headers) return null;
-  return (
-    headers.get("cf-connecting-ip") || headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null
-  );
-}
+// Extraído para src/lib/server/request-signature.ts (FASE CONSENT-1A,
+// reaproveitado por recordClientConsent) — mesmo comportamento exato,
+// nunca alterado por essa extração (ver regressão em
+// tests/request-signature.test.ts).
+const clientIp = getRequestIp;
 
 function maskPhone(phone: string): string {
   return phone.length > 4 ? `${"*".repeat(phone.length - 4)}${phone.slice(-4)}` : phone;
