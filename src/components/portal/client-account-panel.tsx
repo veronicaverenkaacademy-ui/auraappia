@@ -382,10 +382,10 @@ function ClientDashboard({
               <p className="text-xs text-foreground/80 leading-relaxed">
                 Isso desativa seu login e apaga seus dados pessoais (nome, telefone, e-mail, CPF),
                 sua ficha de saúde, suas fotos e as mensagens e lembretes de WhatsApp de todas as
-                empresas em que você tem cadastro no AURA — mantendo só o registro mínimo, exigido
-                por lei, de que você respondeu aos termos de consentimento. Seu histórico de
-                atendimentos continua registrado para a profissional, sem nenhum dado que
-                identifique você. Essa ação não pode ser desfeita.
+                empresas em que você tem cadastro no AURA — mantendo apenas o registro mínimo de
+                que você respondeu aos termos de consentimento, sem seu nome, IP ou dispositivo.
+                Seu histórico de atendimentos continua registrado para a profissional, sem nenhum
+                dado que identifique você. Essa ação não pode ser desfeita.
               </p>
               <div className="flex gap-2">
                 <Button
