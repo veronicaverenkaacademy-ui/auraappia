@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { linkClientAccountCore } from "@/lib/client-link.server";
+import { eraseMyClientAccountCore, type ClientErasureDb } from "@/lib/client-erasure.server";
 
 const LinkInput = z.object({
   owner_id: z.string().uuid(),
@@ -74,52 +75,24 @@ export const updateMyClientProfile = createServerFn({ method: "POST" })
   });
 
 /**
- * "Excluir conta" — desativa o login em todo lugar (a mesma cliente pode estar
- * vinculada a mais de uma conta/salão) e anonimiza os dados pessoais dela, mas nunca
- * apaga o histórico de agendamentos: appointments é registro do negócio da
- * profissional (base do financeiro já lançado via trigger), não só da cliente — apagar
- * quebraria a rastreabilidade contábil dela. Decisão registrada e aprovada
- * explicitamente antes de implementar (não decidida sozinha).
+ * "Excluir conta" (FASE LEGAL-1 REDUZIDA, 15/11/2026) — exclusão REAL dos
+ * dados da cliente (LGPD + exigência da Apple), não só o cadastro: ficha de
+ * saúde, fotos, mensagens/lembretes de WhatsApp e threads são apagados; só
+ * a prova mínima de consentimento (client_consents) e o histórico de
+ * agendamentos (base do financeiro já lançado via trigger) sobrevivem, sem
+ * identificação — a linha de `clients` é ANONIMIZADA, nunca excluída
+ * fisicamente (senão o histórico financeiro da profissional cairia junto,
+ * via ON DELETE CASCADE de appointments). A mesma cliente pode ter uma
+ * linha de `clients` por salão em que tem cadastro — todas são tratadas.
+ * Ordem/idempotência e a política completa (o que é apagado/anonimizado/
+ * mantido, tabela a tabela): client-erasure.server.ts e a migração
+ * 20261115140000_client_erasure.sql (fonte única da política). userId
+ * SEMPRE vem da sessão (requireSupabaseAuth) — por isso este server
+ * function não recebe nenhum input do chamador.
  */
 export const deleteMyClientAccount = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .handler(async ({ context }): Promise<{ ok: true }> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const userId = context.userId;
-
-    const { data: myRows, error: rowsErr } = await supabaseAdmin
-      .from("clients")
-      .select("id, owner_id")
-      .eq("user_id", userId);
-    if (rowsErr) throw new Error(rowsErr.message);
-
-    for (const row of myRows ?? []) {
-      await supabaseAdmin
-        .from("clients")
-        .update({
-          full_name: "Cliente removida",
-          phone: null,
-          email: null,
-          birthday: null,
-          cpf: null,
-          how_found: null,
-          notes: null,
-          avatar_url: null,
-          user_id: null,
-        })
-        .eq("id", row.id);
-
-      await supabaseAdmin.from("audit_log").insert({
-        owner_id: row.owner_id,
-        actor_id: userId,
-        action: "client_account_deleted",
-        resource: "client",
-        resource_id: row.id,
-        details: { via: "portal_publico" } as never,
-      });
-    }
-
-    await supabaseAdmin.auth.admin.deleteUser(userId);
-
-    return { ok: true };
+    return eraseMyClientAccountCore(supabaseAdmin as unknown as ClientErasureDb, context.userId);
   });
