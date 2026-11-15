@@ -108,12 +108,21 @@ BEGIN
 
   -- colaboradora SEM permissão: vínculo ativo no salão A, mas SEM linha de
   -- team_permissions/access_level_permissions concedendo 'clients'/'view'.
-  INSERT INTO public.team_members (owner_id, user_id, status) VALUES (v_owner_a, v_staff_no, 'active');
+  -- full_name é NOT NULL sem default em produção (confirmado no PASSO A,
+  -- 15/11/2026 — ausente na 1ª tentativa da suíte, causa do erro 23502).
+  INSERT INTO public.team_members (owner_id, user_id, full_name, status)
+    VALUES (v_owner_a, v_staff_no, 'zz-fixture-staff-no', 'active');
 
   -- colaboradora COM permissão: vínculo ativo no salão A, com exceção
   -- individual (team_permissions) concedendo 'clients'/'view'.
-  INSERT INTO public.team_members (owner_id, user_id, status) VALUES (v_owner_a, v_staff_yes, 'active') RETURNING id INTO v_member_yes;
-  INSERT INTO public.team_permissions (member_id, resource, action, allowed) VALUES (v_member_yes, 'clients', 'view', true);
+  INSERT INTO public.team_members (owner_id, user_id, full_name, status)
+    VALUES (v_owner_a, v_staff_yes, 'zz-fixture-staff-yes', 'active') RETURNING id INTO v_member_yes;
+  -- team_permissions.owner_id também é NOT NULL sem default em produção
+  -- (mesmo achado do PASSO A — a 1ª versão da suíte não preenchia esta
+  -- coluna; nunca tinha dado erro localmente porque o bootstrap local não
+  -- replicava essa restrição).
+  INSERT INTO public.team_permissions (owner_id, member_id, resource, action, allowed)
+    VALUES (v_owner_a, v_member_yes, 'clients', 'view', true);
 END $setup$;
 
 DO $sentinela$
