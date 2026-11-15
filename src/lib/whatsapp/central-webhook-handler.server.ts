@@ -242,22 +242,31 @@ async function handleButtonEvent(
   };
   let outcome: Awaited<ReturnType<typeof applyCentralThreadReply>>;
   try {
-    outcome = await applyCentralThreadReply(deps.supabaseAdmin, {
-      threadId: thread.id,
-      action: actionMap[parsedPayload.action],
-      resolvedByMessageId: inserted.id,
-    });
+    outcome = await applyCentralThreadReply(
+      deps.supabaseAdmin,
+      {
+        threadId: thread.id,
+        action: actionMap[parsedPayload.action],
+        resolvedByMessageId: inserted.id,
+      },
+      deps.now,
+      deps.logger,
+    );
   } catch (e) {
     // DEFEITO CORRIGIDO (auditoria de testes desta etapa): a mensagem
     // inbound (registro de idempotência) já foi gravada ACIMA, antes de
-    // chamar a RPC — se a RPC falhar agora (rede, timeout), sem esta
-    // compensação a reentrega da Meta deste MESMO evento encontraria a
-    // mensagem já gravada e pararia no "já processado" sem NUNCA tentar de
-    // novo, perdendo o toque da cliente pra sempre. Remove o registro
-    // antes de repropagar, pra a próxima tentativa (a Meta reenvia por
-    // causa do erro abaixo) começar do zero — mesmo padrão de compensação
-    // já usado em central-template-sender.server.ts (thread sem pergunta
-    // entregue também é removida, nunca fica pela metade).
+    // chamar o executor — se ele falhar agora (rede, timeout) ANTES de
+    // ganhar o CAS da thread (ou no próprio CAS), sem esta compensação a
+    // reentrega da Meta deste MESMO evento encontraria a mensagem já
+    // gravada e pararia no "já processado" sem NUNCA tentar de novo,
+    // perdendo o toque da cliente pra sempre. Remove o registro antes de
+    // repropagar, pra a próxima tentativa (a Meta reenvia por causa do erro
+    // abaixo) começar do zero — mesmo padrão de compensação já usado em
+    // central-template-sender.server.ts (thread sem pergunta entregue
+    // também é removida, nunca fica pela metade). NOTA: uma falha DEPOIS de
+    // ganhar o CAS (na escrita do agendamento) nunca chega aqui — o
+    // executor já trata e reverte internamente (ver docstring de
+    // applyCentralThreadReply), devolvendo "write_failed" em vez de lançar.
     await deps.supabaseAdmin.from("whatsapp_messages").delete().eq("id", inserted.id);
     throw e;
   }
@@ -277,17 +286,20 @@ async function handleButtonEvent(
     });
   }
 
-  // FASE LEMBRETES-5: resposta curta de texto livre à cliente — só nas
-  // transições REAIS (Parte 3.1), nunca em repetição/no-op (ex.:
-  // apply_reschedule_request_repeat, no_op_already_confirmed,
-  // confirm_after_cancel, stale_reminder, late_response). Sempre melhor
-  // esforço (ver docstring de sendReplyAck): uma falha aqui nunca desfaz a
-  // mudança de estado nem o aviso no sino acima, já aplicados e persistidos.
+  // FASE LEMBRETES-5/6: resposta curta de texto livre à cliente — só nas
+  // transições REAIS (apply_*) ou na resposta única "já registramos"
+  // (already_registered, LEMBRETES-6: decisão A — primeira escolha vale,
+  // qualquer toque seguinte não altera nada mas ainda merece uma resposta
+  // informando isso). Nunca em stale_reminder/late_response (silêncio
+  // total). Sempre melhor esforço (ver docstring de sendReplyAck): uma
+  // falha aqui nunca desfaz a mudança de estado nem o aviso no sino acima,
+  // já aplicados e persistidos.
   const ackActionByOutcome: Partial<Record<typeof outcome, ReplyAckAction>> = {
     apply_confirm: "confirm",
     apply_cancel: "cancel",
     apply_cancel_late: "cancel",
     apply_reschedule_request: "reschedule",
+    already_registered: "already_registered",
   };
   const ackAction = ackActionByOutcome[outcome];
   if (ackAction) {
@@ -301,6 +313,7 @@ async function handleButtonEvent(
         toPhoneE164: event.fromPhone,
         eventOccurredAtIso: event.occurredAt,
         resolvedByMessageId: inserted.id,
+        threadId: thread.id,
       },
       deps.now,
       deps.logger,

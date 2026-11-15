@@ -643,3 +643,168 @@ test("multi-empresa: salão e link vêm SEMPRE do owner do agendamento, nunca se
   assert.match(bodyB.text.body, /Studio Aura/);
   assert.doesNotMatch(bodyB.text.body, /salao-a|Salão A/);
 });
+
+// ===== FASE LEMBRETES-6 — "já registramos sua resposta anterior" =====
+
+test("already_registered: texto exato, sem emoji, sem variáveis", async () => {
+  const db = makeDb();
+  const calls = stubFetch(() => jsonResponse(200, { messages: [{ id: "wamid.AR" }] }));
+  const result = await sendReplyAck(
+    db as never,
+    baseInput({ action: "already_registered", threadId: "thread-1" }),
+    () => NOW,
+  );
+  assert.deepEqual(result, { kind: "sent" });
+  const body = JSON.parse(String(calls[0].init.body));
+  assert.equal(
+    body.text.body,
+    "Já registramos sua resposta anterior. Para alterar, fale com o salão.",
+  );
+  const row = db.tables.whatsapp_messages.find((m) => m.message_type === "already_registered_ack");
+  assert.ok(row);
+  assert.equal(row!.status, "sent");
+});
+
+test("already_registered: claim é por THREAD, não por mensagem — 3 toques com resolvedByMessageId diferentes -> 1 só envio", async () => {
+  const db = makeDb();
+  const calls = stubFetch(() => jsonResponse(200, { messages: [{ id: "wamid.AR" }] }));
+  for (let i = 0; i < 3; i++) {
+    await sendReplyAck(
+      db as never,
+      baseInput({
+        action: "already_registered",
+        threadId: "thread-1",
+        resolvedByMessageId: `msg-${i}`,
+      }),
+      () => NOW,
+    );
+  }
+  assert.equal(calls.length, 1, "no máximo 1 aviso por lembrete, mesmo com 3 toques diferentes");
+});
+
+test("already_registered: duas chamadas CONCORRENTES (Promise.all) para a MESMA thread -> 1 só envio (claim atômico)", async () => {
+  const db = makeDb();
+  const calls = stubFetch(() => jsonResponse(200, { messages: [{ id: "wamid.AR" }] }));
+  const [r1, r2] = await Promise.all([
+    sendReplyAck(
+      db as never,
+      baseInput({
+        action: "already_registered",
+        threadId: "thread-1",
+        resolvedByMessageId: "msg-A",
+      }),
+      () => NOW,
+    ),
+    sendReplyAck(
+      db as never,
+      baseInput({
+        action: "already_registered",
+        threadId: "thread-1",
+        resolvedByMessageId: "msg-B",
+      }),
+      () => NOW,
+    ),
+  ]);
+  const kinds = [r1.kind, r2.kind].sort();
+  assert.deepEqual(kinds, ["sent", "skipped"]);
+  assert.equal(calls.length, 1);
+});
+
+test("already_registered: threads DIFERENTES (mesmo agendamento não importa aqui) cada uma recebe seu próprio aviso", async () => {
+  const db = makeDb();
+  const calls = stubFetch(() => jsonResponse(200, { messages: [{ id: "wamid.AR" }] }));
+  await sendReplyAck(
+    db as never,
+    baseInput({ action: "already_registered", threadId: "thread-A" }),
+    () => NOW,
+  );
+  await sendReplyAck(
+    db as never,
+    baseInput({ action: "already_registered", threadId: "thread-B" }),
+    () => NOW,
+  );
+  assert.equal(calls.length, 2);
+});
+
+test("already_registered: agendamento cancelado -> NÃO envia (silêncio), ao contrário das outras 3 ações, cancelado nunca é elegível", async () => {
+  const db = makeDb({
+    appointments: [
+      {
+        id: "appt-1",
+        owner_id: "owner-1",
+        status: "cancelled",
+        professional_id: null,
+        starts_at: "2026-11-15T15:00:00.000Z",
+      },
+    ],
+  });
+  const calls = neverCallFetch();
+  const result = await sendReplyAck(
+    db as never,
+    baseInput({ action: "already_registered", threadId: "thread-1" }),
+    () => NOW,
+  );
+  assert.equal(result.kind, "skipped");
+  assert.equal(calls.length, 0);
+});
+
+test("already_registered: horário do agendamento já PASSOU (mas status ainda ativo) -> NÃO envia (diferente das outras 3, que só checam status)", async () => {
+  const db = makeDb({
+    appointments: [
+      {
+        id: "appt-1",
+        owner_id: "owner-1",
+        status: "confirmed",
+        professional_id: null,
+        starts_at: "2026-11-10T15:00:00.000Z",
+      },
+    ],
+  });
+  const calls = neverCallFetch();
+  const result = await sendReplyAck(
+    db as never,
+    baseInput({ action: "already_registered", threadId: "thread-1" }),
+    () => NOW, // NOW = 2026-11-14, bem depois do starts_at acima
+  );
+  assert.equal(result.kind, "skipped");
+  assert.equal(calls.length, 0);
+});
+
+test("already_registered: agendamento ainda ativo e futuro -> envia normalmente", async () => {
+  const db = makeDb(); // starts_at 2026-11-15, status confirmed — ativo e futuro em relação a NOW (2026-11-14)
+  const calls = stubFetch(() => jsonResponse(200, { messages: [{ id: "wamid.AR" }] }));
+  const result = await sendReplyAck(
+    db as never,
+    baseInput({ action: "already_registered", threadId: "thread-1" }),
+    () => NOW,
+  );
+  assert.deepEqual(result, { kind: "sent" });
+  assert.equal(calls.length, 1);
+});
+
+test("already_registered: TEST_MODE e opt-out aplicam exatamente como nas outras 3 ações", async () => {
+  process.env.WHATSAPP_REMINDERS_TEST_MODE = "true";
+  process.env.WHATSAPP_REMINDERS_TEST_PHONES = "5511888880000";
+  const db = makeDb();
+  const calls = neverCallFetch();
+  const result = await sendReplyAck(
+    db as never,
+    baseInput({ action: "already_registered", threadId: "thread-1" }), // +5547999990001, fora da lista
+    () => NOW,
+  );
+  assert.equal(result.kind, "skipped");
+  assert.equal(calls.length, 0);
+});
+
+test("already_registered: evento mais antigo que 60 minutos nunca envia", async () => {
+  const db = makeDb();
+  const calls = neverCallFetch();
+  const old = new Date(NOW.getTime() - 61 * 60 * 1000).toISOString();
+  const result = await sendReplyAck(
+    db as never,
+    baseInput({ action: "already_registered", threadId: "thread-1", eventOccurredAtIso: old }),
+    () => NOW,
+  );
+  assert.equal(result.kind, "skipped");
+  assert.equal(calls.length, 0);
+});

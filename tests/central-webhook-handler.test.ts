@@ -6,7 +6,6 @@ import assert from "node:assert/strict";
 import { handleCentralWebhookEvents } from "../src/lib/whatsapp/central-webhook-handler.server.ts";
 import type { CentralInboundEvent } from "../src/lib/whatsapp/central-webhook-parser.ts";
 import { FakeSupabaseAdmin, createCapturingLogger, type Row } from "./helpers/fake-supabase.ts";
-import { applyWhatsappCentralReplyFake } from "./helpers/fake-apply-reply-rpc.ts";
 
 function run(
   db: FakeSupabaseAdmin,
@@ -124,10 +123,6 @@ function makeDb(overrides: Partial<Record<string, Row[]>> = {}) {
       app_notifications: [["owner_id", "dedupe_key"]],
       whatsapp_central_orphan_messages: [["provider_message_id"]],
     },
-    rpcHandlers: {
-      apply_whatsapp_central_reply: (params, fakeDb) =>
-        applyWhatsappCentralReplyFake(params, fakeDb, NOW),
-    },
   });
 }
 
@@ -193,23 +188,35 @@ function seedConfirmScenario() {
     uniqueKeys: {
       whatsapp_messages: [["provider", "provider_message_id"]],
     },
-    rpcHandlers: {
-      apply_whatsapp_central_reply: (params, fakeDb) =>
-        applyWhatsappCentralReplyFake(params, fakeDb, NOW),
-    },
   });
   return db;
 }
 
-test("DEFEITO CORRIGIDO: se a RPC falhar depois do registro de idempotência, o registro é removido (retry da Meta não fica travado em 'já processado' pra sempre)", async () => {
-  const db = seedConfirmScenario();
-  // Força a RPC a lançar (simula falha transitória de rede/timeout DEPOIS
-  // da mensagem inbound já ter sido gravada).
-  db["rpcHandlers" as never] = {
-    apply_whatsapp_central_reply: () => {
+/**
+ * FASE LEMBRETES-6: applyCentralThreadReply não chama mais .rpc() — simula
+ * "a chamada de apply falhou" fazendo a PRÓXIMA leitura de
+ * whatsapp_central_threads (a primeira coisa que applyCentralThreadReply
+ * faz) lançar `n` vezes, depois volta ao comportamento normal do
+ * FakeSupabaseAdmin.
+ */
+function throwOnNextThreadReads(db: FakeSupabaseAdmin, n: number): void {
+  const originalFrom = db.from.bind(db);
+  let remaining = n;
+  db.from = ((table: string) => {
+    if (table === "whatsapp_central_threads" && remaining > 0) {
+      remaining--;
       throw new Error("timeout simulado");
-    },
-  } as never;
+    }
+    return originalFrom(table);
+  }) as typeof db.from;
+}
+
+test("DEFEITO CORRIGIDO: se o apply falhar depois do registro de idempotência, o registro é removido (retry da Meta não fica travado em 'já processado' pra sempre)", async () => {
+  const db = seedConfirmScenario();
+  // Falha transitória de rede/timeout DEPOIS da mensagem inbound já ter
+  // sido gravada (1ª leitura de whatsapp_central_threads dentro de
+  // applyCentralThreadReply).
+  throwOnNextThreadReads(db, 1);
   const { logger } = createCapturingLogger();
 
   await assert.rejects(() =>
@@ -229,22 +236,13 @@ test("DEFEITO CORRIGIDO: se a RPC falhar depois do registro de idempotência, o 
   assert.equal(
     stillThere,
     false,
-    "a mensagem inbound deveria ter sido removida após a falha da RPC",
+    "a mensagem inbound deveria ter sido removida após a falha do apply",
   );
 });
 
 test("depois da compensação, uma reentrega do MESMO evento tenta de novo e aplica o efeito normalmente", async () => {
   const db = seedConfirmScenario();
-  let callCount = 0;
-  const realRpc = (params: Record<string, unknown>) =>
-    applyWhatsappCentralReplyFake(params, db, NOW);
-  db["rpcHandlers" as never] = {
-    apply_whatsapp_central_reply: (params: Record<string, unknown>) => {
-      callCount++;
-      if (callCount === 1) throw new Error("timeout simulado");
-      return realRpc(params);
-    },
-  } as never;
+  throwOnNextThreadReads(db, 1); // só a 1ª tentativa falha
   const { logger } = createCapturingLogger();
 
   // 1ª tentativa: falha, compensação remove a mensagem inbound.
@@ -264,6 +262,89 @@ test("depois da compensação, uma reentrega do MESMO evento tenta de novo e apl
 
   const appt = db.tables.appointments.find((a) => a.id === "appt-1")!;
   assert.equal(appt.client_confirmation_status, "confirmed");
+});
+
+/**
+ * AJUSTE (15/11/2026): simula falha na 2ª escrita (agendamento), DEPOIS do
+ * CAS da thread já ter ganho — diferente de throwOnNextThreadReads (que
+ * falha ANTES de qualquer mutação), aqui a thread já foi resolvida e
+ * precisa ser revertida pelo próprio applyCentralThreadReply.
+ */
+function throwOnNextAppointmentsUpdate(db: FakeSupabaseAdmin, n: number): void {
+  const originalFrom = db.from.bind(db);
+  let remaining = n;
+  db.from = ((table: string) => {
+    const builder = originalFrom(table);
+    if (table === "appointments") {
+      const originalUpdate = (builder as { update: (o: unknown) => unknown }).update.bind(builder);
+      (builder as { update: (o: unknown) => unknown }).update = (obj: unknown) => {
+        if (remaining > 0) {
+          remaining--;
+          throw new Error("falha simulada ao escrever no agendamento");
+        }
+        return originalUpdate(obj);
+      };
+    }
+    return builder;
+  }) as typeof db.from;
+}
+
+test("AJUSTE: falha na escrita do agendamento (depois do CAS da thread ganhar) nunca lança no webhook — resposta ao Meta fica 200 (sem exceção), sem ack, sem aviso no sino, thread revertida", async () => {
+  const db = makeDb();
+  throwOnNextAppointmentsUpdate(db, 1);
+  const { logger } = createCapturingLogger();
+
+  await assert.doesNotReject(() => run(db, [buttonEvent()], logger));
+
+  const thread = db.tables.whatsapp_central_threads.find((t) => t.id === "thread-1")!;
+  assert.equal(thread.status, "awaiting_reply", "thread deveria ter sido revertida");
+  assert.equal(
+    db.tables.appointments.find((a) => a.id === "appt-1")!.client_confirmation_status,
+    "pending",
+  );
+  assert.equal(
+    db.tables.app_notifications.length,
+    0,
+    "nenhum aviso no sino quando o efeito falhou",
+  );
+});
+
+test("AJUSTE: falha na escrita do agendamento -> NENHUMA resposta de texto livre é enviada à cliente (nem a de sucesso, nem 'já registramos')", async () => {
+  const { calls, restore } = withReplyAckFetch(() =>
+    jsonResponse(200, { messages: [{ id: "wamid.ACK" }] }),
+  );
+  try {
+    const db = makeDb();
+    throwOnNextAppointmentsUpdate(db, 1);
+    await run(db, [buttonEvent()]);
+    assert.equal(
+      calls.length,
+      0,
+      "write_failed nunca deveria disparar nenhuma resposta ao cliente",
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("AJUSTE: depois da reversão, um novo toque da cliente funciona normalmente (primeira escolha de verdade, com resposta enviada)", async () => {
+  const { calls, restore } = withReplyAckFetch(() =>
+    jsonResponse(200, { messages: [{ id: "wamid.ACK" }] }),
+  );
+  try {
+    const db = makeDb();
+    throwOnNextAppointmentsUpdate(db, 1); // só a 1ª tentativa falha
+    await run(db, [buttonEvent()]); // falha, reverte
+    assert.equal(calls.length, 0);
+    await run(db, [buttonEvent({ messageId: "wamid.BTN_002" })]); // novo toque
+    assert.equal(calls.length, 1, "agora deveria enviar a resposta normal de Confirmar");
+    assert.equal(
+      db.tables.appointments.find((a) => a.id === "appt-1")!.client_confirmation_status,
+      "confirmed",
+    );
+  } finally {
+    restore();
+  }
 });
 
 // ===== 3d — botões =====
@@ -824,14 +905,14 @@ test("LEMBRETES-5: botão Reagendar (1ª vez) envia a resposta de texto livre", 
   }
 });
 
-test("LEMBRETES-5: segundo toque em Reagendar (apply_reschedule_request_repeat) NÃO manda outra resposta", async () => {
+test("FASE LEMBRETES-6: segundo toque em Reagendar (thread já resolved_reschedule_requested) NÃO reaplica, mas MANDA a resposta 'já registramos' (texto fixo, 1x)", async () => {
   const { calls, restore } = withReplyAckFetch(() =>
     jsonResponse(200, { messages: [{ id: "wamid.ACK_R2" }] }),
   );
   try {
     const db = makeDb();
     await run(db, [buttonEvent({ buttonPayload: "v1|r|thread-1", buttonText: "Reagendar" })]);
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, 1, "1º toque: resposta normal de Reagendar");
     await run(db, [
       buttonEvent({
         messageId: "wamid.BTN_002",
@@ -839,13 +920,36 @@ test("LEMBRETES-5: segundo toque em Reagendar (apply_reschedule_request_repeat) 
         buttonText: "Reagendar",
       }),
     ]);
-    assert.equal(calls.length, 1, "não deveria ter chamado a Meta de novo no segundo toque");
+    assert.equal(
+      calls.length,
+      2,
+      "2º toque: MANDA a resposta 'já registramos' (MUDANÇA vs LEMBRETES-5)",
+    );
+    const body2 = JSON.parse(String(calls[1].init.body));
+    assert.equal(
+      body2.text.body,
+      "Já registramos sua resposta anterior. Para alterar, fale com o salão.",
+    );
+    assert.equal(
+      db.tables.appointments.find((a) => a.id === "appt-1")!.client_confirmation_status,
+      "reschedule_requested",
+      "nunca reaplicado — segue exatamente como o 1º toque deixou",
+    );
+    // retentativa do MESMO segundo evento (mesmo messageId) -> nenhuma chamada nova (claim por thread).
+    await run(db, [
+      buttonEvent({
+        messageId: "wamid.BTN_002",
+        buttonPayload: "v1|r|thread-1",
+        buttonText: "Reagendar",
+      }),
+    ]);
+    assert.equal(calls.length, 2, "reentrega do 2º evento não duplica o 'já registramos'");
   } finally {
     restore();
   }
 });
 
-test("LEMBRETES-5: Confirmar de novo em agendamento já confirmado (no_op_already_confirmed) NÃO manda outra resposta", async () => {
+test("FASE LEMBRETES-6: Confirmar de novo numa thread já resolved_confirmed -> MANDA 'já registramos' uma única vez, mesmo com 3 toques seguintes", async () => {
   const { calls, restore } = withReplyAckFetch(() =>
     jsonResponse(200, { messages: [{ id: "wamid.ACK_C2" }] }),
   );
@@ -853,8 +957,201 @@ test("LEMBRETES-5: Confirmar de novo em agendamento já confirmado (no_op_alread
     const db = makeDb();
     await run(db, [buttonEvent()]); // confirm
     assert.equal(calls.length, 1);
-    await run(db, [buttonEvent({ messageId: "wamid.BTN_002" })]); // confirm de novo
-    assert.equal(calls.length, 1, "no_op_already_confirmed nunca deveria chamar a Meta");
+    for (let i = 2; i <= 4; i++) {
+      await run(db, [buttonEvent({ messageId: `wamid.BTN_00${i}` })]); // confirm de novo, 3x
+    }
+    assert.equal(
+      calls.length,
+      2,
+      "1 resposta de Confirmar + 1 'já registramos' (nunca mais, mesmo com 3 toques extras)",
+    );
+    assert.equal(
+      db.tables.appointments.find((a) => a.id === "appt-1")!.client_confirmation_status,
+      "confirmed",
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("FASE LEMBRETES-6: thread resolvida por Confirmar, depois Cancelar -> NÃO cancela (MUDANÇA DE COMPORTAMENTO vs LEMBRETES-5), manda 'já registramos'", async () => {
+  const { calls, restore } = withReplyAckFetch(() =>
+    jsonResponse(200, { messages: [{ id: "wamid.ACK" }] }),
+  );
+  try {
+    const db = makeDb();
+    await run(db, [buttonEvent()]); // confirm
+    await run(db, [
+      buttonEvent({
+        messageId: "wamid.BTN_002",
+        buttonPayload: "v1|x|thread-1",
+        buttonText: "Cancelar",
+      }),
+    ]);
+    const appt = db.tables.appointments.find((a) => a.id === "appt-1")!;
+    assert.equal(
+      appt.status,
+      "confirmed",
+      "NUNCA deveria ter sido cancelado (antes da LEMBRETES-6, era cancelado)",
+    );
+    assert.equal(appt.client_confirmation_status, "confirmed");
+    assert.equal(calls.length, 2);
+    assert.match(JSON.parse(String(calls[1].init.body)).text.body, /Já registramos/);
+  } finally {
+    restore();
+  }
+});
+
+test("FASE LEMBRETES-6: thread resolvida por Cancelar, toque posterior -> SILÊNCIO TOTAL (nenhuma resposta, appt já cancelado)", async () => {
+  const { calls, restore } = withReplyAckFetch(() =>
+    jsonResponse(200, { messages: [{ id: "wamid.ACK" }] }),
+  );
+  try {
+    const db = makeDb();
+    await run(db, [buttonEvent({ buttonPayload: "v1|x|thread-1", buttonText: "Cancelar" })]); // 1º toque: cancela de verdade
+    assert.equal(calls.length, 1);
+    await run(db, [
+      buttonEvent({ messageId: "wamid.BTN_002" }), // confirm, 2º toque
+    ]);
+    assert.equal(
+      calls.length,
+      1,
+      "nenhuma resposta nova — agendamento cancelado nunca recebe 'já registramos'",
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("FASE LEMBRETES-6: dois botões DIFERENTES na MESMA thread, CONCORRENTES (Promise.all) -> só um efeito aplicado, o outro recebe 'já registramos'", async () => {
+  const { calls, restore } = withReplyAckFetch(() =>
+    jsonResponse(200, { messages: [{ id: "wamid.ACK" }] }),
+  );
+  try {
+    const db = makeDb();
+    await Promise.all([
+      run(db, [
+        buttonEvent({
+          messageId: "wamid.BTN_A",
+          buttonPayload: "v1|c|thread-1",
+          buttonText: "Confirmar",
+        }),
+      ]),
+      run(db, [
+        buttonEvent({
+          messageId: "wamid.BTN_B",
+          buttonPayload: "v1|x|thread-1",
+          buttonText: "Cancelar",
+        }),
+      ]),
+    ]);
+    const thread = db.tables.whatsapp_central_threads.find((t) => t.id === "thread-1")!;
+    assert.notEqual(thread.status, "awaiting_reply");
+    assert.equal(calls.length, 2, "um apply + um já registramos — nunca os dois apply");
+    const bodies = calls.map((c) => JSON.parse(String(c.init.body)).text.body as string);
+    const alreadyRegisteredCount = bodies.filter((b) => b.includes("Já registramos")).length;
+    assert.equal(alreadyRegisteredCount, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("FASE LEMBRETES-6: dois agendamentos (threads independentes) do mesmo número/dia — escolhas nunca se cruzam", async () => {
+  const { calls, restore } = withReplyAckFetch(() =>
+    jsonResponse(200, { messages: [{ id: "wamid.ACK" }] }),
+  );
+  try {
+    const db = makeDb({
+      whatsapp_messages: [
+        {
+          id: "msg-outbound-1",
+          provider: "meta_cloud_api_central",
+          provider_message_id: "wamid.OUTBOUND_001",
+          owner_id: "owner-1",
+          client_id: "client-1",
+          appointment_id: "appt-1",
+          status: "sent",
+          direction: "outbound",
+          recipient_phone: "5547999990001",
+        },
+        {
+          id: "msg-outbound-2",
+          provider: "meta_cloud_api_central",
+          provider_message_id: "wamid.OUTBOUND_002",
+          owner_id: "owner-1",
+          client_id: "client-1",
+          appointment_id: "appt-2",
+          status: "sent",
+          direction: "outbound",
+          recipient_phone: "5547999990001",
+        },
+      ],
+      whatsapp_central_threads: [
+        {
+          id: "thread-1",
+          owner_id: "owner-1",
+          appointment_id: "appt-1",
+          client_id: "client-1",
+          outbound_message_id: "msg-outbound-1",
+          status: "awaiting_reply",
+          appointment_starts_at_snapshot: "2026-11-12T12:00:00.000Z",
+        },
+        {
+          id: "thread-2",
+          owner_id: "owner-1",
+          appointment_id: "appt-2",
+          client_id: "client-1",
+          outbound_message_id: "msg-outbound-2",
+          status: "awaiting_reply",
+          appointment_starts_at_snapshot: "2026-11-12T16:00:00.000Z",
+        },
+      ],
+      appointments: [
+        {
+          id: "appt-1",
+          owner_id: "owner-1",
+          status: "pending",
+          starts_at: "2026-11-12T12:00:00.000Z",
+          client_confirmation_status: "pending",
+          professional_id: null,
+        },
+        {
+          id: "appt-2",
+          owner_id: "owner-1",
+          status: "pending",
+          starts_at: "2026-11-12T16:00:00.000Z",
+          client_confirmation_status: "pending",
+          professional_id: null,
+        },
+      ],
+    });
+    await run(db, [
+      buttonEvent({
+        messageId: "wamid.T1_C",
+        contextId: "wamid.OUTBOUND_001",
+        buttonPayload: "v1|c|thread-1",
+        buttonText: "Confirmar",
+      }),
+    ]);
+    await run(db, [
+      buttonEvent({
+        messageId: "wamid.T2_X",
+        contextId: "wamid.OUTBOUND_002",
+        buttonPayload: "v1|x|thread-2",
+        buttonText: "Cancelar",
+      }),
+    ]);
+    const appt1 = db.tables.appointments.find((a) => a.id === "appt-1")!;
+    const appt2 = db.tables.appointments.find((a) => a.id === "appt-2")!;
+    assert.equal(appt1.client_confirmation_status, "confirmed");
+    assert.equal(appt1.status, "pending");
+    assert.equal(appt2.client_confirmation_status, "declined");
+    assert.equal(appt2.status, "cancelled");
+    // nenhuma das duas respostas é 'já registramos' — ambas são o 1º toque de cada thread
+    assert.equal(calls.length, 2);
+    for (const c of calls) {
+      assert.doesNotMatch(JSON.parse(String(c.init.body)).text.body as string, /Já registramos/);
+    }
   } finally {
     restore();
   }

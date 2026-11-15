@@ -189,6 +189,11 @@ export class FakeSupabaseAdmin {
             return updateBuilder;
           },
           select(_cols?: string) {
+            // Como o builder real do supabase-js: .select() sozinho (sem
+            // .single()/.maybeSingle()) já é "thenable" e devolve o ARRAY de
+            // linhas afetadas (FASE LEMBRETES-6: é assim que o CAS atômico de
+            // whatsapp_central_threads lê quantas linhas o UPDATE realmente
+            // tocou — 0 = perdeu a corrida, 1 = ganhou).
             return {
               async single() {
                 const rows = applyUpdate();
@@ -200,6 +205,12 @@ export class FakeSupabaseAdmin {
                 const rows = applyUpdate();
                 if (rows.length > 1) return { data: null, error: uniqueOrNoRowsError(rows.length) };
                 return { data: rows[0] ?? null, error: null };
+              },
+              then(
+                resolve: (v: { data: Row[]; error: null }) => unknown,
+                reject?: (e: unknown) => unknown,
+              ) {
+                return Promise.resolve({ data: applyUpdate(), error: null }).then(resolve, reject);
               },
             };
           },

@@ -11,7 +11,6 @@ import {
 } from "../src/lib/whatsapp/webhook-meta.server.ts";
 import { computeMetaWebhookSignature } from "../src/lib/whatsapp/central-webhook-signature.server.ts";
 import { FakeSupabaseAdmin, createCapturingLogger } from "./helpers/fake-supabase.ts";
-import { applyWhatsappCentralReplyFake } from "./helpers/fake-apply-reply-rpc.ts";
 
 const SECRET = "segredo-de-teste-nao-real";
 const CENTRAL_PNID = "CENTRAL_PNID_999";
@@ -249,10 +248,10 @@ function seedCentral(overrides: Partial<Record<string, unknown[]>> = {}) {
       whatsapp_central_orphan_messages: [["provider_message_id"]],
       whatsapp_status_reconciliation: [["provider_message_id", "status"]],
     },
-    rpcHandlers: {
-      apply_whatsapp_central_reply: (params, fakeDb) =>
-        applyWhatsappCentralReplyFake(params, fakeDb, NOW),
-    },
+    // FASE LEMBRETES-6: applyCentralThreadReply deixou de chamar .rpc() —
+    // decide e aplica direto via supabaseAdmin.from(...), que o
+    // FakeSupabaseAdmin genérico já simula; rpcHandlers não é mais
+    // necessário aqui.
   });
 }
 
@@ -638,7 +637,7 @@ test("11) toque duplo (dois ids diferentes, mesma conversa): segundo não gera e
     assert.equal(
       centralDb.tables.appointments.find((a) => a.id === "appt-1")!.client_confirmation_status,
       "confirmed",
-      "continua confirmed, sem erro (no_op_already_confirmed internamente)",
+      "continua confirmed, sem erro (already_registered internamente, FASE LEMBRETES-6)",
     );
   } finally {
     setCentralEnv(undefined);

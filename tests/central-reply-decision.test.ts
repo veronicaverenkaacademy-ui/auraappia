@@ -1,4 +1,8 @@
-// Suíte da máquina de estados pura das respostas de botão.
+// Suíte da máquina de decisão pura das respostas de botão.
+// FASE LEMBRETES-6 (14/11/2026): reescrita para a regra "primeira escolha
+// vale" — a decisão agora é tomada primeiro por threadStatus (a thread já
+// foi resolvida por um botão antes?), nunca mais por
+// appointments.client_confirmation_status (removido do input).
 // Rodar com: node --experimental-strip-types --test tests/central-reply-decision.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -13,92 +17,27 @@ function base(overrides: Partial<Parameters<typeof decideThreadReply>[0]> = {}) 
     threadAppointmentStartsAtSnapshotIso: SNAPSHOT,
     appointmentStartsAtIso: SNAPSHOT,
     appointmentStatus: "pending" as const,
-    clientConfirmationStatus: "pending" as const,
     now: new Date("2026-11-10T15:00:00.000Z"), // 1 dia antes
     lateCancelHours: 4,
     ...overrides,
   };
 }
 
-test("confirmar: pendente -> apply_confirm", () => {
+// ---------- Primeiro toque (thread 'awaiting_reply') — comportamento idêntico a antes ----------
+
+test("confirmar: primeiro toque -> apply_confirm", () => {
   assert.deepEqual(decideThreadReply(base({ action: "confirm" })), { kind: "apply_confirm" });
 });
 
-test("confirmar: já confirmado -> no_op_already_confirmed (mesmo com a thread já resolvida pela própria confirmação)", () => {
-  const r = decideThreadReply(
-    base({
-      action: "confirm",
-      clientConfirmationStatus: "confirmed",
-      threadStatus: "resolved_confirmed",
-    }),
-  );
-  assert.equal(r.kind, "no_op_already_confirmed");
-});
-
-test("confirmar depois de cancelar: caso especial confirm_after_cancel (mesmo com a thread já resolvida pelo próprio cancelamento)", () => {
-  const r = decideThreadReply(
-    base({
-      action: "confirm",
-      clientConfirmationStatus: "declined",
-      appointmentStatus: "cancelled",
-      threadStatus: "resolved_cancelled",
-    }),
-  );
-  assert.equal(r.kind, "confirm_after_cancel");
-});
-
-test("cancelar: pendente -> apply_cancel (não tardio, 1 dia de antecedência)", () => {
+test("cancelar: primeiro toque -> apply_cancel (não tardio, 1 dia de antecedência)", () => {
   const r = decideThreadReply(base({ action: "cancel" }));
   assert.equal(r.kind, "apply_cancel");
   if (r.kind === "apply_cancel") assert.equal(r.lateCancel, false);
 });
 
-test("cancelar: já cancelado -> no_op_already_cancelled (mesmo com a thread já resolvida)", () => {
-  const r = decideThreadReply(
-    base({
-      action: "cancel",
-      clientConfirmationStatus: "declined",
-      appointmentStatus: "cancelled",
-      threadStatus: "resolved_cancelled",
-    }),
-  );
-  assert.equal(r.kind, "no_op_already_cancelled");
-});
-
-test("reagendar depois de já ter cancelado: sem regra específica, tratado como resposta tardia", () => {
-  const r = decideThreadReply(
-    base({
-      action: "reschedule",
-      clientConfirmationStatus: "declined",
-      appointmentStatus: "cancelled",
-      threadStatus: "resolved_cancelled",
-    }),
-  );
-  assert.equal(r.kind, "late_response");
-});
-
-test("confirmar depois de cancelar, mas o horário já passou: late_response, não confirm_after_cancel", () => {
-  const r = decideThreadReply(
-    base({
-      action: "confirm",
-      clientConfirmationStatus: "declined",
-      appointmentStatus: "cancelled",
-      threadStatus: "resolved_cancelled",
-      now: new Date("2026-11-12T00:00:00.000Z"),
-    }),
-  );
-  assert.equal(r.kind, "late_response");
-});
-
-test("cancelar depois de confirmar: permitido (apply_cancel normal), mesmo com a thread já resolvida", () => {
-  const r = decideThreadReply(
-    base({
-      action: "cancel",
-      clientConfirmationStatus: "confirmed",
-      threadStatus: "resolved_confirmed",
-    }),
-  );
-  assert.equal(r.kind, "apply_cancel");
+test("reagendar: primeiro toque -> apply_reschedule_request", () => {
+  const r = decideThreadReply(base({ action: "reschedule" }));
+  assert.equal(r.kind, "apply_reschedule_request");
 });
 
 test("cancelamento em cima da hora (dentro de LATE_CANCEL_HOURS): lateCancel=true", () => {
@@ -116,47 +55,7 @@ test("cancelamento exatamente no limite de LATE_CANCEL_HOURS não é tardio", ()
   if (r.kind === "apply_cancel") assert.equal(r.lateCancel, false);
 });
 
-test("reagendar: primeira vez -> apply_reschedule_request (alreadyRequested=false)", () => {
-  const r = decideThreadReply(base({ action: "reschedule" }));
-  assert.equal(r.kind, "apply_reschedule_request");
-  if (r.kind === "apply_reschedule_request") assert.equal(r.alreadyRequested, false);
-});
-
-test("reagendar: repetido -> alreadyRequested=true (sem duplicar notificação), mesmo com a thread já resolvida", () => {
-  const r = decideThreadReply(
-    base({
-      action: "reschedule",
-      clientConfirmationStatus: "reschedule_requested",
-      threadStatus: "resolved_reschedule_requested",
-    }),
-  );
-  if (r.kind === "apply_reschedule_request") assert.equal(r.alreadyRequested, true);
-});
-
-test("confirmar depois de pedir reagendamento: permitido (mudou de ideia)", () => {
-  const r = decideThreadReply(
-    base({
-      action: "confirm",
-      clientConfirmationStatus: "reschedule_requested",
-      threadStatus: "resolved_reschedule_requested",
-    }),
-  );
-  assert.equal(r.kind, "apply_confirm");
-});
-
-test("reagendamento pedido + agendamento cancelado por outro motivo depois: late_response", () => {
-  const r = decideThreadReply(
-    base({
-      action: "reschedule",
-      clientConfirmationStatus: "reschedule_requested",
-      appointmentStatus: "cancelled",
-      threadStatus: "resolved_reschedule_requested",
-    }),
-  );
-  assert.equal(r.kind, "late_response");
-});
-
-test("lembrete desatualizado: horário do agendamento mudou desde o envio", () => {
+test("lembrete desatualizado: horário do agendamento mudou desde o envio (primeiro toque)", () => {
   const r = decideThreadReply(
     base({ action: "confirm", appointmentStartsAtIso: "2026-11-12T18:00:00.000Z" }),
   );
@@ -168,93 +67,142 @@ test("M3 (28/10/2026): MESMO instante em formatos de texto diferentes (Postgres 
     base({
       action: "confirm",
       threadAppointmentStartsAtSnapshotIso: "2026-11-11 15:00:00+00", // formato Postgres
-      appointmentStartsAtIso: SNAPSHOT, // "2026-11-11T15:00:00.000Z" — mesmo instante, formato JS
+      appointmentStartsAtIso: SNAPSHOT, // mesmo instante, formato JS
     }),
   );
   assert.equal(r.kind, "apply_confirm", "mesmo instante, texto diferente — nunca é stale_reminder");
 });
 
-test("DEFEITO CORRIGIDO 04/11/2026: no_show com starts_at ainda no futuro (edição manual incomum) nunca é confirmável — late_response, igual a completed", () => {
+test("primeiro toque, mas agendamento concluído: late_response", () => {
+  const r = decideThreadReply(base({ action: "confirm", appointmentStatus: "completed" }));
+  assert.equal(r.kind, "late_response");
+});
+
+test("DEFEITO CORRIGIDO 04/11/2026: no_show com starts_at ainda no futuro nunca é confirmável — late_response", () => {
   const r = decideThreadReply(base({ action: "confirm", appointmentStatus: "no_show" }));
   assert.equal(r.kind, "late_response");
 });
 
-test("DEFEITO CORRIGIDO 04/11/2026: no_show com starts_at ainda no futuro também não é cancelável", () => {
-  const r = decideThreadReply(base({ action: "cancel", appointmentStatus: "no_show" }));
+test("primeiro toque, mas agendamento já cancelado (por outra via, nunca pela própria cliente): late_response", () => {
+  const r = decideThreadReply(base({ action: "confirm", appointmentStatus: "cancelled" }));
   assert.equal(r.kind, "late_response");
 });
 
-test("DEFEITO CORRIGIDO 04/11/2026: lembrete desatualizado agora vale TAMBÉM no estado 'confirmed' (antes só valia em 'pending') — stale_reminder, nunca apply_cancel no horário antigo", () => {
-  const r = decideThreadReply(
-    base({
-      action: "cancel",
-      clientConfirmationStatus: "confirmed",
-      threadStatus: "resolved_confirmed",
-      appointmentStartsAtIso: "2026-11-11T18:00:00.000Z", // Agenda remarcou depois da confirmação
-    }),
-  );
-  assert.equal(
-    r.kind,
-    "stale_reminder",
-    "snapshot desatualizado tem que vencer, mesmo já confirmado",
-  );
-});
-
-test("DEFEITO CORRIGIDO 04/11/2026: lembrete desatualizado também vale no estado 'reschedule_requested'", () => {
-  const r = decideThreadReply(
-    base({
-      action: "confirm",
-      clientConfirmationStatus: "reschedule_requested",
-      threadStatus: "resolved_reschedule_requested",
-      appointmentStartsAtIso: "2026-11-11T18:00:00.000Z",
-    }),
-  );
-  assert.equal(r.kind, "stale_reminder");
-});
-
-test("DEFEITO CORRIGIDO 04/11/2026: lembrete desatualizado também vale no estado 'declined'/cancelado", () => {
-  const r = decideThreadReply(
-    base({
-      action: "confirm",
-      clientConfirmationStatus: "declined",
-      appointmentStatus: "cancelled",
-      threadStatus: "resolved_cancelled",
-      appointmentStartsAtIso: "2026-11-11T18:00:00.000Z",
-    }),
-  );
-  assert.equal(r.kind, "stale_reminder");
-});
-
-test("horário já passou: late_response, qualquer ação", () => {
+test("horário já passou: late_response, qualquer ação (primeiro toque)", () => {
   const r = decideThreadReply(
     base({ action: "confirm", now: new Date("2026-11-12T00:00:00.000Z") }),
   );
   assert.equal(r.kind, "late_response");
 });
 
-test("agendamento concluído: late_response", () => {
-  const r = decideThreadReply(base({ action: "confirm", appointmentStatus: "completed" }));
-  assert.equal(r.kind, "late_response");
+// ---------- FASE LEMBRETES-6: "primeira escolha vale" — toques seguintes ----------
+
+test("thread resolvida por Confirmar: Confirmar de novo -> already_registered (agendamento ainda ativo e futuro)", () => {
+  const r = decideThreadReply(
+    base({ action: "confirm", threadStatus: "resolved_confirmed", appointmentStatus: "confirmed" }),
+  );
+  assert.deepEqual(r, { kind: "already_registered" });
 });
 
-test("agendamento cancelado por OUTRO motivo (não pela própria cliente): late_response, não confirm_after_cancel", () => {
+test("thread resolvida por Confirmar: Cancelar NÃO aplica mais o cancelamento -> already_registered (MUDANÇA DE COMPORTAMENTO vs antes)", () => {
+  const r = decideThreadReply(
+    base({ action: "cancel", threadStatus: "resolved_confirmed", appointmentStatus: "confirmed" }),
+  );
+  assert.deepEqual(
+    r,
+    { kind: "already_registered" },
+    "antes da LEMBRETES-6 isto aplicava apply_cancel; agora é sempre no-op",
+  );
+});
+
+test("thread resolvida por Confirmar: Reagendar NÃO aplica mais o pedido -> already_registered (MUDANÇA DE COMPORTAMENTO vs antes)", () => {
+  const r = decideThreadReply(
+    base({
+      action: "reschedule",
+      threadStatus: "resolved_confirmed",
+      appointmentStatus: "confirmed",
+    }),
+  );
+  assert.deepEqual(r, { kind: "already_registered" });
+});
+
+test("thread resolvida por Reagendar: Confirmar NÃO aplica mais a confirmação -> already_registered (MUDANÇA DE COMPORTAMENTO vs antes)", () => {
   const r = decideThreadReply(
     base({
       action: "confirm",
-      appointmentStatus: "cancelled",
-      clientConfirmationStatus: "pending",
+      threadStatus: "resolved_reschedule_requested",
+      appointmentStatus: "pending",
     }),
   );
-  assert.equal(r.kind, "late_response");
+  assert.deepEqual(r, { kind: "already_registered" });
 });
 
-test("thread já resolvida (não awaiting_reply): late_response para qualquer ação", () => {
-  const r1 = decideThreadReply(base({ action: "confirm", threadStatus: "resolved_confirmed" }));
-  assert.equal(r1.kind, "late_response");
-  const r2 = decideThreadReply(base({ action: "cancel", threadStatus: "superseded" }));
-  assert.equal(r2.kind, "late_response");
-  const r3 = decideThreadReply(base({ action: "reschedule", threadStatus: "stale" }));
-  assert.equal(r3.kind, "late_response");
+test("thread resolvida por Reagendar: Cancelar NÃO aplica mais o cancelamento -> already_registered (MUDANÇA DE COMPORTAMENTO vs antes)", () => {
+  const r = decideThreadReply(
+    base({
+      action: "cancel",
+      threadStatus: "resolved_reschedule_requested",
+      appointmentStatus: "pending",
+    }),
+  );
+  assert.deepEqual(r, { kind: "already_registered" });
+});
+
+test("thread resolvida por Reagendar: Reagendar de novo -> already_registered (antes era apply_reschedule_request_repeat)", () => {
+  const r = decideThreadReply(
+    base({
+      action: "reschedule",
+      threadStatus: "resolved_reschedule_requested",
+      appointmentStatus: "pending",
+    }),
+  );
+  assert.deepEqual(r, { kind: "already_registered" });
+});
+
+test("thread resolvida por Cancelar: qualquer toque seguinte -> late_response, NUNCA already_registered (agendamento está cancelado)", () => {
+  for (const action of ["confirm", "cancel", "reschedule"] as const) {
+    const r = decideThreadReply(
+      base({ action, threadStatus: "resolved_cancelled", appointmentStatus: "cancelled" }),
+    );
+    assert.deepEqual(
+      r,
+      { kind: "late_response" },
+      `ação ${action} deveria ser silêncio total após Cancelar (appt.status='cancelled')`,
+    );
+  }
+});
+
+test("thread resolvida por botão, mas agendamento já concluído: late_response (silêncio), nunca already_registered", () => {
+  const r = decideThreadReply(
+    base({ action: "confirm", threadStatus: "resolved_confirmed", appointmentStatus: "completed" }),
+  );
+  assert.deepEqual(r, { kind: "late_response" });
+});
+
+test("thread resolvida por botão, mas horário já passou: late_response (silêncio), nunca already_registered", () => {
+  const r = decideThreadReply(
+    base({
+      action: "confirm",
+      threadStatus: "resolved_confirmed",
+      appointmentStatus: "confirmed",
+      now: new Date("2026-11-12T00:00:00.000Z"),
+    }),
+  );
+  assert.deepEqual(r, { kind: "late_response" });
+});
+
+test("thread 'stale' (agendamento remarcado antes de qualquer toque, nunca resolvida por botão): late_response, nunca already_registered", () => {
+  const r = decideThreadReply(
+    base({ action: "confirm", threadStatus: "stale", appointmentStatus: "pending" }),
+  );
+  assert.deepEqual(r, { kind: "late_response" });
+});
+
+test("thread 'superseded' (substituída por um lembrete mais novo, nunca resolvida por botão): late_response, nunca already_registered", () => {
+  const r = decideThreadReply(
+    base({ action: "confirm", threadStatus: "superseded", appointmentStatus: "pending" }),
+  );
+  assert.deepEqual(r, { kind: "late_response" });
 });
 
 test("determinístico: mesma entrada sempre dá a mesma decisão (toques simultâneos simulados)", () => {
@@ -262,4 +210,7 @@ test("determinístico: mesma entrada sempre dá a mesma decisão (toques simult�
   const r1 = decideThreadReply(input);
   const r2 = decideThreadReply(input);
   assert.deepEqual(r1, r2);
+
+  const inputResolved = base({ action: "confirm", threadStatus: "resolved_confirmed" });
+  assert.deepEqual(decideThreadReply(inputResolved), decideThreadReply(inputResolved));
 });
