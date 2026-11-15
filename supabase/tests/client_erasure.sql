@@ -89,6 +89,7 @@ DECLARE
   v_appt_future_pending uuid; v_appt_future_cancelled uuid; v_appt_future_completed_early uuid; v_appt_past_completed uuid;
   v_appt_other_a uuid; v_appt_x_b_future uuid;
   v_conv_x_a uuid;
+  v_outbound_msg_central uuid; v_outbound_msg_confirmation uuid;
 BEGIN
   INSERT INTO auth.users (id, email) VALUES
     (v_owner_a, 'zz-fixture-owner-a@invalid.test'),
@@ -169,10 +170,22 @@ BEGIN
     ('appt_other_a', v_appt_other_a);
 
   -- Threads de WhatsApp ligadas ao agendamento futuro pendente da cliente X.
+  -- outbound_message_id tem FK real pra whatsapp_messages(id) ON DELETE
+  -- CASCADE (descoberto só ao rodar contra o banco real — não estava no
+  -- levantamento de FKs da Parte 0, que checou só FKs de ENTRADA em
+  -- clients.id/auth.users.id, não as de whatsapp_central_threads/
+  -- whatsapp_confirmation_threads pra whatsapp_messages) — precisa de uma
+  -- linha real, não de um uuid solto.
+  INSERT INTO public.whatsapp_messages (owner_id, client_id, direction, message_type, recipient_phone, status)
+    VALUES (v_owner_a, v_client_x_a, 'outbound', 'template', '+5511999990001', 'sent')
+    RETURNING id INTO v_outbound_msg_central;
+  INSERT INTO public.whatsapp_messages (owner_id, client_id, direction, message_type, recipient_phone, status)
+    VALUES (v_owner_a, v_client_x_a, 'outbound', 'template', '+5511999990001', 'sent')
+    RETURNING id INTO v_outbound_msg_confirmation;
   INSERT INTO public.whatsapp_central_threads (owner_id, client_id, appointment_id, outbound_message_id, template_key, appointment_starts_at_snapshot)
-    VALUES (v_owner_a, v_client_x_a, v_appt_future_pending, gen_random_uuid(), 'lembrete_24h', now() + interval '3 days');
+    VALUES (v_owner_a, v_client_x_a, v_appt_future_pending, v_outbound_msg_central, 'lembrete_24h', now() + interval '3 days');
   INSERT INTO public.whatsapp_confirmation_threads (owner_id, client_id, appointment_id, outbound_message_id, appointment_starts_at_snapshot)
-    VALUES (v_owner_a, v_client_x_a, v_appt_future_pending, gen_random_uuid(), now() + interval '3 days');
+    VALUES (v_owner_a, v_client_x_a, v_appt_future_pending, v_outbound_msg_confirmation, now() + interval '3 days');
 
   -- notification_jobs: 1 PENDENTE pro agendamento futuro, 1 já SENT pro
   -- agendamento passado (prova que TODOS são apagados, não só pendentes).
