@@ -652,6 +652,7 @@ DROP FUNCTION IF EXISTS public.purge_client_consent_pii(uuid);
 DROP TRIGGER IF EXISTS trg_10_client_consents_block_mutation ON public.client_consents;
 DROP FUNCTION IF EXISTS public.client_consents_block_mutation();
 
+DROP POLICY IF EXISTS client_consents_owner_select ON public.client_consents;
 DROP POLICY IF EXISTS client_consents_staff_select ON public.client_consents;
 
 DROP TABLE IF EXISTS public.client_consents;

@@ -28,6 +28,9 @@ DROP FUNCTION IF EXISTS public.purge_client_consent_pii(uuid);
 DROP TRIGGER IF EXISTS trg_10_client_consents_block_mutation ON public.client_consents;
 DROP FUNCTION IF EXISTS public.client_consents_block_mutation();
 
+-- As 2 policies de leitura (DROP explícito por completude — o DROP TABLE
+-- abaixo já as removeria em cascata mesmo sem isto).
+DROP POLICY IF EXISTS client_consents_owner_select ON public.client_consents;
 DROP POLICY IF EXISTS client_consents_staff_select ON public.client_consents;
 
 DROP TABLE IF EXISTS public.client_consents;
