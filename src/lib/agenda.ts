@@ -289,7 +289,7 @@ async function rearmSentReminderJobsIfStartsAtChanged(
 ): Promise<void> {
   const { data: current } = await supabase
     .from("appointments")
-    .select("starts_at")
+    .select("starts_at, status")
     .eq("id", id)
     .maybeSingle();
   if (!current || sameInstant(current.starts_at, newStartsAt)) return;
@@ -305,7 +305,10 @@ async function rearmSentReminderJobsIfStartsAtChanged(
         .eq("appointment_id", id)
         .eq("type", type)
         .maybeSingle();
-      const patch = reminderJobRearmOnReschedule(job?.status, newStartsAt, offsetMs);
+      const patch = reminderJobRearmOnReschedule(job?.status, newStartsAt, offsetMs, {
+        appointmentStatus: current.status,
+        now: new Date(),
+      });
       if (patch) {
         await supabase
           .from("notification_jobs")
@@ -322,12 +325,49 @@ async function rearmSentReminderJobsIfStartsAtChanged(
   }
 }
 
+/**
+ * FASE LEMBRETES-6 (últimos ajustes, Parte 1, 15/11/2026): mesma lógica de
+ * supersedeOpenThreadOnReschedule em booking.functions.ts (lado da
+ * cliente) — aqui pro lado da PROFISSIONAL (arrastar/editar na Agenda).
+ * Sem isto, uma thread 'awaiting_reply' de um lembrete do horário ANTIGO
+ * fica aberta pra sempre e bloqueia (índice único parcial
+ * whatsapp_central_threads_open_idx) o INSERT da thread do lembrete do
+ * NOVO horário (23505) quando ele for enviado. Melhor esforço: nunca
+ * lança, nunca bloqueia a edição em si.
+ */
+async function supersedeOpenThreadIfStartsAtChanged(
+  id: string,
+  newStartsAt: string,
+): Promise<void> {
+  try {
+    const { data: current } = await supabase
+      .from("appointments")
+      .select("starts_at")
+      .eq("id", id)
+      .maybeSingle();
+    if (!current || sameInstant(current.starts_at, newStartsAt)) return;
+    await supabase
+      .from("whatsapp_central_threads")
+      .update({ status: "superseded" })
+      .eq("appointment_id", id)
+      .eq("status", "awaiting_reply");
+  } catch (e) {
+    console.error(
+      "[agenda] Falha ao marcar a thread antiga como superseded depois de remarcar — melhor esforço.",
+      e instanceof Error ? e.message : String(e),
+    );
+  }
+}
+
 export async function updateAppointment(id: string, patch: EditAppointmentInput): Promise<Appointment> {
   const { forceOverlap, ...rest } = patch;
   const confirmationPatch = rest.starts_at
     ? await confirmationResetPatchIfStartsAtChanged(id, rest.starts_at)
     : {};
-  if (rest.starts_at) await rearmSentReminderJobsIfStartsAtChanged(id, rest.starts_at);
+  if (rest.starts_at) {
+    await rearmSentReminderJobsIfStartsAtChanged(id, rest.starts_at);
+    await supersedeOpenThreadIfStartsAtChanged(id, rest.starts_at);
+  }
   const payload = {
     ...rest,
     ...(forceOverlap !== undefined ? { force_overlap: forceOverlap } : {}),
@@ -347,6 +387,7 @@ export async function updateAppointmentTime(
 ): Promise<Appointment> {
   const confirmationPatch = await confirmationResetPatchIfStartsAtChanged(id, starts_at);
   await rearmSentReminderJobsIfStartsAtChanged(id, starts_at);
+  await supersedeOpenThreadIfStartsAtChanged(id, starts_at);
   const { data, error } = await supabase
     .from("appointments")
     .update({ starts_at, ends_at, force_overlap: forceOverlap, ...confirmationPatch })

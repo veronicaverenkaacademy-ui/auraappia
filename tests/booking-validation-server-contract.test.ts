@@ -514,9 +514,64 @@ test("GUARDA: rescheduleClientAppointment re-arma notification_jobs 'sent' só q
   const rescheduleBody = src.slice(src.indexOf("export const rescheduleClientAppointment"));
   assert.match(
     rescheduleBody,
-    /if\s*\(startsAtReallyChanged\)\s*\{\s*await rearmSentReminderJobsOnReschedule/,
+    /if\s*\(startsAtReallyChanged\)\s*\{[\s\S]*?await rearmSentReminderJobsOnReschedule/,
     "o re-armamento só deveria rodar quando startsAtReallyChanged for true",
   );
+});
+
+// ---------------------------------------------------------------------------
+// GUARDA (últimos ajustes, Parte 1): a thread antiga (awaiting_reply) só é
+// marcada 'superseded' na MESMA região de código do re-armamento acima
+// (mesmo if (startsAtReallyChanged)), nos dois lados (cliente e
+// profissional) — nunca fora desse gate, nunca pra uma remarcação que não
+// mudou o horário de verdade.
+// ---------------------------------------------------------------------------
+test("GUARDA: rescheduleClientAppointment marca a thread antiga 'superseded' na mesma região de código do rearm (startsAtReallyChanged)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/lib/booking.functions.ts", import.meta.url), "utf8");
+  const rescheduleBody = src.slice(src.indexOf("export const rescheduleClientAppointment"));
+  assert.match(
+    rescheduleBody,
+    /if\s*\(startsAtReallyChanged\)\s*\{[\s\S]*?await rearmSentReminderJobsOnReschedule\([\s\S]*?\);[\s\S]*?await supersedeOpenThreadOnReschedule/,
+    "supersedeOpenThreadOnReschedule deveria rodar dentro do mesmo if (startsAtReallyChanged), depois do rearm",
+  );
+  const supersedeFnBody = src.slice(
+    src.indexOf("async function supersedeOpenThreadOnReschedule"),
+    src.indexOf("async function supersedeOpenThreadOnReschedule") + 800,
+  );
+  assert.match(
+    supersedeFnBody,
+    /\.eq\(\s*["']appointment_id["']/,
+    "deveria filtrar por appointment_id",
+  );
+  assert.match(
+    supersedeFnBody,
+    /\.eq\(\s*["']status["'],\s*["']awaiting_reply["']\s*\)/,
+    "deveria filtrar por status='awaiting_reply' (só a thread aberta)",
+  );
+  assert.match(supersedeFnBody, /status:\s*["']superseded["']/, "deveria marcar como 'superseded'");
+  assert.match(
+    supersedeFnBody,
+    /try\s*\{[\s\S]*catch/,
+    "melhor esforço: nunca deve lançar e quebrar a remarcação",
+  );
+});
+
+test("GUARDA: updateAppointment/updateAppointmentTime (agenda.ts) também marcam a thread antiga 'superseded' ao remarcar", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/lib/agenda.ts", import.meta.url), "utf8");
+  assert.match(
+    src,
+    /async function supersedeOpenThreadIfStartsAtChanged/,
+    "deveria existir o helper de supersede do lado da Agenda",
+  );
+  const updateApptBody = src.slice(
+    src.indexOf("export async function updateAppointment("),
+    src.indexOf("export async function updateAppointmentTime("),
+  );
+  assert.match(updateApptBody, /supersedeOpenThreadIfStartsAtChanged/);
+  const updateTimeBody = src.slice(src.indexOf("export async function updateAppointmentTime("));
+  assert.match(updateTimeBody, /supersedeOpenThreadIfStartsAtChanged/);
 });
 
 test("GUARDA: updateAppointment/updateAppointmentTime (agenda.ts) chamam o re-armamento de notification_jobs 'sent'", async () => {

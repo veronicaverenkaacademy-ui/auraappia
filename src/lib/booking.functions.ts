@@ -28,22 +28,27 @@ import {
 
 const DEFAULT_TIMEZONE = "America/Sao_Paulo";
 
-// AJUSTE (15/11/2026, LEMBRETES-6 ajuste 2): quando um agendamento já teve
-// o lembrete de 24h/2h ENVIADO (notification_jobs.status='sent') e depois é
-// remarcado pra outro horário, o job fica parado em 'sent' pra sempre — o
-// scanner (scanAndEnqueueCentralReminders) só olha agendamentos com
-// reminder_24h_sent_at/reminder_2h_sent_at nulos, então nunca mais
-// reconsidera este agendamento, e o lembrete do NOVO horário nunca sai.
-// Re-arma (status='pending', attempts=0, last_error=null, scheduled_for/
-// next_attempt_at recalculados) só quando o job já estava 'sent' — job
-// ainda 'pending' já é recalculado pelo scanner normalmente; 'processing'/
-// 'cancelled'/'failed' ficam fora de propósito (ver docstring de
-// reminderJobRearmOnReschedule). Melhor esforço: nunca bloqueia a
-// remarcação em si (mesma filosofia do aviso de remarcação logo abaixo).
+// AJUSTE (15/11/2026, LEMBRETES-6 ajuste 2 + últimos ajustes Parte 2):
+// quando um agendamento já teve o lembrete de 24h/2h ENVIADO
+// (notification_jobs.status='sent') OU CANCELADO (status='cancelled') e
+// depois é remarcado pra outro horário, o job fica parado nesse status pra
+// sempre — o scanner (scanAndEnqueueCentralReminders) só recalcula job
+// 'pending', e o índice único (appointment_id, type) impede criar um novo
+// do zero. Re-arma (status='pending', attempts=0, last_error=null,
+// scheduled_for/next_attempt_at recalculados) nesses dois casos — ver
+// condições exatas (inclusive a checagem extra de "ativo e futuro" só
+// pra 'cancelled') na docstring de reminderJobRearmOnReschedule.
+// 'processing'/'failed' ficam fora de propósito. Melhor esforço: nunca
+// bloqueia a remarcação em si (mesma filosofia do aviso de remarcação logo
+// abaixo). `appointmentStatus`/`now` são passados por quem chama — aqui já
+// é sempre o status PÓS-remarcação ('pending', sempre ativo) e o relógio
+// usado pra validar o novo horário, nunca buscados de novo.
 async function rearmSentReminderJobsOnReschedule(
   supabaseAdmin: SupabaseAdmin,
   appointmentId: string,
   newStartsAtIso: string,
+  appointmentStatus: string,
+  now: Date,
 ): Promise<void> {
   const jobTypes: Array<["appointment_reminder_24h" | "appointment_reminder_2h", number]> = [
     ["appointment_reminder_24h", REMINDER_24H_OFFSET_MS],
@@ -57,7 +62,10 @@ async function rearmSentReminderJobsOnReschedule(
         .eq("appointment_id", appointmentId)
         .eq("type", type)
         .maybeSingle();
-      const patch = reminderJobRearmOnReschedule(job?.status, newStartsAtIso, offsetMs);
+      const patch = reminderJobRearmOnReschedule(job?.status, newStartsAtIso, offsetMs, {
+        appointmentStatus,
+        now,
+      });
       if (patch) {
         await supabaseAdmin
           .from("notification_jobs")
@@ -71,6 +79,35 @@ async function rearmSentReminderJobsOnReschedule(
         e instanceof Error ? e.message : String(e),
       );
     }
+  }
+}
+
+// AJUSTE (15/11/2026, últimos ajustes Parte 1): a thread do lembrete_24h
+// ANTIGO (se ainda 'awaiting_reply' — a cliente nunca tocou nenhum botão)
+// precisa ser marcada 'superseded' na remarcação — senão ela continua
+// bloqueando o índice único parcial (appointment_id) WHERE
+// status='awaiting_reply' quando o lembrete do NOVO horário tentar abrir
+// uma thread nova (23505), e um toque tardio no botão antigo continuaria
+// sendo tratado como "primeira escolha" válida pro horário que não existe
+// mais. 'superseded' já é um valor aceito pelo CHECK de
+// whatsapp_central_threads.status desde a migration original (20261024191819)
+// — nunca usado em código até agora; nenhuma migração necessária. Melhor
+// esforço: nunca desfaz a remarcação nem o re-armamento acima.
+async function supersedeOpenThreadOnReschedule(
+  supabaseAdmin: SupabaseAdmin,
+  appointmentId: string,
+): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from("whatsapp_central_threads")
+      .update({ status: "superseded" })
+      .eq("appointment_id", appointmentId)
+      .eq("status", "awaiting_reply");
+  } catch (e) {
+    console.error(
+      "[booking] Falha ao marcar a thread antiga como superseded depois de remarcar — melhor esforço, remarcação já concluída.",
+      e instanceof Error ? e.message : String(e),
+    );
   }
 }
 
@@ -415,11 +452,16 @@ export const rescheduleClientAppointment = createServerFn({ method: "POST" })
     }
 
     if (startsAtReallyChanged) {
+      // status pós-update é sempre "pending" (linha acima, incondicional) —
+      // nunca buscado de novo.
       await rearmSentReminderJobsOnReschedule(
         supabaseAdmin,
         data.appointment_id,
         startsAt.toISOString(),
+        "pending",
+        now,
       );
+      await supersedeOpenThreadOnReschedule(supabaseAdmin, data.appointment_id);
     }
 
     // Item 1.3 (FASE J): aviso de remarcação — a mudança já foi gravada

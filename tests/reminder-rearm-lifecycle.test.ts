@@ -14,6 +14,7 @@
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { processCentralReminderJob } from "../src/lib/whatsapp/central-reminder-scheduler.server.ts";
+import { decideThreadReply } from "../src/lib/whatsapp/central-reply-decision.ts";
 import {
   reminderJobRearmOnReschedule,
   REMINDER_24H_OFFSET_MS,
@@ -136,6 +137,7 @@ test("cenário (b) 24h: job já 'sent' + cliente confirmou -> remarcar re-arma o
     job24h.status,
     newStartsAt.toISOString(),
     REMINDER_24H_OFFSET_MS,
+    { appointmentStatus: "pending", now: new Date("2026-11-12T00:00:00.000Z") },
   );
   assert.ok(patch, "deveria re-armar — o job estava 'sent'");
   Object.assign(job24h, patch);
@@ -245,6 +247,7 @@ test("cenário (b) 2h: job já 'sent' -> remarcar re-arma -> processamento envia
     job2h.status,
     newStartsAt.toISOString(),
     REMINDER_2H_OFFSET_MS,
+    { appointmentStatus: "pending", now: new Date("2026-11-12T00:00:00.000Z") },
   );
   assert.ok(patch);
   Object.assign(job2h, patch);
@@ -270,5 +273,284 @@ test("cenário (b) 2h: job já 'sent' -> remarcar re-arma -> processamento envia
     db.tables.whatsapp_central_threads.length,
     0,
     "lembrete de 2h nunca abre thread (sem botões)",
+  );
+});
+
+test(
+  "Parte 1 (a+c): lembrete 24h enviado e NUNCA respondido -> remarcação marca a thread antiga 'superseded' + re-arma o job -> " +
+    "novo envio abre NOVA thread sem 23505 -> toque tardio na thread ANTIGA agora é silêncio (late_response), nunca already_registered",
+  async () => {
+    process.env.WHATSAPP_REMINDERS_ENABLED = "true";
+    process.env.WHATSAPP_REMINDERS_TEST_MODE = "false";
+    process.env.META_WHATSAPP_CENTRAL_PHONE_NUMBER_ID = PHONE_NUMBER_ID;
+    process.env.META_WHATSAPP_CENTRAL_ACCESS_TOKEN = "zzfx-token-de-teste-nunca-real";
+
+    const oldStartsAt = new Date("2026-11-11T15:00:00.000Z");
+    const newStartsAt = new Date("2026-11-14T15:00:00.000Z");
+
+    const db = new FakeSupabaseAdmin({
+      tables: {
+        appointments: [
+          {
+            id: "appt-3",
+            owner_id: "owner-1",
+            client_id: "client-1",
+            status: "pending",
+            client_confirmation_status: "pending", // nunca respondido
+            starts_at: oldStartsAt.toISOString(),
+            created_at: "2026-11-01T00:00:00.000Z",
+            updated_at: "2026-11-01T00:00:00.000Z",
+            service_name: "Corte",
+            professional_id: null,
+            reminder_24h_sent_at: "2026-11-10T15:00:00.000Z",
+            reminder_2h_sent_at: null,
+          },
+        ],
+        clients: [{ id: "client-1", full_name: "Cliente Teste", phone: "+5547988887777" }],
+        automations: [
+          {
+            owner_id: "owner-1",
+            is_system: true,
+            template_key: "lembrete_24h",
+            active: true,
+            meta_status: "APPROVED",
+            meta_template_name: "lembrete_24h",
+          },
+        ],
+        company_profiles: [
+          { owner_id: "owner-1", display_name: "Salão X", timezone: "America/Sao_Paulo" },
+        ],
+        team_members: [],
+        notification_jobs: [
+          {
+            id: "job-24h-3",
+            owner_id: "owner-1",
+            appointment_id: "appt-3",
+            client_id: "client-1",
+            type: "appointment_reminder_24h",
+            status: "sent",
+            attempts: 1,
+            sent_at: "2026-11-10T15:00:00.000Z",
+            scheduled_for: "2026-11-10T15:00:00.000Z",
+          },
+        ],
+        whatsapp_central_incidents: [],
+        whatsapp_messages: [],
+        whatsapp_central_threads: [
+          // thread do lembrete ANTIGO, nunca respondida — exatamente o caso que
+          // bloquearia o INSERT do lembrete do novo horário (23505) se não for
+          // marcada 'superseded' na remarcação (Parte 1).
+          {
+            id: "thread-old-3",
+            owner_id: "owner-1",
+            appointment_id: "appt-3",
+            client_id: "client-1",
+            outbound_message_id: "msg-old-3",
+            status: "awaiting_reply",
+            appointment_starts_at_snapshot: oldStartsAt.toISOString(),
+          },
+        ],
+      },
+      uniqueKeys: {
+        whatsapp_central_threads: [["appointment_id", "status"]],
+      },
+    });
+
+    // --- O que rescheduleClientAppointment/updateAppointment fariam: ---
+    db.tables.appointments[0].starts_at = newStartsAt.toISOString();
+    db.tables.appointments[0].status = "pending";
+
+    const job24h = db.tables.notification_jobs[0];
+    const patch = reminderJobRearmOnReschedule(
+      job24h.status,
+      newStartsAt.toISOString(),
+      REMINDER_24H_OFFSET_MS,
+      {
+        appointmentStatus: "pending",
+        now: new Date("2026-11-12T00:00:00.000Z"),
+      },
+    );
+    assert.ok(patch);
+    Object.assign(job24h, patch);
+
+    // supersedeOpenThreadOnReschedule: UPDATE ... WHERE appointment_id=? AND
+    // status='awaiting_reply' -> só a thread antiga bate (é a única
+    // 'awaiting_reply' agora).
+    const oldThread = db.tables.whatsapp_central_threads.find(
+      (t) => t.status === "awaiting_reply",
+    )!;
+    oldThread.status = "superseded";
+
+    // --- Processamento de verdade pro NOVO horário: abre nova thread sem 23505. ---
+    const fetchState = stubMetaFetch();
+    const outcome = await processCentralReminderJob(
+      db as never,
+      {
+        id: job24h.id as string,
+        owner_id: "owner-1",
+        appointment_id: "appt-3",
+        client_id: "client-1",
+        type: "appointment_reminder_24h",
+        attempts: 1,
+        max_attempts: 3,
+      },
+      () => new Date(job24h.scheduled_for as string),
+    );
+
+    assert.equal(outcome, "sent");
+    assert.equal(fetchState.calls, 1);
+
+    const newThread = db.tables.whatsapp_central_threads.find(
+      (t) => t.id !== "thread-old-3" && t.status === "awaiting_reply",
+    );
+    assert.ok(newThread, "nova thread aberta sem colisão 23505 com a antiga (agora superseded)");
+    assert.equal(newThread!.appointment_starts_at_snapshot, newStartsAt.toISOString());
+    assert.equal(
+      db.tables.whatsapp_central_threads.find((t) => t.id === "thread-old-3")!.status,
+      "superseded",
+      "a thread antiga continua superseded, nunca revertida",
+    );
+
+    // --- Parte 1 (c): toque tardio num botão do lembrete ANTIGO -> silêncio. ---
+    const lateDecision = decideThreadReply({
+      action: "confirm",
+      threadStatus: "superseded",
+      threadAppointmentStartsAtSnapshotIso: oldStartsAt.toISOString(),
+      appointmentStartsAtIso: newStartsAt.toISOString(),
+      appointmentStatus: "pending",
+      now: new Date("2026-11-12T00:00:00.000Z"),
+      lateCancelHours: 2,
+    });
+    assert.deepEqual(lateDecision, { kind: "late_response" });
+  },
+);
+
+test(
+  "Parte 2.3: job 24h 'cancelled' (ex.: horário já passou) + agendamento remarcado pra um horário futuro e ainda ativo -> " +
+    "rearm re-arma o job -> processamento envia normalmente pro novo horário",
+  async () => {
+    process.env.WHATSAPP_REMINDERS_ENABLED = "true";
+    process.env.WHATSAPP_REMINDERS_TEST_MODE = "false";
+    process.env.META_WHATSAPP_CENTRAL_PHONE_NUMBER_ID = PHONE_NUMBER_ID;
+    process.env.META_WHATSAPP_CENTRAL_ACCESS_TOKEN = "zzfx-token-de-teste-nunca-real";
+
+    const newStartsAt = new Date("2026-12-05T15:00:00.000Z");
+    const nowAtReschedule = new Date("2026-11-20T00:00:00.000Z");
+
+    const db = new FakeSupabaseAdmin({
+      tables: {
+        appointments: [
+          {
+            id: "appt-4",
+            owner_id: "owner-1",
+            client_id: "client-1",
+            status: "pending",
+            client_confirmation_status: "pending",
+            starts_at: newStartsAt.toISOString(),
+            created_at: "2026-11-01T00:00:00.000Z",
+            updated_at: "2026-11-01T00:00:00.000Z",
+            service_name: "Corte",
+            professional_id: null,
+            reminder_24h_sent_at: null,
+            reminder_2h_sent_at: null,
+          },
+        ],
+        clients: [{ id: "client-1", full_name: "Cliente Teste", phone: "+5547988887777" }],
+        automations: [
+          {
+            owner_id: "owner-1",
+            is_system: true,
+            template_key: "lembrete_24h",
+            active: true,
+            meta_status: "APPROVED",
+            meta_template_name: "lembrete_24h",
+          },
+        ],
+        company_profiles: [
+          { owner_id: "owner-1", display_name: "Salão X", timezone: "America/Sao_Paulo" },
+        ],
+        team_members: [],
+        notification_jobs: [
+          {
+            id: "job-24h-4",
+            owner_id: "owner-1",
+            appointment_id: "appt-4",
+            client_id: "client-1",
+            type: "appointment_reminder_24h",
+            status: "cancelled", // scanner cancelou: "Pulado: atraso..." pro horário antigo
+            attempts: 0,
+            last_error: "Pulado: atraso em relação ao horário do lembrete.",
+          },
+        ],
+        whatsapp_central_incidents: [],
+        whatsapp_messages: [],
+        whatsapp_central_threads: [],
+      },
+    });
+
+    const job24h = db.tables.notification_jobs[0];
+    const patch = reminderJobRearmOnReschedule(
+      job24h.status,
+      newStartsAt.toISOString(),
+      REMINDER_24H_OFFSET_MS,
+      {
+        appointmentStatus: db.tables.appointments[0].status as string,
+        now: nowAtReschedule,
+      },
+    );
+    assert.ok(patch, "deveria re-armar — agendamento ativo e novo horário futuro");
+    Object.assign(job24h, patch);
+    assert.equal(job24h.status, "pending");
+    assert.equal(job24h.attempts, 0);
+    assert.equal(job24h.last_error, null);
+
+    const fetchState = stubMetaFetch();
+    const outcome = await processCentralReminderJob(
+      db as never,
+      {
+        id: job24h.id as string,
+        owner_id: "owner-1",
+        appointment_id: "appt-4",
+        client_id: "client-1",
+        type: "appointment_reminder_24h",
+        attempts: 0,
+        max_attempts: 3,
+      },
+      () => new Date(job24h.scheduled_for as string),
+    );
+
+    assert.equal(outcome, "sent");
+    assert.equal(fetchState.calls, 1, "envia normalmente pro novo horário depois de re-armado");
+  },
+);
+
+test("Parte 2.3: agendamento CANCELADO + job 'cancelled' -> reminderJobRearmOnReschedule NÃO re-arma (nada a processar)", () => {
+  const patch = reminderJobRearmOnReschedule(
+    "cancelled",
+    "2026-12-05T15:00:00.000Z",
+    REMINDER_24H_OFFSET_MS,
+    { appointmentStatus: "cancelled", now: new Date("2026-11-20T00:00:00.000Z") },
+  );
+  assert.equal(
+    patch,
+    undefined,
+    "job cancelled de um agendamento também cancelado nunca é re-armado",
+  );
+});
+
+test("Parte 2.3: jobs 'failed' e 'processing' nunca são re-armados, mesmo com agendamento ativo e horário futuro", () => {
+  const ctx = { appointmentStatus: "pending", now: new Date("2026-11-20T00:00:00.000Z") };
+  assert.equal(
+    reminderJobRearmOnReschedule("failed", "2026-12-05T15:00:00.000Z", REMINDER_24H_OFFSET_MS, ctx),
+    undefined,
+  );
+  assert.equal(
+    reminderJobRearmOnReschedule(
+      "processing",
+      "2026-12-05T15:00:00.000Z",
+      REMINDER_24H_OFFSET_MS,
+      ctx,
+    ),
+    undefined,
   );
 });
