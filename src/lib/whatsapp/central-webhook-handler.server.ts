@@ -64,6 +64,20 @@ async function resolveRecipientUserId(
   return data?.user_id ?? null;
 }
 
+/**
+ * Só o nome — nunca o telefone — pra compor o aviso do bloqueio de
+ * opt-out (Parte 2 da FASE OPTOUT-1). `null` se a cliente não existir
+ * mais (nunca bloqueia o aviso por isso; quem chama usa um texto genérico).
+ */
+async function fetchClientFullName(deps: ResolvedDeps, clientId: string): Promise<string | null> {
+  const { data } = await deps.supabaseAdmin
+    .from("clients")
+    .select("full_name")
+    .eq("id", clientId)
+    .maybeSingle();
+  return data?.full_name ?? null;
+}
+
 async function createNotification(
   deps: ResolvedDeps,
   params: {
@@ -436,25 +450,40 @@ async function handleTextOrOtherEvent(
     // bloqueado automaticamente"); agora bloqueia de verdade
     // (whatsapp_blocked_recipients) — melhor esforço, nunca lança (uma
     // falha aqui não pode impedir o aviso nem a confirmação à Meta).
-    await blockPhoneForStopRequest(
+    //
+    // FASE OPTOUT-1 (15/11/2026): o aviso no sino agora é por BLOQUEIO, não
+    // por mensagem — dedupe pelo id do bloqueio (created=false quando já
+    // havia um bloqueio ativo pra este telefone, ex.: segundo "PARAR" em
+    // seguida) significa NENHUM aviso novo; só um bloqueio recém-criado
+    // (primeira vez, ou de novo depois de reativada) gera um aviso.
+    const blockResult = await blockPhoneForStopRequest(
       // Cast: whatsapp_blocked_recipients ainda não existe em types.ts
-      // (migration não aplicada nesta fase) — ver OptOutRecipientsDb.
+      // (migration aplicada fora do fluxo normal da Lovable — ver
+      // OptOutRecipientsDb).
       deps.supabaseAdmin as unknown as OptOutRecipientsDb,
       resolved.ownerId,
       event.fromPhone,
       deps.logger,
     );
-    await createNotification(deps, {
-      ownerId: resolved.ownerId,
-      appointmentId: resolved.appointmentId,
-      professionalId: null,
-      notif: {
-        kind: "client_stop_request",
-        title: "Cliente pediu para parar de receber mensagens",
-        body: "O envio de novos lembretes automáticos para este telefone foi bloqueado. Avalie contatar a cliente se quiser reverter.",
-        dedupeKey: null,
-      },
-    });
+    if (blockResult.created) {
+      const clientName = resolved.clientId
+        ? await fetchClientFullName(deps, resolved.clientId)
+        : null;
+      // Nome da cliente é interno (só quem já vê avisos de agendamento) —
+      // o telefone NUNCA entra no título/corpo.
+      const who = clientName ?? "A cliente";
+      await createNotification(deps, {
+        ownerId: resolved.ownerId,
+        appointmentId: resolved.appointmentId,
+        professionalId: null,
+        notif: {
+          kind: "client_stop_request",
+          title: "Cliente pediu para parar os lembretes",
+          body: `${who} pediu para não receber lembretes automáticos pelo WhatsApp. Ela não receberá mais lembretes. Se foi engano, você pode reativar na ficha da cliente.`,
+          dedupeKey: `client_stop_request:${blockResult.blockId}`,
+        },
+      });
+    }
     return;
   }
 

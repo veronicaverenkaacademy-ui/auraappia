@@ -123,6 +123,12 @@ function makeDb(overrides: Partial<Record<string, Row[]>> = {}) {
       app_notifications: [["owner_id", "dedupe_key"]],
       whatsapp_central_orphan_messages: [["provider_message_id"]],
     },
+    // Mesmo índice parcial real (whatsapp_blocked_recipients_active_idx):
+    // só conflita enquanto não houver unblocked_at — reativar e bloquear de
+    // novo nunca bate em 23505 (ver FASE OPTOUT-1).
+    partialUniqueKeys: {
+      whatsapp_blocked_recipients: [{ keys: ["owner_id", "phone_e164"], nullWhen: "unblocked_at" }],
+    },
   });
 }
 
@@ -666,7 +672,70 @@ test("FASE LEMBRETES-1: 'PARAR' agora bloqueia de verdade (whatsapp_blocked_reci
   assert.equal(block.owner_id, "owner-1");
   assert.equal(block.phone_e164, "5547999990001");
   assert.equal(block.unblocked_at, undefined);
-  assert.match(db.tables.app_notifications[0].body as string, /bloqueado/i);
+  // FASE OPTOUT-1: o aviso não usa mais a palavra "bloqueado" no corpo —
+  // explica em PT simples que ela não vai mais receber lembretes e como
+  // reverter (ficha da cliente) — nunca o telefone.
+  const notif = db.tables.app_notifications[0];
+  assert.match(notif.body as string, /não receberá mais lembretes/i);
+  assert.match(notif.body as string, /reativar na ficha da cliente/i);
+  assert.doesNotMatch(notif.body as string, /\d{4,}/); // nunca o telefone
+  assert.equal(notif.dedupe_key, `client_stop_request:${block.id}`);
+});
+
+test("FASE OPTOUT-1: aviso de PARAR inclui o NOME da cliente quando disponível, nunca o telefone", async () => {
+  const db = makeDb({
+    clients: [{ id: "client-1", phone: "+55 47 9 9999-0001", full_name: "Mariana Silva" }],
+  });
+  await run(db, [textEvent({ contextId: "wamid.OUTBOUND_001", text: "PARAR" })]);
+  const notif = db.tables.app_notifications[0];
+  assert.match(notif.body as string, /Mariana Silva pediu para não receber lembretes/);
+  assert.doesNotMatch(notif.body as string, /5547999990001|\+55 47 9 9999-0001/);
+});
+
+test("FASE OPTOUT-1: repetir 'PARAR' num telefone já bloqueado NÃO gera um segundo aviso (dedupe por bloqueio)", async () => {
+  const db = makeDb();
+  await run(db, [
+    textEvent({ messageId: "wamid.STOP1", contextId: "wamid.OUTBOUND_001", text: "PARAR" }),
+  ]);
+  assert.equal(db.tables.app_notifications.length, 1);
+  await run(db, [
+    textEvent({ messageId: "wamid.STOP2", contextId: "wamid.OUTBOUND_001", text: "PARAR" }),
+  ]);
+  assert.equal(db.tables.whatsapp_blocked_recipients.length, 1); // não duplicou o bloqueio
+  assert.equal(db.tables.app_notifications.length, 1); // nenhum aviso novo
+});
+
+test("FASE OPTOUT-1: reativada e PARAR de novo -> gera um aviso NOVO (bloqueio novo, dedupe_key diferente)", async () => {
+  const db = makeDb();
+  await run(db, [
+    textEvent({ messageId: "wamid.STOP1", contextId: "wamid.OUTBOUND_001", text: "PARAR" }),
+  ]);
+  assert.equal(db.tables.app_notifications.length, 1);
+  const firstBlock = db.tables.whatsapp_blocked_recipients[0];
+
+  // Simula a reativação pelo app (Parte 3): desfaz o bloqueio ativo.
+  firstBlock.unblocked_at = "2026-11-15T00:00:00.000Z";
+
+  await run(db, [
+    textEvent({ messageId: "wamid.STOP2", contextId: "wamid.OUTBOUND_001", text: "PARAR" }),
+  ]);
+  assert.equal(db.tables.whatsapp_blocked_recipients.length, 2); // bloqueio NOVO, linha antiga preservada
+  assert.equal(db.tables.app_notifications.length, 2); // aviso NOVO
+  const secondBlock = db.tables.whatsapp_blocked_recipients.find((b) => b.id !== firstBlock.id)!;
+  assert.equal(db.tables.app_notifications[1].dedupe_key, `client_stop_request:${secondBlock.id}`);
+});
+
+test("FASE OPTOUT-1: falha ao criar o aviso NUNCA desfaz o bloqueio já gravado (melhor esforço)", async () => {
+  const db = makeDb();
+  db.failNextInsertOn.app_notifications = {
+    code: "XXYYY",
+    message: "falha de infraestrutura simulada",
+  };
+  const { logger, errors } = createCapturingLogger();
+  await run(db, [textEvent({ contextId: "wamid.OUTBOUND_001", text: "PARAR" })], logger);
+  assert.equal(db.tables.whatsapp_blocked_recipients.length, 1); // bloqueio gravado mesmo com a falha
+  assert.equal(db.tables.app_notifications.length, 0); // aviso não foi criado
+  assert.ok(errors.length > 0); // a falha foi registrada, nunca engolida em silêncio
 });
 
 test("3g: 'não vou parar de ir aí' NÃO dispara o aviso de opt-out (gera o aviso comum)", async () => {

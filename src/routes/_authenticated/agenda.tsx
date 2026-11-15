@@ -6,6 +6,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { NotificationBellButton } from "@/components/notification-bell-button";
+import { ReminderBlockBanner } from "@/components/reminder-block-banner";
 import {
   listAttentionAppointmentIds,
   listNewBookingNotifications,
@@ -1378,6 +1379,8 @@ function AppointmentDetailSheet({
                   <Row icon={Clock} label="Duração" right={`${Math.round((hourOf(a.ends_at) - hourOf(a.starts_at)) * 60)} min`} />
                   <Row icon={User} label="Profissional" right={a.professional?.full_name ?? "Você"} />
                 </div>
+
+                <ReminderBlockBanner clientId={a.client_id} />
 
                 {a.notes && (
                   <div className="rounded-2xl border border-border/50 p-4">
