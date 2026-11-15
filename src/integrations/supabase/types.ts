@@ -14,6 +14,71 @@ export type Database = {
   }
   public: {
     Tables: {
+      access_level_permissions: {
+        Row: {
+          access_level_id: string
+          action: string
+          allowed: boolean
+          id: string
+          resource: string
+          updated_at: string
+        }
+        Insert: {
+          access_level_id: string
+          action: string
+          allowed?: boolean
+          id?: string
+          resource: string
+          updated_at?: string
+        }
+        Update: {
+          access_level_id?: string
+          action?: string
+          allowed?: boolean
+          id?: string
+          resource?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "access_level_permissions_access_level_id_fkey"
+            columns: ["access_level_id"]
+            isOneToOne: false
+            referencedRelation: "access_levels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      access_levels: {
+        Row: {
+          created_at: string
+          id: string
+          kind: string
+          name: string
+          owner_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind?: string
+          name: string
+          owner_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: string
+          name?: string
+          owner_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       agenda_blocks: {
         Row: {
           created_at: string
@@ -58,6 +123,53 @@ export type Database = {
             columns: ["professional_id"]
             isOneToOne: false
             referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      app_notifications: {
+        Row: {
+          appointment_id: string | null
+          body: string
+          created_at: string
+          dedupe_key: string | null
+          id: string
+          kind: string
+          owner_id: string
+          read_at: string | null
+          recipient_user_id: string | null
+          title: string
+        }
+        Insert: {
+          appointment_id?: string | null
+          body: string
+          created_at?: string
+          dedupe_key?: string | null
+          id?: string
+          kind: string
+          owner_id: string
+          read_at?: string | null
+          recipient_user_id?: string | null
+          title: string
+        }
+        Update: {
+          appointment_id?: string | null
+          body?: string
+          created_at?: string
+          dedupe_key?: string | null
+          id?: string
+          kind?: string
+          owner_id?: string
+          read_at?: string | null
+          recipient_user_id?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_notifications_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
             referencedColumns: ["id"]
           },
         ]
@@ -197,6 +309,13 @@ export type Database = {
             columns: ["professional_id"]
             isOneToOne: false
             referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointments_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "public_services"
             referencedColumns: ["id"]
           },
           {
@@ -452,6 +571,39 @@ export type Database = {
           },
         ]
       }
+      client_otp_codes: {
+        Row: {
+          attempts: number
+          code_hash: string
+          created_at: string
+          expires_at: string
+          id: string
+          max_attempts: number
+          phone: string
+          used_at: string | null
+        }
+        Insert: {
+          attempts?: number
+          code_hash: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          max_attempts?: number
+          phone: string
+          used_at?: string | null
+        }
+        Update: {
+          attempts?: number
+          code_hash?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          max_attempts?: number
+          phone?: string
+          used_at?: string | null
+        }
+        Relationships: []
+      }
       client_photos: {
         Row: {
           appointment_id: string | null
@@ -499,39 +651,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      client_otp_codes: {
-        Row: {
-          attempts: number
-          code_hash: string
-          created_at: string
-          expires_at: string
-          id: string
-          max_attempts: number
-          phone: string
-          used_at: string | null
-        }
-        Insert: {
-          attempts?: number
-          code_hash: string
-          created_at?: string
-          expires_at: string
-          id?: string
-          max_attempts?: number
-          phone: string
-          used_at?: string | null
-        }
-        Update: {
-          attempts?: number
-          code_hash?: string
-          created_at?: string
-          expires_at?: string
-          id?: string
-          max_attempts?: number
-          phone?: string
-          used_at?: string | null
-        }
-        Relationships: []
       }
       clients: {
         Row: {
@@ -638,6 +757,81 @@ export type Database = {
           status?: string
           updated_at?: string
           waba_id?: string | null
+        }
+        Relationships: []
+      }
+      company_profiles: {
+        Row: {
+          address: string | null
+          business_hours: Json
+          category: string | null
+          city: string | null
+          cover_image_url: string | null
+          created_at: string
+          description: string | null
+          display_name: string
+          facebook: string | null
+          google_review_url: string | null
+          instagram: string | null
+          logo_url: string | null
+          open_hours_text: string | null
+          owner_id: string
+          phone: string | null
+          portal_media_key: string
+          slug: string
+          state: string | null
+          tiktok: string | null
+          timezone: string
+          updated_at: string
+          whatsapp: string | null
+        }
+        Insert: {
+          address?: string | null
+          business_hours?: Json
+          category?: string | null
+          city?: string | null
+          cover_image_url?: string | null
+          created_at?: string
+          description?: string | null
+          display_name: string
+          facebook?: string | null
+          google_review_url?: string | null
+          instagram?: string | null
+          logo_url?: string | null
+          open_hours_text?: string | null
+          owner_id: string
+          phone?: string | null
+          portal_media_key?: string
+          slug: string
+          state?: string | null
+          tiktok?: string | null
+          timezone?: string
+          updated_at?: string
+          whatsapp?: string | null
+        }
+        Update: {
+          address?: string | null
+          business_hours?: Json
+          category?: string | null
+          city?: string | null
+          cover_image_url?: string | null
+          created_at?: string
+          description?: string | null
+          display_name?: string
+          facebook?: string | null
+          google_review_url?: string | null
+          instagram?: string | null
+          logo_url?: string | null
+          open_hours_text?: string | null
+          owner_id?: string
+          phone?: string | null
+          portal_media_key?: string
+          slug?: string
+          state?: string | null
+          tiktok?: string | null
+          timezone?: string
+          updated_at?: string
+          whatsapp?: string | null
         }
         Relationships: []
       }
@@ -1070,17 +1264,17 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "marketing_sends_journey_step_id_fkey"
-            columns: ["journey_step_id"]
-            isOneToOne: false
-            referencedRelation: "journey_steps"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "marketing_sends_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "marketing_sends_journey_step_id_fkey"
+            columns: ["journey_step_id"]
+            isOneToOne: false
+            referencedRelation: "journey_steps"
             referencedColumns: ["id"]
           },
           {
@@ -1208,6 +1402,312 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      notification_jobs: {
+        Row: {
+          appointment_id: string | null
+          attempts: number
+          client_id: string | null
+          created_at: string
+          id: string
+          last_error: string | null
+          max_attempts: number
+          message: string
+          next_attempt_at: string
+          owner_id: string
+          recipient_phone: string
+          scheduled_for: string
+          sent_at: string | null
+          status: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          appointment_id?: string | null
+          attempts?: number
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          max_attempts?: number
+          message?: string
+          next_attempt_at?: string
+          owner_id: string
+          recipient_phone: string
+          scheduled_for?: string
+          sent_at?: string | null
+          status?: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          appointment_id?: string | null
+          attempts?: number
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          max_attempts?: number
+          message?: string
+          next_attempt_at?: string
+          owner_id?: string
+          recipient_phone?: string
+          scheduled_for?: string
+          sent_at?: string | null
+          status?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_jobs_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_jobs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_configurations: {
+        Row: {
+          created_at: string
+          draft_banner_path: string | null
+          draft_banner_text: string | null
+          draft_color_background: string | null
+          draft_color_button: string | null
+          draft_color_button_text: string | null
+          draft_color_primary: string | null
+          draft_color_secondary: string | null
+          draft_color_text: string | null
+          draft_cover_path: string | null
+          draft_cover_subtitle: string | null
+          draft_cover_title: string | null
+          draft_font_key: string
+          draft_important_text: string | null
+          draft_important_title: string | null
+          draft_logo_light_path: string | null
+          draft_logo_path: string | null
+          draft_logo_wide_path: string | null
+          draft_show_banner: boolean
+          draft_show_footer: boolean
+          draft_show_important: boolean
+          draft_show_location: boolean
+          draft_show_professionals: boolean
+          draft_show_services: boolean
+          draft_show_shortcuts: boolean
+          draft_theme_key: string | null
+          draft_welcome_message: string | null
+          owner_id: string
+          previous_published: Json | null
+          published_at: string | null
+          published_banner_path: string | null
+          published_banner_text: string | null
+          published_by: string | null
+          published_color_background: string | null
+          published_color_button: string | null
+          published_color_button_text: string | null
+          published_color_primary: string | null
+          published_color_secondary: string | null
+          published_color_text: string | null
+          published_cover_path: string | null
+          published_cover_subtitle: string | null
+          published_cover_title: string | null
+          published_font_key: string | null
+          published_important_text: string | null
+          published_important_title: string | null
+          published_logo_light_path: string | null
+          published_logo_path: string | null
+          published_logo_wide_path: string | null
+          published_show_banner: boolean | null
+          published_show_footer: boolean | null
+          published_show_important: boolean | null
+          published_show_location: boolean | null
+          published_show_professionals: boolean | null
+          published_show_services: boolean | null
+          published_show_shortcuts: boolean | null
+          published_theme_key: string | null
+          published_welcome_message: string | null
+          updated_at: string
+          updated_by: string | null
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          draft_banner_path?: string | null
+          draft_banner_text?: string | null
+          draft_color_background?: string | null
+          draft_color_button?: string | null
+          draft_color_button_text?: string | null
+          draft_color_primary?: string | null
+          draft_color_secondary?: string | null
+          draft_color_text?: string | null
+          draft_cover_path?: string | null
+          draft_cover_subtitle?: string | null
+          draft_cover_title?: string | null
+          draft_font_key?: string
+          draft_important_text?: string | null
+          draft_important_title?: string | null
+          draft_logo_light_path?: string | null
+          draft_logo_path?: string | null
+          draft_logo_wide_path?: string | null
+          draft_show_banner?: boolean
+          draft_show_footer?: boolean
+          draft_show_important?: boolean
+          draft_show_location?: boolean
+          draft_show_professionals?: boolean
+          draft_show_services?: boolean
+          draft_show_shortcuts?: boolean
+          draft_theme_key?: string | null
+          draft_welcome_message?: string | null
+          owner_id: string
+          previous_published?: Json | null
+          published_at?: string | null
+          published_banner_path?: string | null
+          published_banner_text?: string | null
+          published_by?: string | null
+          published_color_background?: string | null
+          published_color_button?: string | null
+          published_color_button_text?: string | null
+          published_color_primary?: string | null
+          published_color_secondary?: string | null
+          published_color_text?: string | null
+          published_cover_path?: string | null
+          published_cover_subtitle?: string | null
+          published_cover_title?: string | null
+          published_font_key?: string | null
+          published_important_text?: string | null
+          published_important_title?: string | null
+          published_logo_light_path?: string | null
+          published_logo_path?: string | null
+          published_logo_wide_path?: string | null
+          published_show_banner?: boolean | null
+          published_show_footer?: boolean | null
+          published_show_important?: boolean | null
+          published_show_location?: boolean | null
+          published_show_professionals?: boolean | null
+          published_show_services?: boolean | null
+          published_show_shortcuts?: boolean | null
+          published_theme_key?: string | null
+          published_welcome_message?: string | null
+          updated_at?: string
+          updated_by?: string | null
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          draft_banner_path?: string | null
+          draft_banner_text?: string | null
+          draft_color_background?: string | null
+          draft_color_button?: string | null
+          draft_color_button_text?: string | null
+          draft_color_primary?: string | null
+          draft_color_secondary?: string | null
+          draft_color_text?: string | null
+          draft_cover_path?: string | null
+          draft_cover_subtitle?: string | null
+          draft_cover_title?: string | null
+          draft_font_key?: string
+          draft_important_text?: string | null
+          draft_important_title?: string | null
+          draft_logo_light_path?: string | null
+          draft_logo_path?: string | null
+          draft_logo_wide_path?: string | null
+          draft_show_banner?: boolean
+          draft_show_footer?: boolean
+          draft_show_important?: boolean
+          draft_show_location?: boolean
+          draft_show_professionals?: boolean
+          draft_show_services?: boolean
+          draft_show_shortcuts?: boolean
+          draft_theme_key?: string | null
+          draft_welcome_message?: string | null
+          owner_id?: string
+          previous_published?: Json | null
+          published_at?: string | null
+          published_banner_path?: string | null
+          published_banner_text?: string | null
+          published_by?: string | null
+          published_color_background?: string | null
+          published_color_button?: string | null
+          published_color_button_text?: string | null
+          published_color_primary?: string | null
+          published_color_secondary?: string | null
+          published_color_text?: string | null
+          published_cover_path?: string | null
+          published_cover_subtitle?: string | null
+          published_cover_title?: string | null
+          published_font_key?: string | null
+          published_important_text?: string | null
+          published_important_title?: string | null
+          published_logo_light_path?: string | null
+          published_logo_path?: string | null
+          published_logo_wide_path?: string | null
+          published_show_banner?: boolean | null
+          published_show_footer?: boolean | null
+          published_show_important?: boolean | null
+          published_show_location?: boolean | null
+          published_show_professionals?: boolean | null
+          published_show_services?: boolean | null
+          published_show_shortcuts?: boolean | null
+          published_theme_key?: string | null
+          published_welcome_message?: string | null
+          updated_at?: string
+          updated_by?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_configurations_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: true
+            referencedRelation: "company_profiles"
+            referencedColumns: ["owner_id"]
+          },
+          {
+            foreignKeyName: "portal_configurations_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: true
+            referencedRelation: "public_company_profiles"
+            referencedColumns: ["owner_id"]
+          },
+        ]
+      }
+      portal_service_categories: {
+        Row: {
+          created_at: string
+          id: string
+          image_path: string | null
+          name: string
+          owner_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          image_path?: string | null
+          name: string
+          owner_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          image_path?: string | null
+          name?: string
+          owner_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       product_batches: {
         Row: {
@@ -1461,6 +1961,13 @@ export type Database = {
             foreignKeyName: "service_materials_service_id_fkey"
             columns: ["service_id"]
             isOneToOne: false
+            referencedRelation: "public_services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_materials_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
             referencedRelation: "services"
             referencedColumns: ["id"]
           },
@@ -1515,6 +2022,13 @@ export type Database = {
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "portal_service_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "services_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "public_portal_categories"
             referencedColumns: ["id"]
           },
         ]
@@ -1629,71 +2143,6 @@ export type Database = {
           whatsapp?: string | null
         }
         Relationships: []
-      }
-      access_levels: {
-        Row: {
-          created_at: string
-          id: string
-          kind: string
-          name: string
-          owner_id: string
-          sort_order: number
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          kind?: string
-          name: string
-          owner_id: string
-          sort_order?: number
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          kind?: string
-          name?: string
-          owner_id?: string
-          sort_order?: number
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      access_level_permissions: {
-        Row: {
-          access_level_id: string
-          action: string
-          allowed: boolean
-          id: string
-          resource: string
-          updated_at: string
-        }
-        Insert: {
-          access_level_id: string
-          action: string
-          allowed?: boolean
-          id?: string
-          resource: string
-          updated_at?: string
-        }
-        Update: {
-          access_level_id?: string
-          action?: string
-          allowed?: boolean
-          id?: string
-          resource?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "access_level_permissions_access_level_id_fkey"
-            columns: ["access_level_id"]
-            isOneToOne: false
-            referencedRelation: "access_levels"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       team_members: {
         Row: {
@@ -1847,373 +2296,312 @@ export type Database = {
         }
         Relationships: []
       }
-      company_profiles: {
+      whatsapp_blocked_recipients: {
         Row: {
-          address: string | null
-          business_hours: Json
-          category: string | null
-          city: string | null
-          cover_image_url: string | null
+          blocked_at: string
           created_at: string
-          description: string | null
-          display_name: string
-          facebook: string | null
-          google_review_url: string | null
-          instagram: string | null
-          logo_url: string | null
-          open_hours_text: string | null
+          id: string
           owner_id: string
-          phone: string | null
-          portal_media_key: string
-          slug: string
-          state: string | null
-          tiktok: string | null
-          timezone: string
-          updated_at: string
-          whatsapp: string | null
+          phone_e164: string
+          reason: string
+          source: string
+          unblocked_at: string | null
         }
         Insert: {
-          address?: string | null
-          business_hours?: Json
-          category?: string | null
-          city?: string | null
-          cover_image_url?: string | null
+          blocked_at?: string
           created_at?: string
-          description?: string | null
-          display_name: string
-          facebook?: string | null
-          google_review_url?: string | null
-          instagram?: string | null
-          logo_url?: string | null
-          open_hours_text?: string | null
+          id?: string
           owner_id: string
-          phone?: string | null
-          portal_media_key?: string
-          slug: string
-          state?: string | null
-          tiktok?: string | null
-          timezone?: string
-          updated_at?: string
-          whatsapp?: string | null
+          phone_e164: string
+          reason?: string
+          source?: string
+          unblocked_at?: string | null
         }
         Update: {
-          address?: string | null
-          business_hours?: Json
-          category?: string | null
-          city?: string | null
-          cover_image_url?: string | null
+          blocked_at?: string
           created_at?: string
-          description?: string | null
-          display_name?: string
-          facebook?: string | null
-          google_review_url?: string | null
-          instagram?: string | null
-          logo_url?: string | null
-          open_hours_text?: string | null
+          id?: string
           owner_id?: string
-          phone?: string | null
-          portal_media_key?: string
-          slug?: string
-          state?: string | null
-          tiktok?: string | null
-          timezone?: string
-          updated_at?: string
-          whatsapp?: string | null
+          phone_e164?: string
+          reason?: string
+          source?: string
+          unblocked_at?: string | null
         }
         Relationships: []
       }
-      portal_configurations: {
+      whatsapp_central_incidents: {
         Row: {
-          created_at: string
-          draft_banner_path: string | null
-          draft_banner_text: string | null
-          draft_color_background: string | null
-          draft_color_button: string | null
-          draft_color_button_text: string | null
-          draft_color_primary: string | null
-          draft_color_secondary: string | null
-          draft_color_text: string | null
-          draft_cover_path: string | null
-          draft_cover_subtitle: string | null
-          draft_cover_title: string | null
-          draft_font_key: string
-          draft_important_text: string | null
-          draft_important_title: string | null
-          draft_logo_light_path: string | null
-          draft_logo_path: string | null
-          draft_show_banner: boolean
-          draft_show_footer: boolean
-          draft_show_important: boolean
-          draft_show_location: boolean
-          draft_show_professionals: boolean
-          draft_show_services: boolean
-          draft_show_shortcuts: boolean
-          draft_theme_key: string | null
-          draft_welcome_message: string | null
-          owner_id: string
-          previous_published: Json | null
-          published_at: string | null
-          published_banner_path: string | null
-          published_banner_text: string | null
-          published_by: string | null
-          published_color_background: string | null
-          published_color_button: string | null
-          published_color_button_text: string | null
-          published_color_primary: string | null
-          published_color_secondary: string | null
-          published_color_text: string | null
-          published_cover_path: string | null
-          published_cover_subtitle: string | null
-          published_cover_title: string | null
-          published_font_key: string | null
-          published_important_text: string | null
-          published_important_title: string | null
-          published_logo_light_path: string | null
-          published_logo_path: string | null
-          published_show_banner: boolean | null
-          published_show_footer: boolean | null
-          published_show_important: boolean | null
-          published_show_location: boolean | null
-          published_show_professionals: boolean | null
-          published_show_services: boolean | null
-          published_show_shortcuts: boolean | null
-          published_theme_key: string | null
-          published_welcome_message: string | null
-          updated_at: string
-          updated_by: string | null
-          version: number
-        }
-        Insert: {
-          created_at?: string
-          draft_banner_path?: string | null
-          draft_banner_text?: string | null
-          draft_color_background?: string | null
-          draft_color_button?: string | null
-          draft_color_button_text?: string | null
-          draft_color_primary?: string | null
-          draft_color_secondary?: string | null
-          draft_color_text?: string | null
-          draft_cover_path?: string | null
-          draft_cover_subtitle?: string | null
-          draft_cover_title?: string | null
-          draft_font_key?: string
-          draft_important_text?: string | null
-          draft_important_title?: string | null
-          draft_logo_light_path?: string | null
-          draft_logo_path?: string | null
-          draft_show_banner?: boolean
-          draft_show_footer?: boolean
-          draft_show_important?: boolean
-          draft_show_location?: boolean
-          draft_show_professionals?: boolean
-          draft_show_services?: boolean
-          draft_show_shortcuts?: boolean
-          draft_theme_key?: string | null
-          draft_welcome_message?: string | null
-          owner_id: string
-          previous_published?: Json | null
-          published_at?: string | null
-          published_banner_path?: string | null
-          published_banner_text?: string | null
-          published_by?: string | null
-          published_color_background?: string | null
-          published_color_button?: string | null
-          published_color_button_text?: string | null
-          published_color_primary?: string | null
-          published_color_secondary?: string | null
-          published_color_text?: string | null
-          published_cover_path?: string | null
-          published_cover_subtitle?: string | null
-          published_cover_title?: string | null
-          published_font_key?: string | null
-          published_important_text?: string | null
-          published_important_title?: string | null
-          published_logo_light_path?: string | null
-          published_logo_path?: string | null
-          published_show_banner?: boolean | null
-          published_show_footer?: boolean | null
-          published_show_important?: boolean | null
-          published_show_location?: boolean | null
-          published_show_professionals?: boolean | null
-          published_show_services?: boolean | null
-          published_show_shortcuts?: boolean | null
-          published_theme_key?: string | null
-          published_welcome_message?: string | null
-          updated_at?: string
-          updated_by?: string | null
-          version?: number
-        }
-        Update: {
-          created_at?: string
-          draft_banner_path?: string | null
-          draft_banner_text?: string | null
-          draft_color_background?: string | null
-          draft_color_button?: string | null
-          draft_color_button_text?: string | null
-          draft_color_primary?: string | null
-          draft_color_secondary?: string | null
-          draft_color_text?: string | null
-          draft_cover_path?: string | null
-          draft_cover_subtitle?: string | null
-          draft_cover_title?: string | null
-          draft_font_key?: string
-          draft_important_text?: string | null
-          draft_important_title?: string | null
-          draft_logo_light_path?: string | null
-          draft_logo_path?: string | null
-          draft_show_banner?: boolean
-          draft_show_footer?: boolean
-          draft_show_important?: boolean
-          draft_show_location?: boolean
-          draft_show_professionals?: boolean
-          draft_show_services?: boolean
-          draft_show_shortcuts?: boolean
-          draft_theme_key?: string | null
-          draft_welcome_message?: string | null
-          owner_id?: string
-          previous_published?: Json | null
-          published_at?: string | null
-          published_banner_path?: string | null
-          published_banner_text?: string | null
-          published_by?: string | null
-          published_color_background?: string | null
-          published_color_button?: string | null
-          published_color_button_text?: string | null
-          published_color_primary?: string | null
-          published_color_secondary?: string | null
-          published_color_text?: string | null
-          published_cover_path?: string | null
-          published_cover_subtitle?: string | null
-          published_cover_title?: string | null
-          published_font_key?: string | null
-          published_important_text?: string | null
-          published_important_title?: string | null
-          published_logo_light_path?: string | null
-          published_logo_path?: string | null
-          published_show_banner?: boolean | null
-          published_show_footer?: boolean | null
-          published_show_important?: boolean | null
-          published_show_location?: boolean | null
-          published_show_professionals?: boolean | null
-          published_show_services?: boolean | null
-          published_show_shortcuts?: boolean | null
-          published_theme_key?: string | null
-          published_welcome_message?: string | null
-          updated_at?: string
-          updated_by?: string | null
-          version?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "portal_configurations_owner_id_fkey"
-            columns: ["owner_id"]
-            isOneToOne: true
-            referencedRelation: "company_profiles"
-            referencedColumns: ["owner_id"]
-          },
-        ]
-      }
-      portal_service_categories: {
-        Row: {
-          created_at: string
           id: string
-          image_path: string | null
-          name: string
-          owner_id: string
-          sort_order: number
-          updated_at: string
+          meta_error_code: number | null
+          notified_at: string | null
+          opened_at: string
+          reason: string
+          resolved_at: string | null
+          scope: string
+          template_key: string | null
         }
         Insert: {
-          created_at?: string
           id?: string
-          image_path?: string | null
-          name: string
-          owner_id: string
-          sort_order?: number
-          updated_at?: string
+          meta_error_code?: number | null
+          notified_at?: string | null
+          opened_at?: string
+          reason: string
+          resolved_at?: string | null
+          scope: string
+          template_key?: string | null
         }
         Update: {
-          created_at?: string
           id?: string
-          image_path?: string | null
-          name?: string
-          owner_id?: string
-          sort_order?: number
-          updated_at?: string
+          meta_error_code?: number | null
+          notified_at?: string | null
+          opened_at?: string
+          reason?: string
+          resolved_at?: string | null
+          scope?: string
+          template_key?: string | null
         }
         Relationships: []
       }
-      notification_jobs: {
+      whatsapp_central_orphan_messages: {
         Row: {
-          appointment_id: string | null
-          attempts: number
-          client_id: string | null
+          candidate_count: number
+          content: string | null
+          created_at: string
+          from_phone: string
+          id: string
+          media_type: string
+          provider_message_id: string
+          received_at: string
+        }
+        Insert: {
+          candidate_count?: number
+          content?: string | null
+          created_at?: string
+          from_phone: string
+          id?: string
+          media_type?: string
+          provider_message_id: string
+          received_at: string
+        }
+        Update: {
+          candidate_count?: number
+          content?: string | null
+          created_at?: string
+          from_phone?: string
+          id?: string
+          media_type?: string
+          provider_message_id?: string
+          received_at?: string
+        }
+        Relationships: []
+      }
+      whatsapp_central_threads: {
+        Row: {
+          appointment_id: string
+          appointment_starts_at_snapshot: string
+          client_id: string
           created_at: string
           id: string
-          last_error: string | null
-          max_attempts: number
-          message: string
-          next_attempt_at: string
+          outbound_message_id: string
           owner_id: string
-          recipient_phone: string
-          scheduled_for: string
-          sent_at: string | null
+          resolved_at: string | null
+          resolved_by_message_id: string | null
           status: string
-          type: string
+          template_key: string
           updated_at: string
         }
         Insert: {
-          appointment_id?: string | null
-          attempts?: number
-          client_id?: string | null
+          appointment_id: string
+          appointment_starts_at_snapshot: string
+          client_id: string
           created_at?: string
           id?: string
-          last_error?: string | null
-          max_attempts?: number
-          message?: string
-          next_attempt_at?: string
+          outbound_message_id: string
           owner_id: string
-          recipient_phone: string
-          scheduled_for?: string
-          sent_at?: string | null
+          resolved_at?: string | null
+          resolved_by_message_id?: string | null
           status?: string
-          type: string
+          template_key: string
           updated_at?: string
         }
         Update: {
-          appointment_id?: string | null
-          attempts?: number
-          client_id?: string | null
+          appointment_id?: string
+          appointment_starts_at_snapshot?: string
+          client_id?: string
           created_at?: string
           id?: string
-          last_error?: string | null
-          max_attempts?: number
-          message?: string
-          next_attempt_at?: string
+          outbound_message_id?: string
           owner_id?: string
-          recipient_phone?: string
-          scheduled_for?: string
-          sent_at?: string | null
+          resolved_at?: string | null
+          resolved_by_message_id?: string | null
           status?: string
-          type?: string
+          template_key?: string
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "notification_jobs_appointment_id_fkey"
+            foreignKeyName: "whatsapp_central_threads_appointment_id_fkey"
             columns: ["appointment_id"]
             isOneToOne: false
             referencedRelation: "appointments"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "notification_jobs_client_id_fkey"
+            foreignKeyName: "whatsapp_central_threads_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "whatsapp_central_threads_outbound_message_id_fkey"
+            columns: ["outbound_message_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_central_threads_resolved_by_message_id_fkey"
+            columns: ["resolved_by_message_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_messages"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      whatsapp_confirmation_threads: {
+        Row: {
+          appointment_id: string
+          appointment_starts_at_snapshot: string
+          client_id: string
+          created_at: string
+          id: string
+          outbound_message_id: string
+          owner_id: string
+          resolved_at: string | null
+          resolved_by_message_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          appointment_id: string
+          appointment_starts_at_snapshot: string
+          client_id: string
+          created_at?: string
+          id?: string
+          outbound_message_id: string
+          owner_id: string
+          resolved_at?: string | null
+          resolved_by_message_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          appointment_id?: string
+          appointment_starts_at_snapshot?: string
+          client_id?: string
+          created_at?: string
+          id?: string
+          outbound_message_id?: string
+          owner_id?: string
+          resolved_at?: string | null
+          resolved_by_message_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_confirmation_threads_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_confirmation_threads_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_confirmation_threads_outbound_message_id_fkey"
+            columns: ["outbound_message_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_confirmation_threads_resolved_by_message_id_fkey"
+            columns: ["resolved_by_message_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_cron_runs: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          finished_at: string | null
+          id: string
+          ok: boolean | null
+          orphan_deleted: number | null
+          processed_cancelled: number | null
+          processed_claimed: number | null
+          processed_failed: number | null
+          processed_held: number | null
+          processed_sent: number | null
+          scan_cancelled_bobo: number | null
+          scan_enqueued: number | null
+          scan_recalculated: number | null
+          started_at: string
+          stuck_recovered: number | null
+          trigger_source: string | null
+          uncertain_expired: number | null
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          ok?: boolean | null
+          orphan_deleted?: number | null
+          processed_cancelled?: number | null
+          processed_claimed?: number | null
+          processed_failed?: number | null
+          processed_held?: number | null
+          processed_sent?: number | null
+          scan_cancelled_bobo?: number | null
+          scan_enqueued?: number | null
+          scan_recalculated?: number | null
+          started_at: string
+          stuck_recovered?: number | null
+          trigger_source?: string | null
+          uncertain_expired?: number | null
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          ok?: boolean | null
+          orphan_deleted?: number | null
+          processed_cancelled?: number | null
+          processed_claimed?: number | null
+          processed_failed?: number | null
+          processed_held?: number | null
+          processed_sent?: number | null
+          scan_cancelled_bobo?: number | null
+          scan_enqueued?: number | null
+          scan_recalculated?: number | null
+          started_at?: string
+          stuck_recovered?: number | null
+          trigger_source?: string | null
+          uncertain_expired?: number | null
+        }
+        Relationships: []
       }
       whatsapp_instances: {
         Row: {
@@ -2350,76 +2738,35 @@ export type Database = {
           },
         ]
       }
-      whatsapp_confirmation_threads: {
+      whatsapp_otp_send_log: {
         Row: {
-          appointment_id: string
-          appointment_starts_at_snapshot: string
-          client_id: string
           created_at: string
+          error_class: string | null
           id: string
-          outbound_message_id: string
-          owner_id: string
-          resolved_at: string | null
-          resolved_by_message_id: string | null
-          status: string
-          updated_at: string
+          meta_error_code: number | null
+          outcome: string
+          owner_id: string | null
+          template_name: string
         }
         Insert: {
-          appointment_id: string
-          appointment_starts_at_snapshot: string
-          client_id: string
           created_at?: string
+          error_class?: string | null
           id?: string
-          outbound_message_id: string
-          owner_id: string
-          resolved_at?: string | null
-          resolved_by_message_id?: string | null
-          status?: string
-          updated_at?: string
+          meta_error_code?: number | null
+          outcome: string
+          owner_id?: string | null
+          template_name: string
         }
         Update: {
-          appointment_id?: string
-          appointment_starts_at_snapshot?: string
-          client_id?: string
           created_at?: string
+          error_class?: string | null
           id?: string
-          outbound_message_id?: string
-          owner_id?: string
-          resolved_at?: string | null
-          resolved_by_message_id?: string | null
-          status?: string
-          updated_at?: string
+          meta_error_code?: number | null
+          outcome?: string
+          owner_id?: string | null
+          template_name?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "whatsapp_confirmation_threads_appointment_id_fkey"
-            columns: ["appointment_id"]
-            isOneToOne: false
-            referencedRelation: "appointments"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "whatsapp_confirmation_threads_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "whatsapp_confirmation_threads_outbound_message_id_fkey"
-            columns: ["outbound_message_id"]
-            isOneToOne: false
-            referencedRelation: "whatsapp_messages"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "whatsapp_confirmation_threads_resolved_by_message_id_fkey"
-            columns: ["resolved_by_message_id"]
-            isOneToOne: false
-            referencedRelation: "whatsapp_messages"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       whatsapp_status_reconciliation: {
         Row: {
@@ -2462,193 +2809,6 @@ export type Database = {
           status?: string
         }
         Relationships: []
-      }
-      whatsapp_central_incidents: {
-        Row: {
-          id: string
-          meta_error_code: number | null
-          notified_at: string | null
-          opened_at: string
-          reason: string
-          resolved_at: string | null
-          scope: string
-          template_key: string | null
-        }
-        Insert: {
-          id?: string
-          meta_error_code?: number | null
-          notified_at?: string | null
-          opened_at?: string
-          reason: string
-          resolved_at?: string | null
-          scope: string
-          template_key?: string | null
-        }
-        Update: {
-          id?: string
-          meta_error_code?: number | null
-          notified_at?: string | null
-          opened_at?: string
-          reason?: string
-          resolved_at?: string | null
-          scope?: string
-          template_key?: string | null
-        }
-        Relationships: []
-      }
-      whatsapp_central_threads: {
-        Row: {
-          appointment_id: string
-          appointment_starts_at_snapshot: string
-          client_id: string
-          created_at: string
-          id: string
-          outbound_message_id: string
-          owner_id: string
-          resolved_at: string | null
-          resolved_by_message_id: string | null
-          status: string
-          template_key: string
-          updated_at: string
-        }
-        Insert: {
-          appointment_id: string
-          appointment_starts_at_snapshot: string
-          client_id: string
-          created_at?: string
-          id?: string
-          outbound_message_id: string
-          owner_id: string
-          resolved_at?: string | null
-          resolved_by_message_id?: string | null
-          status?: string
-          template_key: string
-          updated_at?: string
-        }
-        Update: {
-          appointment_id?: string
-          appointment_starts_at_snapshot?: string
-          client_id?: string
-          created_at?: string
-          id?: string
-          outbound_message_id?: string
-          owner_id?: string
-          resolved_at?: string | null
-          resolved_by_message_id?: string | null
-          status?: string
-          template_key?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "whatsapp_central_threads_appointment_id_fkey"
-            columns: ["appointment_id"]
-            isOneToOne: false
-            referencedRelation: "appointments"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "whatsapp_central_threads_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "whatsapp_central_threads_outbound_message_id_fkey"
-            columns: ["outbound_message_id"]
-            isOneToOne: false
-            referencedRelation: "whatsapp_messages"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "whatsapp_central_threads_resolved_by_message_id_fkey"
-            columns: ["resolved_by_message_id"]
-            isOneToOne: false
-            referencedRelation: "whatsapp_messages"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      whatsapp_central_orphan_messages: {
-        Row: {
-          candidate_count: number
-          content: string | null
-          created_at: string
-          from_phone: string
-          id: string
-          media_type: string
-          provider_message_id: string
-          received_at: string
-        }
-        Insert: {
-          candidate_count?: number
-          content?: string | null
-          created_at?: string
-          from_phone: string
-          id?: string
-          media_type?: string
-          provider_message_id: string
-          received_at: string
-        }
-        Update: {
-          candidate_count?: number
-          content?: string | null
-          created_at?: string
-          from_phone?: string
-          id?: string
-          media_type?: string
-          provider_message_id?: string
-          received_at?: string
-        }
-        Relationships: []
-      }
-      app_notifications: {
-        Row: {
-          appointment_id: string | null
-          body: string
-          created_at: string
-          dedupe_key: string | null
-          id: string
-          kind: string
-          owner_id: string
-          read_at: string | null
-          recipient_user_id: string | null
-          title: string
-        }
-        Insert: {
-          appointment_id?: string | null
-          body: string
-          created_at?: string
-          dedupe_key?: string | null
-          id?: string
-          kind: string
-          owner_id: string
-          read_at?: string | null
-          recipient_user_id?: string | null
-          title: string
-        }
-        Update: {
-          appointment_id?: string | null
-          body?: string
-          created_at?: string
-          dedupe_key?: string | null
-          id?: string
-          kind?: string
-          owner_id?: string
-          read_at?: string | null
-          recipient_user_id?: string | null
-          title?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "app_notifications_appointment_id_fkey"
-            columns: ["appointment_id"]
-            isOneToOne: false
-            referencedRelation: "appointments"
-            referencedColumns: ["id"]
-          },
-        ]
       }
     }
     Views: {
@@ -2709,6 +2869,30 @@ export type Database = {
         }
         Relationships: []
       }
+      public_portal_categories: {
+        Row: {
+          id: string | null
+          image_path: string | null
+          name: string | null
+          owner_id: string | null
+          sort_order: number | null
+        }
+        Insert: {
+          id?: string | null
+          image_path?: string | null
+          name?: string | null
+          owner_id?: string | null
+          sort_order?: number | null
+        }
+        Update: {
+          id?: string | null
+          image_path?: string | null
+          name?: string | null
+          owner_id?: string | null
+          sort_order?: number | null
+        }
+        Relationships: []
+      }
       public_professionals: {
         Row: {
           agenda_color: string | null
@@ -2747,49 +2931,94 @@ export type Database = {
       }
       public_services: {
         Row: {
+          category_id: string | null
           color: string | null
           description: string | null
           duration_min: number | null
           id: string | null
+          image_path: string | null
           name: string | null
           owner_id: string | null
           price: number | null
         }
         Insert: {
+          category_id?: string | null
           color?: string | null
           description?: string | null
           duration_min?: number | null
           id?: string | null
+          image_path?: string | null
           name?: string | null
           owner_id?: string | null
           price?: number | null
         }
         Update: {
+          category_id?: string | null
           color?: string | null
           description?: string | null
           duration_min?: number | null
           id?: string | null
+          image_path?: string | null
           name?: string | null
           owner_id?: string | null
           price?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "services_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "portal_service_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "services_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "public_portal_categories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Functions: {
       apply_whatsapp_central_reply: {
         Args: {
-          p_thread_id: string
           p_action: string
-          p_resolved_by_message_id: string
           p_late_cancel_hours?: number
+          p_resolved_by_message_id: string
+          p_thread_id: string
         }
         Returns: string
       }
       claim_notification_jobs: {
         Args: { p_limit?: number }
-        Returns: Database["public"]["Tables"]["notification_jobs"]["Row"][]
+        Returns: {
+          appointment_id: string | null
+          attempts: number
+          client_id: string | null
+          created_at: string
+          id: string
+          last_error: string | null
+          max_attempts: number
+          message: string
+          next_attempt_at: string
+          owner_id: string
+          recipient_phone: string
+          scheduled_for: string
+          sent_at: string | null
+          status: string
+          type: string
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "notification_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
+      current_team_member_id: { Args: { _owner_id: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -2798,33 +3027,60 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
-      portal_descartar_rascunho: {
-        Args: Record<PropertyKey, never>
-        Returns: string
+      marketing_can: {
+        Args: { _action: string; _owner_id: string }
+        Returns: boolean
       }
-      portal_desfazer_publicacao: {
-        Args: Record<PropertyKey, never>
-        Returns: string
+      portal_contrast_ratio: {
+        Args: { p_hex_a: string; p_hex_b: string }
+        Returns: number
       }
-      portal_obter_publico: {
-        Args: { p_slug: string }
-        Returns: Json
+      portal_descartar_rascunho: { Args: never; Returns: string }
+      portal_desfazer_publicacao: { Args: never; Returns: string }
+      portal_hex_color_valid: { Args: { p_hex: string }; Returns: boolean }
+      portal_media_own_folder: { Args: { p_folder: string }; Returns: boolean }
+      portal_media_path_valid: { Args: { p_path: string }; Returns: boolean }
+      portal_media_quota_ok: {
+        Args: { p_folder: string; p_incoming_size: number }
+        Returns: boolean
       }
-      portal_publicar: {
-        Args: { p_version_esperada: number }
-        Returns: string
-      }
+      portal_obter_publico: { Args: { p_slug: string }; Returns: Json }
+      portal_publicar: { Args: { p_version_esperada: number }; Returns: string }
+      portal_relative_luminance: { Args: { p_hex: string }; Returns: number }
       portal_salvar_rascunho: {
         Args: { p_config: Json; p_version_esperada: number }
+        Returns: string
+      }
+      portal_validate_owned_path: {
+        Args: { p_media_key: string; p_path: string }
         Returns: string
       }
       reactivate_cancelled_appointment: {
         Args: { p_appointment_id: string }
         Returns: string
       }
+      recover_stuck_notification_jobs: {
+        Args: { p_limit?: number; p_stuck_after_minutes?: number }
+        Returns: {
+          appointment_id: string
+          job_id: string
+          job_type: string
+          outcome: string
+          owner_id: string
+        }[]
+      }
+      seed_default_access_levels: {
+        Args: { _owner_id: string }
+        Returns: undefined
+      }
       set_agenda_removed: {
         Args: { p_appointment_id: string; p_removed: boolean }
         Returns: string
+      }
+      staff_access_kind: { Args: { _owner_id: string }; Returns: string }
+      staff_can: {
+        Args: { _action: string; _owner_id: string; _resource: string }
+        Returns: boolean
       }
     }
     Enums: {
@@ -2850,12 +3106,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2879,11 +3135,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2904,11 +3160,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2929,11 +3185,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2946,11 +3202,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

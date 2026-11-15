@@ -219,6 +219,7 @@ function ServiceCard({ service }: { service: Service }) {
     <Link
       to="/servicos/$id"
       params={{ id: service.id }}
+      search={{ tab: undefined }}
       className="group flex items-center gap-4 rounded-2xl bg-card border border-border/50 p-4 hover:border-border transition"
     >
       <div className="w-11 h-11 rounded-2xl bg-secondary flex items-center justify-center shrink-0">

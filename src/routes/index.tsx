@@ -5,6 +5,6 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 // O link público de agendamento de cada profissional é "/l/:slug", não "/".
 export const Route = createFileRoute("/")({
   beforeLoad: () => {
-    throw redirect({ to: "/auth" });
+    throw redirect({ to: "/auth", search: { next: undefined, signup: false } });
   },
 });
