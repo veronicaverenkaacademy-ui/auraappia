@@ -658,6 +658,7 @@ export type Database = {
           birthday: string | null
           cpf: string | null
           created_at: string
+          deleted_by_client_at: string | null
           email: string | null
           full_name: string
           how_found: string | null
@@ -675,6 +676,7 @@ export type Database = {
           birthday?: string | null
           cpf?: string | null
           created_at?: string
+          deleted_by_client_at?: string | null
           email?: string | null
           full_name: string
           how_found?: string | null
@@ -692,6 +694,7 @@ export type Database = {
           birthday?: string | null
           cpf?: string | null
           created_at?: string
+          deleted_by_client_at?: string | null
           email?: string | null
           full_name?: string
           how_found?: string | null
