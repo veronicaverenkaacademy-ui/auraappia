@@ -7,11 +7,13 @@
 // (exclusão da PROFISSIONAL/equipe) — fluxos de auth separados, sem
 // sobreposição; esta fase não altera aquele arquivo.
 //
-// A política "o que é apagado/anonimizado/mantido" mora INTEIRA na migração
-// 20261115140000_client_erasure.sql (client_erasure_plan/erase_client_data)
-// — de propósito, pra ficar fácil de ajustar num único lugar quando a
-// advogada responder sobre prazo de guarda da ficha. Este módulo só
-// ORQUESTRA a ordem entre banco e Storage; nunca decide o que apagar.
+// A política "o que é apagado/anonimizado/mantido" mora INTEIRA nas
+// migrações 20261115140000_client_erasure.sql e
+// 20261115160000_client_erasure_orphan_messages.sql (client_erasure_plan/
+// erase_client_data) — de propósito, pra ficar fácil de ajustar num único
+// lugar quando a advogada responder sobre prazo de guarda da ficha. Este
+// módulo só ORQUESTRA a ordem entre banco e Storage; nunca decide o que
+// apagar.
 //
 // ORDEM — nunca mudar:
 //   1. client_erasure_plan (SÓ LEITURA) — se a função não existir ainda
@@ -38,6 +40,7 @@ export type ClientErasurePlanEntry = {
   photo_storage_paths: string[];
   consents_count: number;
   whatsapp_messages_count: number;
+  orphan_whatsapp_messages_count: number;
   central_threads_count: number;
   confirmation_threads_count: number;
   notification_jobs_count: number;
@@ -53,6 +56,7 @@ export type EraseClientDataEntry = {
   anamnesis_deleted: number;
   photos_deleted: number;
   whatsapp_messages_deleted: number;
+  orphan_whatsapp_messages_deleted: number;
   central_threads_deleted: number;
   confirmation_threads_deleted: number;
   blocked_recipients_deleted: number;
