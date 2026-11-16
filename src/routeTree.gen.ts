@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as AceitarTermosRouteImport } from './routes/aceitar-termos'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as CadastroRouteImport } from './routes/cadastro'
 import { Route as ContaDesativadaRouteImport } from './routes/conta-desativada'
@@ -84,6 +85,11 @@ const IndexRoute = IndexRouteImport.update({
 } as any)
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AceitarTermosRoute = AceitarTermosRouteImport.update({
+  id: '/aceitar-termos',
+  path: '/aceitar-termos',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -439,6 +445,7 @@ const AuthenticatedWhatsappConfigRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/aceitar-termos': typeof AceitarTermosRoute
   '/auth': typeof AuthRoute
   '/cadastro': typeof CadastroRoute
   '/conta-desativada': typeof ContaDesativadaRoute
@@ -507,6 +514,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/aceitar-termos': typeof AceitarTermosRoute
   '/auth': typeof AuthRoute
   '/cadastro': typeof CadastroRoute
   '/conta-desativada': typeof ContaDesativadaRoute
@@ -568,6 +576,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/aceitar-termos': typeof AceitarTermosRoute
   '/auth': typeof AuthRoute
   '/cadastro': typeof CadastroRoute
   '/conta-desativada': typeof ContaDesativadaRoute
@@ -638,6 +647,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/aceitar-termos'
     | '/auth'
     | '/cadastro'
     | '/conta-desativada'
@@ -706,6 +716,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/aceitar-termos'
     | '/auth'
     | '/cadastro'
     | '/conta-desativada'
@@ -766,6 +777,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_authenticated'
+    | '/aceitar-termos'
     | '/auth'
     | '/cadastro'
     | '/conta-desativada'
@@ -836,6 +848,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  AceitarTermosRoute: typeof AceitarTermosRoute
   AuthRoute: typeof AuthRoute
   CadastroRoute: typeof CadastroRoute
   ContaDesativadaRoute: typeof ContaDesativadaRoute
@@ -861,6 +874,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/aceitar-termos': {
+      id: '/aceitar-termos'
+      path: '/aceitar-termos'
+      fullPath: '/aceitar-termos'
+      preLoaderRoute: typeof AceitarTermosRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -1540,6 +1560,7 @@ const AuthenticatedRouteRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AceitarTermosRoute: AceitarTermosRoute,
   AuthRoute: AuthRoute,
   CadastroRoute: CadastroRoute,
   ContaDesativadaRoute: ContaDesativadaRoute,

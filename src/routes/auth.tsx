@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { SIGNUP_STORAGE_KEY, type PendingSignupData } from "@/lib/signup";
 import { formatCEP, lookupCEP } from "@/lib/cep";
+import { acceptMyTerms } from "@/lib/professional-terms.functions";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
@@ -62,7 +64,12 @@ async function applyPendingSignupData(userId: string) {
       city: data.city || null,
       state: data.state || null,
       address: data.address || null,
-      terms_accepted_at: data.terms_accepted_at || null,
+      // FASE CONSENT-1C (16/11/2026): terms_accepted_at SAIU deste upsert
+      // client-side — a partir desta fase, authenticated não tem mais
+      // UPDATE nela (nem em terms_accepted_version), só service_role. O
+      // aceite de verdade agora é registrado pelo servidor logo abaixo
+      // (acceptPendingTerms, chamada depois desta função nos dois pontos
+      // que a usam), nunca aqui.
     });
     if (error) {
       // Não apaga o rascunho se o upsert falhou — assim não perde os dados digitados.
@@ -82,6 +89,7 @@ type Step = "social" | "phone" | "otp" | "staff";
 function AuthPage() {
   const navigate = useNavigate();
   const search = Route.useSearch();
+  const acceptTermsFn = useServerFn(acceptMyTerms);
   const [step, setStep] = useState<Step>("social");
   // Lê o rascunho de /cadastro (se houver) uma única vez, ao montar — usado pra
   // pré-preencher o telefone e pro painel de diagnóstico abaixo.
@@ -196,16 +204,38 @@ function AuthPage() {
     navigate({ to: destination, replace: true });
   };
 
+  // FASE CONSENT-1C (16/11/2026) — se o checkbox de Termos/Política foi
+  // marcado nesta etapa de cadastro (pendingSignup.terms_accepted_at
+  // presente), registra o aceite de verdade no servidor (versão lida lá,
+  // nunca daqui), pra uma conta recém-criada já nascer com
+  // terms_accepted_version preenchida e não ver o gate /aceitar-termos
+  // logo depois de se cadastrar. Nunca bloqueia login/cadastro se isto
+  // falhar — pior caso, a profissional só vê o gate na próxima navegação
+  // autenticada, igual a qualquer conta existente sem versão registrada.
+  const acceptPendingTerms = async () => {
+    if (!pendingSignup?.terms_accepted_at) return;
+    try {
+      await acceptTermsFn();
+    } catch (e) {
+      console.error(
+        "[auth] Falha ao registrar aceite dos Termos no cadastro (gate cobre depois)",
+        e,
+      );
+    }
+  };
+
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
       if (data.session) {
         await applyPendingSignupData(data.session.user.id);
+        await acceptPendingTerms();
         navigateAfterAuth();
       }
     });
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
       if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session) {
         await applyPendingSignupData(session.user.id);
+        await acceptPendingTerms();
         navigateAfterAuth();
       }
     });
