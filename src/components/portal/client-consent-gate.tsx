@@ -24,6 +24,7 @@ import {
   type ClientConsentFormSubmission,
   type OptionalConsentType,
 } from "./client-consent-form";
+import { buildFullBatchPayload } from "./client-consent-payload";
 
 const ALL_OPTIONAL: OptionalConsentType[] = [
   "health_data",
@@ -85,16 +86,7 @@ export function ClientConsentGate({
       const isFullCase = status.needsTerms && status.unanswered.length === ALL_OPTIONAL.length;
 
       if (isFullCase) {
-        await fullBatchFn({
-          data: {
-            ownerId,
-            termsPrivacy: "granted",
-            healthData: submission.optional.health_data!,
-            imageUse: submission.optional.image_use!,
-            marketing: submission.optional.marketing!,
-            whatsappReminders: submission.optional.whatsapp_reminders!,
-          },
-        });
+        await fullBatchFn({ data: buildFullBatchPayload(ownerId, submission.optional) });
         return;
       }
 
