@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { initials } from "@/lib/clients";
 import { useClientAuth, type MyClient } from "@/hooks/use-client-auth";
 import { PhoneStep, OtpStep, SignupStep } from "./client-auth-steps";
+import { ClientConsentGate } from "./client-consent-gate";
 import { SlotPicker, type PickedSlot } from "./slot-picker";
 import { fetchMyAppointments, type MyAppointment } from "@/lib/clientPortal";
 import { updateMyClientProfile, deleteMyClientAccount } from "@/lib/clientPortal.functions";
@@ -37,6 +38,23 @@ export const ClientAccountPanel = forwardRef<
   useEffect(() => {
     if (auth.view === "ready" && auth.myClient) setShowDashboard(true);
   }, [auth.view, auth.myClient]);
+
+  // FASE CONSENT-1D: entre a cliente resolvida e o painel "Minha conta" —
+  // mesmo z-index/overlay do painel logado, pra funcionar não importa de
+  // onde este componente foi montado (mesmo motivo do comentário K2b-FIX
+  // mais abaixo, pro trigger).
+  if (auth.view === "consent" && auth.myClient) {
+    return (
+      <div className="fixed inset-0 z-40 bg-background overflow-y-auto">
+        <ClientConsentGate
+          ownerId={ownerId}
+          clientId={auth.myClient.id}
+          onDone={() => auth.setView("ready")}
+          onSignOut={() => void auth.logout()}
+        />
+      </div>
+    );
+  }
 
   if (showDashboard && auth.myClient) {
     return (

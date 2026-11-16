@@ -341,6 +341,16 @@ function makeInsertResult(inserted: Row[] | null, error: PgError | null) {
           if (error) return { data: null, error };
           return { data: inserted?.[0] ?? null, error: null };
         },
+        // FASE CONSENT-1D: `.insert(linhas[]).select(cols)` direto (sem
+        // .single()/.maybeSingle()) — mesmo padrão real do supabase-js pra
+        // INSERT multi-linha (ex.: recordConsentRows, um único INSERT
+        // atômico pro lote de consentimentos da cliente).
+        then(
+          resolve: (v: { data: Row[] | null; error: PgError | null }) => unknown,
+          reject?: (e: unknown) => unknown,
+        ) {
+          return Promise.resolve({ data: error ? null : inserted, error }).then(resolve, reject);
+        },
       };
     },
     then(

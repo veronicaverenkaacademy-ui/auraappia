@@ -19,11 +19,19 @@ import { getRequestSignature } from "@/lib/server/request-signature";
 import { getLegalDocumentVersion, type LegalDocumentKey } from "@/lib/legal-versions";
 import {
   getLatestConsentStatusForClient,
+  getMyConsentStatusForClient,
   recordConsentRow,
+  recordConsentRows,
   type ClientConsentsDb,
+  type RecordConsentRowsEntry,
 } from "./client-consents-store.server.ts";
 import { toConsentError } from "./errors.ts";
-import { ConsentError, type ConsentStatusMap } from "./types.ts";
+import {
+  ConsentError,
+  CONSENT_TYPE_DOCUMENT_KEYS,
+  type ConsentStatusMap,
+  type MyClientConsentStatus,
+} from "./types.ts";
 import { LEGAL_DOCUMENT_VERSIONS } from "@/lib/legal-versions";
 
 const CONSENT_TYPE_ENUM = z.enum([
@@ -225,6 +233,216 @@ export const getClientConsentStatus = createServerFn({ method: "GET" })
         client.id,
         LEGAL_DOCUMENT_VERSIONS,
       );
+    } catch (e) {
+      throw toConsentError(e);
+    }
+  });
+
+/** Resolve a linha de `clients` da PRÓPRIA cliente autenticada — mesma
+ * lógica de recordMyClientConsent: `ownerId` é só um FILTRO, o vínculo
+ * real é `clients.user_id = context.userId`, então nunca é possível ler/
+ * gravar em nome de outra cliente. Duplicado de propósito (arquivo-irmão,
+ * mesmo padrão já usado 2x acima). */
+async function fetchMyClient(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any>,
+  ownerId: string,
+  userId: string,
+): Promise<{ id: string; owner_id: string } | null> {
+  const { data, error } = await supabase
+    .from("clients")
+    .select("id, owner_id")
+    .eq("owner_id", ownerId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ?? null;
+}
+
+const MyOwnerIdInput = z.object({ ownerId: z.string().uuid() }).strict();
+
+/**
+ * FASE CONSENT-1D — status dos 5 consentimentos da PRÓPRIA cliente logada
+ * no portal (o gate usa isto pra decidir o que perguntar). NUNCA devolve
+ * IP, user-agent, nome do signatário nem IDs internos além do necessário
+ * (MyClientConsentStatus não tem campo pra nenhum deles).
+ */
+export const getMyClientConsentStatus = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((raw: unknown) => MyOwnerIdInput.parse(raw))
+  .handler(async ({ data, context }): Promise<MyClientConsentStatus> => {
+    try {
+      const client = await fetchMyClient(context.supabase, data.ownerId, context.userId);
+      if (!client) throw new ConsentError("NOT_FOUND", "Cliente não encontrada.");
+
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      return await getMyConsentStatusForClient(
+        supabaseAdmin as unknown as ClientConsentsDb,
+        client.id,
+        LEGAL_DOCUMENT_VERSIONS,
+      );
+    } catch (e) {
+      throw toConsentError(e);
+    }
+  });
+
+// Só terms_privacy="granted" é aceito (recusar os termos de uso/política
+// não é uma opção — sem ela a cliente não usa o portal, decisão 4 da
+// fase). Os outros quatro aceitam qualquer escolha válida PRO TIPO —
+// z.enum já rejeita um valor de outro tipo (ex.: health_data=
+// "granted_no_face") e .strict() rejeita qualquer campo a mais. Os 5 são
+// obrigatórios (sem .optional()) — lote incompleto é erro de validação,
+// nunca aceito parcialmente.
+const RecordMyConsentsInput = z
+  .object({
+    ownerId: z.string().uuid(),
+    termsPrivacy: z.literal("granted"),
+    healthData: z.enum(["granted", "denied"]),
+    imageUse: z.enum(["granted", "granted_no_face", "denied"]),
+    marketing: z.enum(["granted", "denied"]),
+    whatsappReminders: z.enum(["granted", "denied"]),
+  })
+  .strict();
+
+export type RecordMyConsentsOutput = { ok: true };
+
+/** As 2 linhas de terms_privacy (termos-de-uso + política-de-privacidade)
+ * — único lugar que monta isso, reusado por recordMyClientConsents (lote
+ * completo, cliente nova) e recordMyTermsPrivacyConsent (só re-aceite dos
+ * termos, cliente já respondeu os outros 4). Sempre choice='granted' —
+ * não existe "recusar os termos" (decisão 4 da fase). */
+function buildTermsPrivacyEntries(): RecordConsentRowsEntry[] {
+  const [termosKey, privacidadeKey] = CONSENT_TYPE_DOCUMENT_KEYS.terms_privacy;
+  return [
+    {
+      consentType: "terms_privacy",
+      choice: "granted",
+      documentKey: termosKey,
+      documentVersion: getLegalDocumentVersion(termosKey),
+    },
+    {
+      consentType: "terms_privacy",
+      choice: "granted",
+      documentKey: privacidadeKey,
+      documentVersion: getLegalDocumentVersion(privacidadeKey),
+    },
+  ];
+}
+
+/**
+ * FASE CONSENT-1D — grava os 5 aceites da PRÓPRIA cliente de uma vez (o
+ * gate do portal, primeiro uso — quando TODOS os 5 ainda precisam ser
+ * perguntados) em UM lote atômico (recordConsentRows): terms_privacy vira
+ * 2 linhas (termos-de-uso + política-de-privacidade,
+ * CONSENT_TYPE_DOCUMENT_KEYS — o único mapeamento tipo→documento do
+ * projeto, nunca duplicado), as outras 4 viram 1 linha cada
+ * (termo-consentimento). client_id SEMPRE da sessão (nunca de `data` — o
+ * input nem tem esse campo); document_key e document_version SEMPRE do
+ * servidor (CONSENT_TYPE_DOCUMENT_KEYS + getLegalDocumentVersion, nunca de
+ * `data`); source é sempre 'portal' (fixo, nunca aceito como parâmetro);
+ * IP/user-agent capturados uma vez só (getRequestSignature) e aplicados
+ * às 6 linhas. Idempotência de 60s herdada de recordConsentRows.
+ *
+ * NÃO é usada pro re-aceite PARCIAL (só termos desatualizados, ou só
+ * alguns dos 4 opcionais nunca respondidos) — o gate usa
+ * recordMyTermsPrivacyConsent (abaixo) ou recordMyClientConsent (unitário,
+ * já existente) pra esses casos, perguntando só o que falta de verdade.
+ */
+export const recordMyClientConsents = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((raw: unknown) => RecordMyConsentsInput.parse(raw))
+  .handler(async ({ data, context }): Promise<RecordMyConsentsOutput> => {
+    try {
+      const client = await fetchMyClient(context.supabase, data.ownerId, context.userId);
+      if (!client) throw new ConsentError("NOT_FOUND", "Cliente não encontrada.");
+
+      const { ip, userAgent } = getRequestSignature();
+
+      const entries: RecordConsentRowsEntry[] = [
+        ...buildTermsPrivacyEntries(),
+        {
+          consentType: "health_data",
+          choice: data.healthData,
+          documentKey: CONSENT_TYPE_DOCUMENT_KEYS.health_data[0],
+          documentVersion: getLegalDocumentVersion(CONSENT_TYPE_DOCUMENT_KEYS.health_data[0]),
+        },
+        {
+          consentType: "image_use",
+          choice: data.imageUse,
+          documentKey: CONSENT_TYPE_DOCUMENT_KEYS.image_use[0],
+          documentVersion: getLegalDocumentVersion(CONSENT_TYPE_DOCUMENT_KEYS.image_use[0]),
+        },
+        {
+          consentType: "marketing",
+          choice: data.marketing,
+          documentKey: CONSENT_TYPE_DOCUMENT_KEYS.marketing[0],
+          documentVersion: getLegalDocumentVersion(CONSENT_TYPE_DOCUMENT_KEYS.marketing[0]),
+        },
+        {
+          consentType: "whatsapp_reminders",
+          choice: data.whatsappReminders,
+          documentKey: CONSENT_TYPE_DOCUMENT_KEYS.whatsapp_reminders[0],
+          documentVersion: getLegalDocumentVersion(
+            CONSENT_TYPE_DOCUMENT_KEYS.whatsapp_reminders[0],
+          ),
+        },
+      ];
+
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await recordConsentRows(supabaseAdmin as unknown as ClientConsentsDb, {
+        ownerId: client.owner_id,
+        clientId: client.id,
+        rows: entries,
+        source: "portal",
+        collectedByUserId: null,
+        signerName: null,
+        evidenceIp: ip,
+        evidenceUserAgent: userAgent,
+      });
+      return { ok: true };
+    } catch (e) {
+      throw toConsentError(e);
+    }
+  });
+
+/**
+ * FASE CONSENT-1D — re-aceite PARCIAL: só os termos (quando
+ * MyClientConsentStatus.needsTerms é true mas os outros 4 já foram
+ * respondidos alguma vez — o gate não repergunta o que já foi respondido,
+ * decisão da fase). Sem input além de ownerId: nunca recebe document_key/
+ * document_version/choice do cliente — sempre 'granted' nos dois
+ * documentos, versão sempre do servidor. Atômico (2 linhas, 1 INSERT) e
+ * seguro pra idempotência por documento (reusa recordConsentRows, que
+ * diferencia as 2 linhas por document_key) — diferente de chamar
+ * recordMyClientConsent duas vezes seguidas pra terms_privacy, que
+ * colidiria na checagem de idempotência dele (ela só olha client_id+
+ * consent_type, não document_key, e as duas datas de versão hoje
+ * coincidem: "2026-11-15" nos dois documentos — a segunda chamada seria
+ * vista como repetição da primeira e NUNCA gravaria a linha da política de
+ * privacidade).
+ */
+export const recordMyTermsPrivacyConsent = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((raw: unknown) => MyOwnerIdInput.parse(raw))
+  .handler(async ({ data, context }): Promise<RecordMyConsentsOutput> => {
+    try {
+      const client = await fetchMyClient(context.supabase, data.ownerId, context.userId);
+      if (!client) throw new ConsentError("NOT_FOUND", "Cliente não encontrada.");
+
+      const { ip, userAgent } = getRequestSignature();
+
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await recordConsentRows(supabaseAdmin as unknown as ClientConsentsDb, {
+        ownerId: client.owner_id,
+        clientId: client.id,
+        rows: buildTermsPrivacyEntries(),
+        source: "portal",
+        collectedByUserId: null,
+        signerName: null,
+        evidenceIp: ip,
+        evidenceUserAgent: userAgent,
+      });
+      return { ok: true };
     } catch (e) {
       throw toConsentError(e);
     }

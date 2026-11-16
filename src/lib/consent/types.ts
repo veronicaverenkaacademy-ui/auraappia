@@ -55,6 +55,71 @@ export type ConsentStatusEntry = {
 
 export type ConsentStatusMap = Record<ConsentType, ConsentStatusEntry | null>;
 
+/**
+ * FASE CONSENT-1D — mapeamento canônico tipo → documento(s) legal(is).
+ * ÚNICO lugar que decide isso no projeto (reuse, nunca duplique): o CHECK
+ * de `document_key` em client_consents não amarra nenhum tipo a nenhum
+ * documento específico (cada gravação decide os dois de forma
+ * independente — ver o comentário da migração 20261115120000) — essa
+ * decisão ficou para a fase que primeiro desenhasse a tela de aceite da
+ * CLIENTE (esta). terms_privacy é o único tipo com DOIS documentos (Termos
+ * de Uso + Política de Privacidade são páginas/textos separados); os
+ * outros quatro (saúde, imagem, marketing, lembretes) são seções B-E de UM
+ * documento só, termo-consentimento.tsx — por isso compartilham o mesmo
+ * document_key.
+ */
+export const CONSENT_TYPE_DOCUMENT_KEYS: Record<ConsentType, readonly LegalDocumentKey[]> = {
+  terms_privacy: ["termos-de-uso", "politica-de-privacidade"],
+  health_data: ["termo-consentimento"],
+  image_use: ["termo-consentimento"],
+  marketing: ["termo-consentimento"],
+  whatsapp_reminders: ["termo-consentimento"],
+};
+
+/** Estado atual de um único tipo (exceto terms_privacy, que tem o shape
+ * próprio abaixo por cobrir dois documentos) — null em todos os campos =
+ * nunca respondeu. */
+export type MyConsentEntry = {
+  choice: ConsentChoice | null;
+  documentVersion: string | null;
+  createdAt: string | null;
+};
+
+/** terms_privacy precisa do estado de CADA um dos dois documentos
+ * separadamente — getLatestConsentStatusForClient (que colapsa por
+ * consent_type só) não serve pra isso sozinha; ver
+ * getMyConsentStatusForClient em client-consents-store.server.ts. */
+export type MyTermsPrivacyStatus = {
+  termosDeUso: MyConsentEntry;
+  politicaDePrivacidade: MyConsentEntry;
+  /** true se qualquer um dos dois estiver ausente OU com versão diferente
+   * da atual (LEGAL_DOCUMENT_VERSIONS) — equivale a needsTerms. */
+  isOutdated: boolean;
+};
+
+/**
+ * Status completo da PRÓPRIA cliente logada no portal (getMyClientConsentStatus)
+ * — nunca inclui IP/user-agent/signer_name/IDs internos além do necessário.
+ */
+export type MyClientConsentStatus = {
+  termsPrivacy: MyTermsPrivacyStatus;
+  healthData: MyConsentEntry;
+  imageUse: MyConsentEntry;
+  marketing: MyConsentEntry;
+  whatsappReminders: MyConsentEntry;
+  /** = termsPrivacy.isOutdated — repetido no nível raiz só por
+   * conveniência de quem consome (evita acessar um nível a mais). */
+  needsTerms: boolean;
+  /** Os quatro opcionais que nunca foram respondidos nenhuma vez — não
+   * inclui os que já têm QUALQUER resposta (mesmo "denied"), mesmo que o
+   * documento tenha mudado de versão depois (re-aceite desses 4 não
+   * bloqueia o portal — fica pra etapa futura "Meus consentimentos"). */
+  unanswered: Exclude<ConsentType, "terms_privacy">[];
+  /** = needsTerms || unanswered.length > 0 — é isto que o gate usa pra
+   * decidir se bloqueia o portal. */
+  needsGate: boolean;
+};
+
 export type ConsentErrorCode =
   | "VALIDATION"
   | "PERMISSION_DENIED"
