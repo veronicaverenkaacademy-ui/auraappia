@@ -12,8 +12,8 @@ test("LEGAL_DOCUMENT_VERSIONS tem exatamente os 3 documentos legais reais", () =
   );
 });
 
-test("getLegalDocumentVersion devolve 2026-08-04 pros 3 documentos (mesma data de 'Última atualização' hoje)", () => {
-  assert.equal(getLegalDocumentVersion("termo-consentimento"), "2026-08-04");
-  assert.equal(getLegalDocumentVersion("politica-de-privacidade"), "2026-08-04");
-  assert.equal(getLegalDocumentVersion("termos-de-uso"), "2026-08-04");
+test("getLegalDocumentVersion devolve 2026-11-15 pros 3 documentos (mesma data de 'Última atualização' hoje)", () => {
+  assert.equal(getLegalDocumentVersion("termo-consentimento"), "2026-11-15");
+  assert.equal(getLegalDocumentVersion("politica-de-privacidade"), "2026-11-15");
+  assert.equal(getLegalDocumentVersion("termos-de-uso"), "2026-11-15");
 });

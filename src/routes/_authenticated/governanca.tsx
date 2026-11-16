@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo } from "react";
 import {
   AlertTriangle, ChevronLeft, ChevronRight, CheckCircle2, Circle, HardDrive, Lock,
-  Palette, ShieldCheck, Sparkle, UserCog, Users, Wifi, WifiOff, Zap,
+  Palette, ScrollText, ShieldCheck, Sparkle, UserCog, Users, Wifi, WifiOff, Zap,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +39,12 @@ function GovernancaPage() {
     { label: "Integrações", sub: "2 desconectadas", icon: WifiOff, tone: "warn", target: "/integracoes" },
     { label: "Backups", sub: state.backup.autoBackup ? "Ativo — hoje às 03:15" : "Desativado", icon: HardDrive, tone: state.backup.autoBackup ? "ok" : "danger", target: "/sistema" },
     { label: "Segurança", sub: state.security.twoFA ? "Tudo em ordem" : "2 recomendações para melhorar", icon: ShieldCheck, tone: state.security.twoFA ? "ok" : "warn", target: "/seguranca" },
-    { label: "LGPD", sub: state.security.lgpdConsent ? "Conforme" : "Pendências", icon: Lock, tone: state.security.lgpdConsent ? "ok" : "warn", target: "/seguranca" },
+    // FASE CONSENT-1B (15/11/2026): removida a alegação de conformidade
+    // "LGPD: Conforme/Pendências" (lida de um toggle local, sem relação
+    // com dado real) — substituída por um atalho neutro, sem afirmar nada,
+    // para os 3 documentos legais reais (ver Section "Documentos legais"
+    // em seguranca.tsx).
+    { label: "Documentos legais", sub: "Termos, Privacidade e Consentimento", icon: ScrollText, tone: "info", target: "/seguranca" },
     { label: "Permissões", sub: "3 usuários com acessos amplos", icon: Users, tone: "warn", target: "/permissoes" },
     { label: "Atualizações", sub: "Versão 2.4.1 — atualizado", icon: Sparkle, tone: "ok", target: "/sistema" },
   ];

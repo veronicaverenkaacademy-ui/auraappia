@@ -31,6 +31,7 @@ import { PanelHeader, Field, Row, Section } from "@/components/settings-ui";
 import { useControlCenter, type ControlCenterState } from "@/lib/control-center";
 import { supabase } from "@/integrations/supabase/client";
 import { checkAccountDeletionEligibility, deleteMyAccount } from "@/lib/account-deletion.functions";
+import { LEGAL_DOCUMENT_VERSIONS, type LegalDocumentKey } from "@/lib/legal-versions";
 
 export const Route = createFileRoute("/_authenticated/seguranca")({
   head: () => ({
@@ -110,12 +111,6 @@ function SegurancaPage() {
         </Section>
 
         <Section title="LGPD & Auditoria">
-          <Row title="Consentimentos LGPD ativos" desc="Termos e coleta de aceites publicados.">
-            <Switch
-              checked={s.lgpdConsent}
-              onCheckedChange={(v) => updateSec({ lgpdConsent: v })}
-            />
-          </Row>
           <Row title="Criptografia em repouso" desc="Todos os dados sensíveis são criptografados.">
             <Switch
               checked={s.encryptionAtRest}
@@ -191,21 +186,39 @@ function SegurancaPage() {
 
         <Section title="Documentos legais">
           <div className="grid md:grid-cols-3 gap-3 py-2">
-            {[
-              "Termos de Uso",
-              "Política de Privacidade",
-              "Contrato de Serviço",
-              "Consentimento LGPD",
-              "Consentimento Fotos",
-              "Anamnese",
-            ].map((d) => (
-              <div key={d} className="p-4 rounded-xl bg-secondary/50 flex items-start gap-3">
+            {(
+              [
+                { label: "Termos de Uso", to: "/termos-de-uso", key: "termos-de-uso" },
+                {
+                  label: "Política de Privacidade",
+                  to: "/politica-de-privacidade",
+                  key: "politica-de-privacidade",
+                },
+                {
+                  label: "Termo de Consentimento",
+                  to: "/termo-consentimento",
+                  key: "termo-consentimento",
+                },
+              ] as {
+                label: string;
+                to: "/termos-de-uso" | "/politica-de-privacidade" | "/termo-consentimento";
+                key: LegalDocumentKey;
+              }[]
+            ).map((d) => (
+              <Link
+                key={d.key}
+                to={d.to}
+                target="_blank"
+                className="p-4 rounded-xl bg-secondary/50 flex items-start gap-3 hover:bg-secondary transition"
+              >
                 <ScrollText className="w-4 h-4 mt-0.5 text-muted-foreground shrink-0" />
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium truncate">{d}</div>
-                  <div className="text-[11px] text-muted-foreground">v1.0 · publicado</div>
+                  <div className="text-sm font-medium truncate">{d.label}</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Versão {LEGAL_DOCUMENT_VERSIONS[d.key]}
+                  </div>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </Section>
