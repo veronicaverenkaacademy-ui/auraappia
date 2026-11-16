@@ -77,7 +77,6 @@ export type SecuritySettings = {
   sessionTimeoutMin: number;
   forcePasswordChangeDays: number;
   encryptionAtRest: boolean;
-  lgpdConsent: boolean;
   auditLogs: boolean;
 };
 
@@ -184,7 +183,6 @@ const DEFAULTS: ControlCenterState = {
     sessionTimeoutMin: 60,
     forcePasswordChangeDays: 0,
     encryptionAtRest: true,
-    lgpdConsent: true,
     auditLogs: true,
   },
   backup: {
@@ -295,12 +293,6 @@ export function computeHealth(s: ControlCenterState): { score: number; checks: H
     label: "Autenticação em 2 fatores",
     status: s.security.twoFA ? "ok" : "warn",
     detail: s.security.twoFA ? "2FA ativo" : "Ative 2FA para proteger sua conta",
-  });
-  checks.push({
-    key: "lgpd",
-    label: "Conformidade LGPD",
-    status: s.security.lgpdConsent ? "ok" : "danger",
-    detail: s.security.lgpdConsent ? "Consentimentos coletados" : "Publique política e colete consentimentos",
   });
   checks.push({
     key: "portal",
