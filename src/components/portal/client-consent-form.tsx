@@ -20,6 +20,18 @@
 // identificado via aria-labelledby, com o título num elemento normal do
 // fluxo do documento (mesma semântica de acessibilidade, sem aquele
 // posicionamento especial).
+//
+// FASE CONSENT-1H — teste real às 18:11 confirmou que a escolha gravada
+// bate com o que a cliente marcou (CONSENT-1G já tinha achado, por clique
+// real em navegador, que não existe zona de sobreposição entre opções —
+// só uma zona MORTA de 10px entre elas); ainda assim, pra reduzir toque
+// errado e dar uma segunda chance de notar antes de enviar: (1) cada
+// RadioOption agora é a LINHA INTEIRA clicável (o próprio <Label> é o
+// cartão da opção, sem vão morto entre uma linha e a seguinte — ver
+// RadioOption/divide-y abaixo); (2) a opção marcada ganha destaque visual
+// (fundo e borda), além do pontinho já existente (nunca só cor); (3) um
+// resumo "Você escolheu" lê o MESMO estado `answers` que monta o payload
+// (buildAnswerSummary, em client-consent-summary.ts — nunca uma cópia).
 import { useId, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
@@ -27,6 +39,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { cn } from "@/lib/utils";
 import type { ConsentChoice, ConsentType } from "@/lib/consent/types";
 import {
   TERMS_PRIVACY_COPY,
@@ -37,6 +50,7 @@ import {
   WHATSAPP_REMINDERS_COPY,
   type OptionalConsentCopy,
 } from "./client-consent-copy";
+import { buildAnswerSummary } from "./client-consent-summary";
 
 export type OptionalConsentType = Exclude<ConsentType, "terms_privacy">;
 export type OptionalAnswers = Partial<Record<OptionalConsentType, ConsentChoice>>;
@@ -120,6 +134,18 @@ export function ClientConsentForm({
             onChange={(choice) => setAnswers((a) => ({ ...a, [type]: choice }))}
           />
         ),
+      )}
+
+      {orderedOptional.length > 0 && (
+        <div className="rounded-2xl border border-border/60 bg-muted/30 p-4 space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">Você escolheu:</p>
+          {buildAnswerSummary(orderedOptional, answers).map((entry) => (
+            <p key={entry.type} className="text-sm">
+              <span className="font-medium">{OPTIONAL_COPY[entry.type].title}:</span>{" "}
+              {entry.answerLabel}
+            </p>
+          ))}
+        </div>
       )}
 
       {errorMessage && <p className="text-xs text-destructive">{errorMessage}</p>}
@@ -216,10 +242,20 @@ function GrantedDeniedField({
       <RadioGroup
         value={value ?? ""}
         onValueChange={(v) => onChange(v as ConsentChoice)}
-        className="gap-2.5"
+        className="gap-0 divide-y divide-border/60 rounded-xl border border-border/60 overflow-hidden"
       >
-        <RadioOption id={`${type}-granted`} value="granted" label="Aceito" />
-        <RadioOption id={`${type}-denied`} value="denied" label="Não aceito" />
+        <RadioOption
+          id={`${type}-granted`}
+          value="granted"
+          label="Aceito"
+          selected={value === "granted"}
+        />
+        <RadioOption
+          id={`${type}-denied`}
+          value="denied"
+          label="Não aceito"
+          selected={value === "denied"}
+        />
       </RadioGroup>
     </div>
   );
@@ -249,31 +285,62 @@ function ImageUseField({
       <RadioGroup
         value={value ?? ""}
         onValueChange={(v) => onChange(v as ConsentChoice)}
-        className="gap-2.5"
+        className="gap-0 divide-y divide-border/60 rounded-xl border border-border/60 overflow-hidden"
       >
-        <RadioOption id="image_use-denied" value="denied" label={IMAGE_USE_OPTION_LABELS.denied} />
+        <RadioOption
+          id="image_use-denied"
+          value="denied"
+          label={IMAGE_USE_OPTION_LABELS.denied}
+          selected={value === "denied"}
+        />
         <RadioOption
           id="image_use-granted_no_face"
           value="granted_no_face"
           label={IMAGE_USE_OPTION_LABELS.granted_no_face}
+          selected={value === "granted_no_face"}
         />
         <RadioOption
           id="image_use-granted"
           value="granted"
           label={IMAGE_USE_OPTION_LABELS.granted}
+          selected={value === "granted"}
         />
       </RadioGroup>
     </div>
   );
 }
 
-function RadioOption({ id, value, label }: { id: string; value: string; label: string }) {
+/**
+ * FASE CONSENT-1H: a LINHA TODA (não só o texto) é a área clicável — o
+ * próprio <Label> é o cartão da opção, com padding e altura mínima de
+ * 44px, em vez de um <div> com um <Label> estreito dentro. Linhas vizinhas
+ * se tocam sem vão (gap-0 + divide-y no RadioGroup que envolve), então não
+ * existe mais nem zona morta nem risco de sobreposição entre opções — todo
+ * ponto dentro do grupo pertence a exatamente uma linha. `selected` dá
+ * destaque visual (fundo+borda) além do pontinho, nunca só cor.
+ */
+function RadioOption({
+  id,
+  value,
+  label,
+  selected,
+}: {
+  id: string;
+  value: string;
+  label: string;
+  selected: boolean;
+}) {
   return (
-    <div className="flex items-center gap-2.5">
-      <RadioGroupItem value={value} id={id} />
-      <Label htmlFor={id} className="text-sm font-normal cursor-pointer">
-        {label}
-      </Label>
-    </div>
+    <Label
+      htmlFor={id}
+      className={cn(
+        "flex items-center gap-2.5 min-h-11 px-3 py-2.5 cursor-pointer font-normal",
+        "border-l-2 border-l-transparent transition-colors",
+        selected && "bg-primary/10 border-l-primary",
+      )}
+    >
+      <RadioGroupItem value={value} id={id} className="shrink-0" />
+      <span className="text-sm">{label}</span>
+    </Label>
   );
 }

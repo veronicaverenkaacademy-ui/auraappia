@@ -149,6 +149,51 @@ test("GUARDA (CONSENT-1F): a caixinha de termos NÃO repete os nomes dos documen
 });
 
 test("GUARDA: cada RadioOption tem <Label htmlFor> associado ao id do RadioGroupItem (acessibilidade)", () => {
-  assert.match(src, /<RadioGroupItem value=\{value\} id=\{id\} \/>/);
-  assert.match(src, /<Label htmlFor=\{id\}/);
+  assert.match(src, /<RadioGroupItem value=\{value\} id=\{id\}/);
+  assert.match(src, /<Label\s+htmlFor=\{id\}/);
+});
+
+test("GUARDA (CONSENT-1H): a LINHA TODA de cada opção é clicável — o <Label> (não um <div> estreito) é o cartão da opção, com altura mínima de 44px (min-h-11)", () => {
+  const radioOptionBlock = src.slice(src.indexOf("function RadioOption"));
+  // O <Label> precisa ser o elemento que carrega o layout da linha
+  // (flex items-center ... min-h-11), não um <div> por fora dele — senão
+  // só o texto (não a linha toda) reage ao toque, voltando ao problema
+  // da CONSENT-1G.
+  assert.match(
+    radioOptionBlock,
+    /<Label\s+htmlFor=\{id\}\s+className=\{cn\(\s*\n\s*"flex items-center gap-2\.5 min-h-11/,
+  );
+});
+
+test("GUARDA (CONSENT-1H): nenhuma linha de opção fica separada por espaço morto — os 2 RadioGroup usam gap-0 + divide-y (linhas se tocam, sem vão entre uma e a seguinte)", () => {
+  const occurrencesGapZero = src.match(/gap-0 divide-y divide-border\/60/g) ?? [];
+  assert.equal(occurrencesGapZero.length, 2, "esperado em GrantedDeniedField e ImageUseField");
+});
+
+test("GUARDA (CONSENT-1H): a opção marcada recebe destaque visual além do pontinho (nunca só cor) — RadioOption recebe e usa a prop `selected`", () => {
+  assert.match(src, /selected: boolean/);
+  assert.match(src, /selected && "bg-primary\/10 border-l-primary"/);
+  // Os 2 campos passam `selected` comparando com o `value` atual — nunca
+  // hardcoded true/false.
+  const occurrencesSelectedProp = src.match(/selected=\{value === /g) ?? [];
+  assert.equal(
+    occurrencesSelectedProp.length,
+    5,
+    "3 opções de image_use + 2 de GrantedDeniedField",
+  );
+});
+
+test('GUARDA (CONSENT-1H): o resumo "Você escolheu" lê o MESMO estado `answers` que monta o payload (fonte única da verdade) — nunca uma cópia separada', () => {
+  // onSubmit manda exatamente `answers` (não uma cópia) ...
+  assert.match(src, /onSubmit\(\{ termsAccepted, optional: answers \}\)/);
+  // ... e o resumo chama buildAnswerSummary com esse MESMO identificador
+  // `answers`, não um clone/transformação prévia.
+  assert.match(src, /buildAnswerSummary\(orderedOptional, answers\)/);
+});
+
+test("GUARDA (CONSENT-1H): perguntas sem resposta aparecem no resumo (buildAnswerSummary já cobre isso) e 'Continuar' continua exigindo todas respondidas", () => {
+  assert.match(
+    src,
+    /allOptionalAnswered = orderedOptional\.every\(\(t\) => answers\[t\] != null\)/,
+  );
 });
