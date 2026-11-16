@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { getMyTermsStatus, acceptMyTerms } from "@/lib/professional-terms.functions";
+import { formatTermsVersionLabel } from "@/lib/professional-terms-version";
+import { LEGAL_DOCUMENT_VERSIONS } from "@/lib/legal-versions";
 
 // FASE CONSENT-1C (16/11/2026) — rota IRMÃ de _authenticated (fora dela,
 // de propósito, mesmo padrão de /conta-desativada): o beforeLoad de
@@ -25,6 +27,11 @@ export const Route = createFileRoute("/aceitar-termos")({
     if (!session) {
       throw redirect({ to: "/auth", search: { next: undefined, signup: false } });
     }
+    // CONSENT-1C-FIX: devolve o userId pro componente via route context
+    // (Route.useRouteContext()) — usado pra escopar a chave de cache
+    // "terms-status" por usuária, mesmo motivo de ["terms-outdated",
+    // userId] em _authenticated/route.tsx.
+    return { userId: session.user.id };
   },
   head: () => ({
     meta: [{ title: "Termos atualizados — AURA" }, { name: "robots", content: "noindex" }],
@@ -35,6 +42,7 @@ export const Route = createFileRoute("/aceitar-termos")({
 function AceitarTermos() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { userId } = Route.useRouteContext();
   const statusFn = useServerFn(getMyTermsStatus);
   const acceptFn = useServerFn(acceptMyTerms);
   const [checked, setChecked] = useState(false);
@@ -45,7 +53,7 @@ function AceitarTermos() {
     isError,
     refetch,
   } = useQuery({
-    queryKey: ["terms-status"],
+    queryKey: ["terms-status", userId],
     queryFn: () => statusFn(),
   });
 
@@ -59,7 +67,12 @@ function AceitarTermos() {
       // (getMyTermsOutdated, leitura simples) — sem invalidar as duas, o
       // beforeLoad podia servir um "ainda desatualizado" do cache
       // (staleTime de 60s) e mandar a profissional de volta pro gate
-      // logo depois de ela aceitar.
+      // logo depois de ela aceitar. CONSENT-1C-FIX: as duas chaves agora
+      // incluem o userId (["terms-status", userId] / ["terms-outdated",
+      // userId]); invalidateQueries faz match por PREFIXO por padrão no
+      // React Query v5, então passar só a base ("terms-status"/
+      // "terms-outdated", sem o userId) continua invalidando a entrada
+      // completa — não precisa repetir o userId aqui.
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["terms-status"] }),
         qc.invalidateQueries({ queryKey: ["terms-outdated"] }),
@@ -121,7 +134,16 @@ function AceitarTermos() {
     );
   }
 
-  const version = status?.requiredVersion ?? "";
+  // CONSENT-1C-FIX: texto legível pra profissional, não o valor bruto
+  // gravado no banco (status.requiredVersion vem como
+  // "2026-11-15|2026-11-15", formato de armazenamento — nunca pensado
+  // pra aparecer na tela). Calculado aqui a partir da mesma fonte única
+  // de verdade (legal-versions.ts) que REQUIRED_TERMS_VERSION usa — os
+  // dois sempre andam juntos, não depende de round-trip pelo servidor.
+  const versionLabel = formatTermsVersionLabel(
+    LEGAL_DOCUMENT_VERSIONS["termos-de-uso"],
+    LEGAL_DOCUMENT_VERSIONS["politica-de-privacidade"],
+  );
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-6">
@@ -157,7 +179,7 @@ function AceitarTermos() {
               className="mt-0.5"
             />
             <span>
-              Li e concordo com os Termos de Uso e a Política de Privacidade (versão {version}).
+              Li e concordo com os Termos de Uso e a Política de Privacidade ({versionLabel}).
             </span>
           </label>
 

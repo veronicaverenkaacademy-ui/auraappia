@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Check, ArrowRight } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { getSelfTeamMember, updateTeamMember } from "@/lib/team";
 import { useQuery } from "@tanstack/react-query";
@@ -10,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { acceptMyTerms } from "@/lib/professional-terms.functions";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
   head: () => ({ meta: [{ title: "Primeiro acesso · AURA" }, { name: "robots", content: "noindex" }] }),
@@ -19,12 +21,38 @@ export const Route = createFileRoute("/_authenticated/onboarding")({
 function Onboarding() {
   const nav = useNavigate();
   const { data: me } = useQuery({ queryKey: ["self-member"], queryFn: getSelfTeamMember });
+  const acceptTermsFn = useServerFn(acceptMyTerms);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [accept, setAccept] = useState(false);
+  const [acceptingTerms, setAcceptingTerms] = useState(false);
   const [bio, setBio] = useState("");
   const [instagram, setInstagram] = useState("");
+
+  // CONSENT-1C-FIX: este passo é redundante na prática — o gate
+  // /aceitar-termos (em _authenticated/route.tsx, que roda ANTES de
+  // qualquer rota filha, inclusive esta) já exige o aceite de verdade
+  // antes da colaboradora conseguir chegar aqui. Mas o parágrafo acima
+  // (sigilo/LGPD/uso autorizado) é um texto PRÓPRIO deste onboarding, não
+  // os documentos legais reais — então, por segurança (defesa em
+  // profundidade, caso a ordem das rotas mude no futuro), o "Continuar"
+  // também chama acceptMyTerms de verdade, fail-soft (nunca trava o
+  // onboarding se falhar — mesmo padrão de acceptPendingTerms em
+  // auth.tsx): na prática normalmente é um no-op idempotente (já
+  // aceito via /aceitar-termos), mas garante que esta tela nunca finge
+  // registrar um aceite que não aconteceu.
+  const acceptAndContinue = async () => {
+    setAcceptingTerms(true);
+    try {
+      await acceptTermsFn();
+    } catch (e) {
+      console.error("[onboarding] Falha ao registrar aceite dos termos", e);
+    } finally {
+      setAcceptingTerms(false);
+      setStep(3);
+    }
+  };
 
   const changePassword = async () => {
     if (pw.length < 6) return toast.error("Senha muito curta.");
@@ -70,7 +98,11 @@ function Onboarding() {
               <Checkbox checked={accept} onCheckedChange={(v) => setAccept(!!v)} />
               <span>Li e aceito os Termos de Uso e a Política de Privacidade.</span>
             </label>
-            <Button className="w-full rounded-full gap-2" disabled={!accept} onClick={() => setStep(3)}>
+            <Button
+              className="w-full rounded-full gap-2"
+              disabled={!accept || acceptingTerms}
+              onClick={acceptAndContinue}
+            >
               Continuar <ArrowRight className="w-4 h-4" />
             </Button>
           </div>

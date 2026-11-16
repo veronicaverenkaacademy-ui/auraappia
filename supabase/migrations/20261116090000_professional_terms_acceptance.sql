@@ -1,9 +1,10 @@
--- FASE CONSENT-1C (16/11/2026) — registro de DATA + VERSÃO do aceite dos
--- Termos de Uso / Política de Privacidade pela profissional (dona ou
--- colaboradora — ambas têm linha em public.profiles). Decisão da dona:
--- só data + versão, SEM IP, SEM dispositivo/user-agent (diferente de
--- client_consents, que guarda evidência completa para a CLIENTE — aqui o
--- par é profissional↔AURA, não precisa do mesmo nível de prova).
+-- FASE CONSENT-1C (16/11/2026, revisada em CONSENT-1C-FIX) — registro de
+-- DATA + VERSÃO do aceite dos Termos de Uso / Política de Privacidade pela
+-- profissional (dona ou colaboradora — ambas têm linha em public.profiles).
+-- Decisão da dona: só data + versão, SEM IP, SEM dispositivo/user-agent
+-- (diferente de client_consents, que guarda evidência completa para a
+-- CLIENTE — aqui o par é profissional↔AURA, não precisa do mesmo nível de
+-- prova).
 --
 -- ESTA MIGRAÇÃO NÃO FOI APLICADA EM PRODUÇÃO NESTA FASE — só branch nova +
 -- PR em DRAFT, por instrução explícita da dona.
@@ -19,32 +20,62 @@
 -- então elas simplesmente veem o bloqueio de aceite na próxima vez que
 -- abrirem o app, nunca um valor inventado.
 --
--- PROTEÇÃO ESCOLHIDA (menor risco, conforme o PASSO 0 mostrou): REVOKE de
--- coluna, não trigger. public.profiles usa só RLS por LINHA hoje (as 3
--- policies — insert/read/update — são todas "auth.uid() = id", sem
--- nenhuma distinção de COLUNA) — não existe nenhum padrão de trigger de
--- imutabilidade nesta tabela pra seguir, e um trigger novo só pra duas
--- colunas seria mais código e mais risco de interferir no UPDATE comum de
--- profiles (nome, avatar, endereço etc.) ou no INSERT do handle_new_user
--- (que roda SECURITY DEFINER, então nem seria afetado por um REVOKE em
--- authenticated/anon de qualquer forma — mas um trigger BEFORE UPDATE
--- POR LINHA precisaria reimplementar essa distinção na mão). REVOKE
--- UPDATE só nas DUAS colunas novas/sensíveis é a ferramenta nativa do
--- Postgres pra exatamente este caso ("a maioria das colunas continua
--- editável pelo dono da linha, duas não") — avaliado ANTES da RLS, sem
--- nenhuma outra coluna de profiles afetada, sem precisar de função nova.
--- A gravação de verdade passa a ser só por supabaseAdmin
--- (src/lib/professional-terms.functions.ts, acceptMyTerms), igual ao
--- padrão já usado em client_consents/account-deletion.
+-- REVISÃO CONSENT-1C-FIX — A ABORDAGEM ORIGINAL (REVOKE DE COLUNA) ESTAVA
+-- QUEBRADA E FOI SUBSTITUÍDA POR TRIGGER:
+-- a versão original desta migração fazia
+-- "REVOKE UPDATE (terms_accepted_version, terms_accepted_at) ON
+-- public.profiles FROM authenticated, anon". Isso NÃO funciona no
+-- Postgres quando o papel já tem GRANT UPDATE no nível da TABELA (que é
+-- exatamente o padrão do Supabase, confirmado lendo o catálogo real:
+-- has_table_privilege('authenticated', 'public.profiles', 'UPDATE') =
+-- true) — um REVOKE de privilégio de COLUNA não revoga o privilégio de
+-- TABELA, que sozinho já cobre UPDATE em qualquer coluna, inclusive as
+-- duas que o REVOKE tentava proteger. Prova lida direto do catálogo de
+-- produção (somente leitura, antes desta correção):
+--   has_table_privilege('authenticated','public.profiles','UPDATE')          = true
+--   has_column_privilege('authenticated','public.profiles','terms_accepted_at','UPDATE') = true
+--   has_column_privilege('authenticated','public.profiles','full_name','UPDATE')         = true
+--   (mesmos três resultados para 'anon')
+-- ou seja, a coluna sensível tinha exatamente o mesmo privilégio de
+-- UPDATE que qualquer outra coluna comum — a proteção por REVOKE nunca
+-- teria funcionado.
 --
--- Hoje (antes desta migração) o app grava terms_accepted_at direto do
--- navegador (auth.tsx, applyPendingSignupData) — esse caminho é removido
--- no mesmo PR desta migração (a coluna sai do upsert client-side), então
--- o REVOKE abaixo não quebra nenhum fluxo que continue em produção depois
--- do merge.
+-- PROTEÇÃO CORRIGIDA: TRIGGER, não GRANT/REVOKE. public.profiles continua
+-- com o GRANT UPDATE de tabela padrão do Supabase para authenticated/anon
+-- (inalterado — não mexemos em GRANTs aqui, para não criar a mesma
+-- armadilha silenciosa com colunas futuras que alguém adicione sem saber
+-- que GRANT de tabela sempre vence REVOKE de coluna). Em vez disso, um
+-- trigger BEFORE INSERT OR UPDATE ignora silenciosamente qualquer
+-- tentativa de authenticated/anon de gravar valor nessas duas colunas:
+-- em INSERT, força NULL; em UPDATE, força o valor antigo (nunca lança
+-- erro) — de propósito "silencioso": o app antigo publicado (antes deste
+-- PR) ainda manda terms_accepted_at no upsert de auth.tsx por algum
+-- tempo após o deploy do frontend e antes de todo mundo atualizar o app
+-- (Capacitor/iOS não atualiza instantaneamente), e isso não pode quebrar
+-- cadastro/login. A gravação de verdade passa a ser só por supabaseAdmin
+-- (src/lib/professional-terms.functions.ts, acceptMyTerms), que roda como
+-- service_role — current_user = 'service_role', fora do IN() do trigger,
+-- então nunca é afetado. O trigger também não SECURITY DEFINER de
+-- propósito: precisa enxergar o current_user real de quem está fazendo o
+-- UPDATE/INSERT, não o dono da função.
 --
--- Idempotente (ADD COLUMN IF NOT EXISTS). Aditiva: nenhuma coluna/policy
--- existente é alterada ou removida. Termina com NOTIFY pgrst.
+-- handle_new_user() (INSERT automático da linha de profiles no cadastro)
+-- é SECURITY DEFINER, dono "postgres" — current_user dentro dela é
+-- 'postgres', fora do IN() do trigger, e de qualquer forma ela nunca seta
+-- as colunas de termos (fica NULL por padrão) — confirmado lendo
+-- pg_get_functiondef(handle_new_user) e o owner da função antes desta
+-- migração.
+--
+-- profiles já tinha um trigger BEFORE UPDATE (profiles_updated_at, só
+-- atualiza updated_at) — confirmado via pg_trigger antes desta migração.
+-- O novo trigger (nome "trg_10_..." ordena antes de "profiles_updated_at"
+-- alfabeticamente, mas a ORDEM entre os dois não importa: cada um mexe só
+-- nas suas próprias colunas, sem nenhuma dependência entre eles).
+--
+-- Idempotente (ADD COLUMN IF NOT EXISTS, CREATE OR REPLACE FUNCTION,
+-- DROP TRIGGER IF EXISTS antes de recriar). Aditiva: nenhuma coluna/
+-- policy/grant existente é alterada ou removida. Termina com NOTIFY
+-- pgrst.
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '10s';
@@ -52,18 +83,36 @@ SET LOCAL statement_timeout = '10s';
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS terms_accepted_version text NULL;
 
--- Proteção por coluna: authenticated/anon continuam podendo UPDATE
--- qualquer outra coluna da própria linha (RLS "Own profile update" segue
--- valendo igual pra todas elas) — só estas duas ficam de fora, pra
--- qualquer role que não seja service_role.
-REVOKE UPDATE (terms_accepted_version, terms_accepted_at)
-  ON public.profiles FROM authenticated, anon;
+-- Ignora silenciosamente (nunca lança exceção) qualquer tentativa de
+-- authenticated/anon de setar as duas colunas de aceite de termos —
+-- quem grava de verdade é sempre acceptMyTerms, via service_role.
+-- Qualquer outro current_user (service_role, postgres, e funções
+-- SECURITY DEFINER rodando como postgres, como handle_new_user) passa
+-- direto, sem nenhuma alteração.
+CREATE OR REPLACE FUNCTION public.profiles_protect_terms_acceptance()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $fn$
+BEGIN
+  IF current_user IN ('authenticated', 'anon') THEN
+    IF TG_OP = 'INSERT' THEN
+      NEW.terms_accepted_at := NULL;
+      NEW.terms_accepted_version := NULL;
+    ELSIF TG_OP = 'UPDATE' THEN
+      NEW.terms_accepted_at := OLD.terms_accepted_at;
+      NEW.terms_accepted_version := OLD.terms_accepted_version;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$fn$;
 
--- Explícito (redundante com o GRANT ALL padrão do Supabase pra
--- service_role, mas documenta a intenção — mesmo estilo das migrações
--- anteriores, ex. client_consents).
-GRANT UPDATE (terms_accepted_version, terms_accepted_at)
-  ON public.profiles TO service_role;
+DROP TRIGGER IF EXISTS trg_10_profiles_protect_terms_acceptance ON public.profiles;
+CREATE TRIGGER trg_10_profiles_protect_terms_acceptance
+  BEFORE INSERT OR UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.profiles_protect_terms_acceptance();
 
 NOTIFY pgrst, 'reload schema';
 

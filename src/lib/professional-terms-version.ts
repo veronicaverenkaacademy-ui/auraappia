@@ -55,3 +55,25 @@ export const REQUIRED_TERMS_VERSION = computeRequiredVersion(
 export function isTermsOutdated(acceptedVersion: string | null): boolean {
   return isVersionOutdated(acceptedVersion, REQUIRED_TERMS_VERSION);
 }
+
+/**
+ * CONSENT-1C-FIX — texto legível pra mostrar na tela de aceite (gate
+ * /aceitar-termos). REQUIRED_TERMS_VERSION (acima) continua sendo o valor
+ * GRAVADO no banco (concatenado com "|" — nunca muda, é o que
+ * acceptMyTerms grava e o que isTermsOutdated compara); esta função só
+ * formata como mostrar pra profissional, nunca o que é persistido. Pura e
+ * parametrizada (testável sem depender do import de legal-versions.ts,
+ * mesmo padrão de computeRequiredVersion/isVersionOutdated acima).
+ *
+ * Se os dois documentos estão na mesma versão (caso comum — a dona
+ * normalmente atualiza os dois juntos), mostra uma data só: "versão
+ * 2026-11-15". Se um mudou e o outro não, nomeia os dois separadamente
+ * pra não sugerir que os dois mudaram juntos quando só um mudou: "Termos
+ * de Uso 2026-11-15 · Política de Privacidade 2026-11-20".
+ */
+export function formatTermsVersionLabel(termsVersion: string, privacyVersion: string): string {
+  if (termsVersion === privacyVersion) {
+    return `versão ${termsVersion}`;
+  }
+  return `Termos de Uso ${termsVersion} · Política de Privacidade ${privacyVersion}`;
+}

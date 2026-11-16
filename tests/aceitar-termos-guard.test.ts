@@ -50,13 +50,25 @@ test("GUARDA: aceitar invalida terms-status E terms-outdated (as duas chaves de 
   assert.match(gate, /invalidateQueries\(\{ queryKey: \["terms-outdated"\] \}\)/);
 });
 
+test("GUARDA (CONSENT-1C-FIX): chave de cache terms-status é por usuária (inclui userId)", () => {
+  assert.match(gate, /queryKey: \["terms-status", userId\]/);
+  assert.match(gate, /const \{ userId \} = Route\.useRouteContext\(\)/);
+  assert.match(gate, /return \{ userId: session\.user\.id \}/);
+});
+
 test("GUARDA: _authenticated/route.tsx redireciona pra /aceitar-termos quando desatualizado", () => {
   assert.match(authGuard, /getMyTermsOutdated/);
   assert.match(authGuard, /redirect\(\{ to: "\/aceitar-termos" \}\)/);
 });
 
-test("GUARDA: /seguranca fica de fora do redirecionamento do gate (exceção explícita)", () => {
-  assert.match(authGuard, /location\.pathname !== "\/seguranca"/);
+test("GUARDA (CONSENT-1C-FIX): chave de cache terms-outdated é por usuária (inclui session.user.id)", () => {
+  assert.match(authGuard, /queryKey: \["terms-outdated", session\.user\.id\]/);
+  assert.match(authGuard, /getMyTermsOutdated\(session\.user\.id\)/);
+});
+
+test("GUARDA: /seguranca fica de fora do redirecionamento do gate (checagem robusta via isSegurancaPath)", () => {
+  assert.match(authGuard, /isSegurancaPath\(location\.pathname\)/);
+  assert.match(authGuard, /from "@\/lib\/seguranca-path"/);
 });
 
 test("GUARDA: rotas públicas (termos legais, exclusão de conta, portal, login) continuam fora de _authenticated/", () => {

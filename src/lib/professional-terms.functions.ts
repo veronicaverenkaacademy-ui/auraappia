@@ -105,9 +105,12 @@ const GENERIC_FAIL_MSG = "Não foi possível registrar o aceite agora. Tente de 
  * Grava o aceite da profissional logada — SEMPRE a versão lida AQUI no
  * servidor (REQUIRED_TERMS_VERSION), nunca um valor vindo do cliente (o
  * cliente não manda versão nenhuma no input desta função — só é chamada
- * sem parâmetros). Via supabaseAdmin (service_role): authenticated não
- * tem mais UPDATE nessas duas colunas (REVOKE da migração desta fase),
- * então não tem como gravar de outro jeito. Idempotente: se já aceitou
+ * sem parâmetros). Via supabaseAdmin (service_role): um trigger na
+ * migração desta fase (profiles_protect_terms_acceptance, BEFORE INSERT
+ * OR UPDATE) ignora silenciosamente qualquer tentativa de authenticated/
+ * anon de gravar nessas duas colunas (current_user fora desse conjunto —
+ * como service_role — passa direto), então não tem como gravar de outro
+ * jeito. Idempotente: se já aceitou
  * EXATAMENTE esta versão, não sobrescreve a data (decisão da dona) — só
  * devolve o que já estava gravado. Nunca lança pra fora (erro genérico,
  * detalhe só no log do servidor) e nunca referencia IP/user-agent/

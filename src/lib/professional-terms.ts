@@ -4,8 +4,8 @@
 // pro gate /aceitar-termos. Nenhuma rota deste projeto chama uma
 // createServerFn direto de um beforeLoad (confirmado por leitura de
 // código antes de escrever esta fase) — por isso a decisão do GUARD usa
-// este helper simples (só SELECT, sem grant nenhum revogado), e as duas
-// server functions de verdade (getMyTermsStatus/acceptMyTerms, com
+// este helper simples (só SELECT, não precisa de proteção de escrita), e as
+// duas server functions de verdade (getMyTermsStatus/acceptMyTerms, com
 // requireSupabaseAuth) ficam só pro componente da tela /aceitar-termos,
 // via useServerFn — mesmo padrão já usado em seguranca.tsx/
 // DeleteAccountCard. Os dois caminhos usam a MESMA função pura
@@ -35,19 +35,25 @@ type ProfilesVersionReadDb = {
 
 /**
  * true se a profissional logada precisa ver o gate de aceite (nunca
- * aceitou, ou aceitou uma versão antiga). false também quando não há
- * usuária logada (quem decide se há sessão é o beforeLoad, antes de
- * chamar isto) ou quando a leitura falha — nunca bloqueia por erro de
- * rede (ver também o fail-safe equivalente em getMyTermsStatus).
+ * aceitou, ou aceitou uma versão antiga). false quando a leitura falha —
+ * nunca bloqueia por erro de rede (ver também o fail-safe equivalente em
+ * getMyTermsStatus).
+ *
+ * CONSENT-1C-FIX: recebe userId como parâmetro em vez de chamar
+ * supabase.auth.getUser() aqui dentro — quem decide se há sessão é o
+ * beforeLoad de _authenticated/route.tsx, que já leu a sessão (session.id)
+ * uma vez antes de chegar aqui; pedir de novo seria uma chamada de rede
+ * redundante. Isso também torna a chave de cache do React Query do
+ * beforeLoad (["terms-outdated", userId]) naturalmente por usuária — sem
+ * o userId no parâmetro, não teria como montar essa chave sem repetir a
+ * leitura de sessão.
  */
-export async function getMyTermsOutdated(): Promise<boolean> {
-  const { data: u } = await supabase.auth.getUser();
-  if (!u.user) return false;
+export async function getMyTermsOutdated(userId: string): Promise<boolean> {
   const db = supabase as unknown as ProfilesVersionReadDb;
   const { data, error } = await db
     .from("profiles")
     .select("terms_accepted_version")
-    .eq("id", u.user.id)
+    .eq("id", userId)
     .maybeSingle();
   if (error) {
     console.error("[professional-terms] Falha ao ler status de aceite dos termos", error.message);

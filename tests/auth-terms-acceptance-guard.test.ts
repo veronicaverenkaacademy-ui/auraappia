@@ -1,7 +1,8 @@
-// FASE CONSENT-1C (16/11/2026): guarda estática de src/routes/auth.tsx —
-// confirma que o aceite dos Termos saiu do upsert client-side (coluna
-// protegida por REVOKE na migração desta fase) e que o registro via
-// servidor nunca bloqueia o fluxo de login/cadastro se falhar.
+// FASE CONSENT-1C (16/11/2026, revisada em CONSENT-1C-FIX): guarda
+// estática de src/routes/auth.tsx — confirma que o aceite dos Termos saiu
+// do upsert client-side (coluna protegida por trigger na migração desta
+// fase — profiles_protect_terms_acceptance) e que o registro via servidor
+// nunca bloqueia o fluxo de login/cadastro se falhar.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

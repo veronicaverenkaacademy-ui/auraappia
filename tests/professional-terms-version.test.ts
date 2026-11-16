@@ -7,6 +7,7 @@ import {
   isVersionOutdated,
   isTermsOutdated,
   REQUIRED_TERMS_VERSION,
+  formatTermsVersionLabel,
 } from "../src/lib/professional-terms-version.ts";
 
 test("computeRequiredVersion: concatena as duas versões com '|'", () => {
@@ -45,4 +46,15 @@ test("isTermsOutdated: amarrado em REQUIRED_TERMS_VERSION (a constante real do a
   assert.equal(isTermsOutdated(null), true);
   assert.equal(isTermsOutdated(REQUIRED_TERMS_VERSION), false);
   assert.equal(isTermsOutdated("qualquer-coisa-diferente"), true);
+});
+
+test("formatTermsVersionLabel (CONSENT-1C-FIX): versões iguais mostram uma data só", () => {
+  assert.equal(formatTermsVersionLabel("2026-11-15", "2026-11-15"), "versão 2026-11-15");
+});
+
+test("formatTermsVersionLabel (CONSENT-1C-FIX): versões diferentes nomeiam os dois documentos separadamente", () => {
+  assert.equal(
+    formatTermsVersionLabel("2026-11-15", "2026-11-20"),
+    "Termos de Uso 2026-11-15 · Política de Privacidade 2026-11-20",
+  );
 });
