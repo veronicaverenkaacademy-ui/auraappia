@@ -104,7 +104,7 @@ export function ClientConsentForm({
             >
               Política de Privacidade
             </Link>
-            .
+            . <span className="text-muted-foreground">({TERMS_PRIVACY_COPY.versionLabel})</span>
           </span>
         </label>
       )}
@@ -148,6 +148,7 @@ function FieldHeader({ copy }: { copy: OptionalConsentCopy }) {
       <span className="block text-xs text-muted-foreground leading-relaxed">
         {copy.description}
       </span>
+      <span className="block text-xs text-muted-foreground">({copy.versionLabel})</span>
       <Link
         to="/termo-consentimento"
         target="_blank"
