@@ -1,8 +1,11 @@
-// FASE CONSENT-1D — guardas estáticas de
+// FASE CONSENT-1D (atualizado por CONSENT-1D-FIX) — guardas estáticas de
 // src/components/portal/client-consent-form.tsx (JSX — não dá pra
 // importar direto num node:test puro). Confirma as decisões da dona:
-// nada pré-marcado, sem "aceitar tudo", as 3 opções de image_use, os
-// outros com Aceito/Não aceito, links pras 3 rotas públicas.
+// nada pré-marcado, sem "aceitar tudo", as 3 opções de image_use com a
+// frase INTEGRAL do termo (não mais um rótulo curto), os outros com
+// Aceito/Não aceito, links pras 3 rotas públicas, RadioGroup controlado
+// desde o início (sem o aviso do React de alternar
+// controlado/não-controlado).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -29,14 +32,27 @@ test("GUARDA: 'Continuar' fica desabilitado até a caixinha de termos (se exigid
   assert.match(src, /const canSubmit = \(!showTerms \|\| termsAccepted\) && allOptionalAnswered;/);
 });
 
-test("GUARDA: image_use tem exatamente as 3 opções pedidas pela decisão 5, com os rótulos exatos", () => {
+test("GUARDA (CONSENT-1D-FIX): image_use tem exatamente as 3 opções, com o rótulo vindo de IMAGE_USE_OPTION_LABELS (frase integral do termo, não um resumo curto)", () => {
   const block = src.slice(src.indexOf("function ImageUseField"));
-  assert.match(block, /label="Aceito, inclusive com meu rosto"/);
-  assert.match(block, /label="Aceito, sem mostrar meu rosto"/);
-  assert.match(block, /label="Não aceito"/);
+  assert.match(block, /label=\{IMAGE_USE_OPTION_LABELS\.granted\}/);
+  assert.match(block, /label=\{IMAGE_USE_OPTION_LABELS\.granted_no_face\}/);
+  assert.match(block, /label=\{IMAGE_USE_OPTION_LABELS\.denied\}/);
   assert.match(block, /value="granted"/);
   assert.match(block, /value="granted_no_face"/);
   assert.match(block, /value="denied"/);
+  // Nenhum rótulo curto antigo sobrou.
+  assert.doesNotMatch(block, /label="Aceito, inclusive com meu rosto"/);
+  assert.doesNotMatch(block, /label="Aceito, sem mostrar meu rosto"/);
+});
+
+test('GUARDA (CONSENT-1D-FIX): os 2 RadioGroup são controlados desde o início (value={value ?? ""}), nunca value={value ?? undefined}', () => {
+  assert.doesNotMatch(src, /value=\{value \?\? undefined\}/);
+  const occurrences = src.match(/value=\{value \?\? ""\}/g) ?? [];
+  assert.equal(
+    occurrences.length,
+    2,
+    "esperado nos 2 RadioGroup (GrantedDeniedField e ImageUseField)",
+  );
 });
 
 test("GUARDA: health_data/marketing/whatsapp_reminders têm exatamente Aceito/Não aceito (2 opções, nunca 3)", () => {

@@ -21,6 +21,7 @@ import {
   TERMS_PRIVACY_COPY,
   HEALTH_DATA_COPY,
   IMAGE_USE_COPY,
+  IMAGE_USE_OPTION_LABELS,
   MARKETING_COPY,
   WHATSAPP_REMINDERS_COPY,
   type OptionalConsentCopy,
@@ -145,9 +146,15 @@ function FieldHeader({ copy }: { copy: OptionalConsentCopy }) {
   return (
     <legend className="space-y-1.5 px-0">
       <span className="block text-sm font-medium">{copy.title}</span>
-      <span className="block text-xs text-muted-foreground leading-relaxed">
+      {/* text-sm (não text-xs) — texto do termo agora é integral/mais
+       * longo (CONSENT-1D-FIX), precisa ficar legível no celular; quebra
+       * de linha normal (sem truncar, sem "ver mais"). */}
+      <span className="block text-sm text-muted-foreground leading-relaxed">
         {copy.description}
       </span>
+      {copy.note && (
+        <span className="block text-sm text-muted-foreground leading-relaxed">{copy.note}</span>
+      )}
       <span className="block text-xs text-muted-foreground">({copy.versionLabel})</span>
       <Link
         to="/termo-consentimento"
@@ -175,7 +182,7 @@ function GrantedDeniedField({
     <fieldset className="rounded-2xl border border-border/70 p-4 space-y-3">
       <FieldHeader copy={copy} />
       <RadioGroup
-        value={value ?? undefined}
+        value={value ?? ""}
         onValueChange={(v) => onChange(v as ConsentChoice)}
         className="gap-2.5"
       >
@@ -198,22 +205,25 @@ function ImageUseField({
   return (
     <fieldset className="rounded-2xl border border-border/70 p-4 space-y-3">
       <FieldHeader copy={copy} />
+      {/* Rótulos são a frase INTEGRAL do termo (seção D, os 3 blocos de
+       * aceite) — CONSENT-1D-FIX: deixar explícito que são as FOTOS,
+       * nunca um resumo curto. */}
       <RadioGroup
-        value={value ?? undefined}
+        value={value ?? ""}
         onValueChange={(v) => onChange(v as ConsentChoice)}
         className="gap-2.5"
       >
         <RadioOption
           id="image_use-granted"
           value="granted"
-          label="Aceito, inclusive com meu rosto"
+          label={IMAGE_USE_OPTION_LABELS.granted}
         />
         <RadioOption
           id="image_use-granted_no_face"
           value="granted_no_face"
-          label="Aceito, sem mostrar meu rosto"
+          label={IMAGE_USE_OPTION_LABELS.granted_no_face}
         />
-        <RadioOption id="image_use-denied" value="denied" label="Não aceito" />
+        <RadioOption id="image_use-denied" value="denied" label={IMAGE_USE_OPTION_LABELS.denied} />
       </RadioGroup>
     </fieldset>
   );
