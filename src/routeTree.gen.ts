@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as CadastroRouteImport } from './routes/cadastro'
 import { Route as ContaDesativadaRouteImport } from './routes/conta-desativada'
+import { Route as ContaExcluidaRouteImport } from './routes/conta-excluida'
 import { Route as PoliticaDePrivacidadeRouteImport } from './routes/politica-de-privacidade'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as TermoConsentimentoRouteImport } from './routes/termo-consentimento'
@@ -98,6 +99,11 @@ const CadastroRoute = CadastroRouteImport.update({
 const ContaDesativadaRoute = ContaDesativadaRouteImport.update({
   id: '/conta-desativada',
   path: '/conta-desativada',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContaExcluidaRoute = ContaExcluidaRouteImport.update({
+  id: '/conta-excluida',
+  path: '/conta-excluida',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PoliticaDePrivacidadeRoute = PoliticaDePrivacidadeRouteImport.update({
@@ -436,6 +442,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/cadastro': typeof CadastroRoute
   '/conta-desativada': typeof ContaDesativadaRoute
+  '/conta-excluida': typeof ContaExcluidaRoute
   '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
   '/portal': typeof PortalRoute
   '/termo-consentimento': typeof TermoConsentimentoRoute
@@ -503,6 +510,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/cadastro': typeof CadastroRoute
   '/conta-desativada': typeof ContaDesativadaRoute
+  '/conta-excluida': typeof ContaExcluidaRoute
   '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
   '/portal': typeof PortalRoute
   '/termo-consentimento': typeof TermoConsentimentoRoute
@@ -563,6 +571,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/cadastro': typeof CadastroRoute
   '/conta-desativada': typeof ContaDesativadaRoute
+  '/conta-excluida': typeof ContaExcluidaRoute
   '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
   '/portal': typeof PortalRoute
   '/termo-consentimento': typeof TermoConsentimentoRoute
@@ -632,6 +641,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/cadastro'
     | '/conta-desativada'
+    | '/conta-excluida'
     | '/politica-de-privacidade'
     | '/portal'
     | '/termo-consentimento'
@@ -699,6 +709,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/cadastro'
     | '/conta-desativada'
+    | '/conta-excluida'
     | '/politica-de-privacidade'
     | '/portal'
     | '/termo-consentimento'
@@ -758,6 +769,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/cadastro'
     | '/conta-desativada'
+    | '/conta-excluida'
     | '/politica-de-privacidade'
     | '/portal'
     | '/termo-consentimento'
@@ -827,6 +839,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   CadastroRoute: typeof CadastroRoute
   ContaDesativadaRoute: typeof ContaDesativadaRoute
+  ContaExcluidaRoute: typeof ContaExcluidaRoute
   PoliticaDePrivacidadeRoute: typeof PoliticaDePrivacidadeRoute
   PortalRoute: typeof PortalRoute
   TermoConsentimentoRoute: typeof TermoConsentimentoRoute
@@ -869,6 +882,13 @@ declare module '@tanstack/react-router' {
       path: '/conta-desativada'
       fullPath: '/conta-desativada'
       preLoaderRoute: typeof ContaDesativadaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/conta-excluida': {
+      id: '/conta-excluida'
+      path: '/conta-excluida'
+      fullPath: '/conta-excluida'
+      preLoaderRoute: typeof ContaExcluidaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/politica-de-privacidade': {
@@ -1523,6 +1543,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   CadastroRoute: CadastroRoute,
   ContaDesativadaRoute: ContaDesativadaRoute,
+  ContaExcluidaRoute: ContaExcluidaRoute,
   PoliticaDePrivacidadeRoute: PoliticaDePrivacidadeRoute,
   PortalRoute: PortalRoute,
   TermoConsentimentoRoute: TermoConsentimentoRoute,

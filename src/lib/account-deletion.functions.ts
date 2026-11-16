@@ -61,13 +61,26 @@ export const checkAccountDeletionEligibility = createServerFn({ method: "GET" })
     return { role: "admin", blocked: false };
   });
 
-export type DeleteAccountResult = { ok: true } | { ok: false; error: string };
+// FASE APPLE-1 (15/11/2026) — exigência da Apple (5.1.1(v)): quem entrou com
+// "Entrar com a Apple" precisa ver, depois de excluir a conta, como
+// desconectar o AURA do próprio Apple ID (revogação de verdade exige o
+// client secret do provedor, que não está no código do app — ver
+// src/lib/apple-revoke.server.ts). appleRevokeRequired é só esse booleano —
+// nunca e-mail, identities nem token.
+export type DeleteAccountResult =
+  { ok: true; appleRevokeRequired: boolean } | { ok: false; error: string };
 
 export const deleteMyAccount = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<DeleteAccountResult> => {
     const userId = context.userId;
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Lida ANTES de qualquer exclusão, enquanto a conta ainda existe por
+    // completo — nunca bloqueia a exclusão se esta leitura falhar (padrão
+    // seguro: assume Apple quando há qualquer dúvida, ver o módulo).
+    const { determineAppleRevokeRequired } = await import("@/lib/apple-revoke.server");
+    const appleRevokeRequired = await determineAppleRevokeRequired(supabaseAdmin, userId);
 
     const { data: roles } = await supabaseAdmin
       .from("user_roles")
@@ -77,13 +90,20 @@ export const deleteMyAccount = createServerFn({ method: "POST" })
     const role = roleList.includes("admin") ? "admin" : roleList.includes("staff") ? "staff" : null;
     if (!role) return { ok: false, error: "Papel não definido para esta conta." };
 
-    if (role === "staff") {
-      return deleteStaffAccount(supabaseAdmin, userId);
-    }
-    return deleteOwnerAccount(supabaseAdmin, userId);
+    const result =
+      role === "staff"
+        ? await deleteStaffAccount(supabaseAdmin, userId)
+        : await deleteOwnerAccount(supabaseAdmin, userId);
+    if (!result.ok) return result;
+    return { ok: true, appleRevokeRequired };
   });
 
 type AdminClient = (typeof import("@/integrations/supabase/client.server"))["supabaseAdmin"];
+
+// Resultado interno das duas funções de exclusão em si — sem
+// appleRevokeRequired, que é lido separadamente em deleteMyAccount (ANTES de
+// despachar pra uma destas) e só anexado ao resultado final de sucesso.
+type InnerDeleteResult = { ok: true } | { ok: false; error: string };
 
 // Staff excluindo a própria conta: só o vínculo dela, nunca o negócio da
 // dona. team_members não é apagado (deletar apagaria o vínculo de
@@ -92,7 +112,7 @@ type AdminClient = (typeof import("@/integrations/supabase/client.server"))["sup
 async function deleteStaffAccount(
   supabaseAdmin: AdminClient,
   userId: string,
-): Promise<DeleteAccountResult> {
+): Promise<InnerDeleteResult> {
   const { data: member } = await supabaseAdmin
     .from("team_members")
     .select("id, owner_id")
@@ -144,7 +164,7 @@ async function deleteStaffAccount(
 async function deleteOwnerAccount(
   supabaseAdmin: AdminClient,
   userId: string,
-): Promise<DeleteAccountResult> {
+): Promise<InnerDeleteResult> {
   const { count: teamCount } = await supabaseAdmin
     .from("team_members")
     .select("id", { count: "exact", head: true })

@@ -239,9 +239,12 @@ function DeleteAccountCard() {
         setDeleting(false);
         return;
       }
+      // FASE APPLE-1: o booleano precisa sobreviver ao signOut() — passado
+      // como parâmetro de rota (nunca dado pessoal, só um "mostra/esconde
+      // bloco") pra /conta-excluida, rota pública que não exige sessão.
+      const appleRevokeRequired = res.appleRevokeRequired;
       await supabase.auth.signOut();
-      toast.success("Conta excluída.");
-      navigate({ to: "/auth", replace: true, search: { next: undefined, signup: false } });
+      navigate({ to: "/conta-excluida", replace: true, search: { apple: appleRevokeRequired } });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Não foi possível excluir a conta.");
       setDeleting(false);
