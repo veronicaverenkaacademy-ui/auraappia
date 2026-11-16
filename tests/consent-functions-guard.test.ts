@@ -20,9 +20,9 @@ const src = readFileSync(
   "utf8",
 );
 
-test("GUARDA: as 3 server functions usam requireSupabaseAuth (nunca uma rota sem autenticação)", () => {
+test("GUARDA: as 6 server functions (3 de CONSENT-1A + 3 de CONSENT-1D) usam requireSupabaseAuth (nunca uma rota sem autenticação)", () => {
   const occurrences = src.match(/\.middleware\(\[requireSupabaseAuth\]\)/g) ?? [];
-  assert.equal(occurrences.length, 3);
+  assert.equal(occurrences.length, 6);
 });
 
 test("GUARDA: recordClientConsent (equipe) NUNCA aceita source='portal' — só studio_device/professional_assisted", () => {
@@ -93,7 +93,11 @@ test("GUARDA: IP/user-agent SEMPRE vêm de getRequestSignature() (nunca de um ca
   assert.doesNotMatch(src, /evidenceIp:\s*z\./);
   assert.doesNotMatch(src, /evidenceUserAgent:\s*z\./);
   const calls = src.match(/getRequestSignature\(\)/g) ?? [];
-  assert.equal(calls.length, 2, "recordClientConsent e recordMyClientConsent devem chamar os 2");
+  assert.equal(
+    calls.length,
+    4,
+    "recordClientConsent, recordMyClientConsent, recordMyClientConsents e recordMyTermsPrivacyConsent devem chamar os 4",
+  );
 });
 
 test("GUARDA: signerName é SEMPRE opcional nos dois schemas de input (nunca exigido pelo servidor)", () => {
@@ -148,16 +152,19 @@ test("GUARDA: recordMyClientConsent nunca grava collectedByUserId (a cliente nun
 });
 
 test("GUARDA: getClientConsentStatus NUNCA menciona evidence_ip/evidence_user_agent/signer_name (nem pra filtrar) — o tipo de retorno já não os tem", () => {
-  const fnBody = src.slice(src.indexOf("export const getClientConsentStatus"));
+  const fnBody = src.slice(
+    src.indexOf("export const getClientConsentStatus"),
+    src.indexOf("const MyOwnerIdInput"),
+  );
   assert.doesNotMatch(
     fnBody,
     /evidence_ip|evidence_user_agent|signer_name|evidenceIp|evidenceUserAgent|signerName/,
   );
 });
 
-test("GUARDA: as 3 server functions envolvem o corpo em try/catch com toConsentError (modo seguro — nunca uma exceção crua)", () => {
+test("GUARDA: as 6 server functions envolvem o corpo em try/catch com toConsentError (modo seguro — nunca uma exceção crua)", () => {
   const occurrences = src.match(/catch \(e\) \{\s*throw toConsentError\(e\);\s*\}/g) ?? [];
-  assert.equal(occurrences.length, 3);
+  assert.equal(occurrences.length, 6);
 });
 
 test("GUARDA: fetchVisibleClient nunca filtra por owner_id (visibilidade é só RLS de `clients`, nunca um filtro próprio)", () => {

@@ -256,6 +256,16 @@ export function SignupStep({
           autoComplete="off"
         />
       </div>
+      {/* FASE CONSENT-1D: texto ajustado só pra linkar os DOIS documentos
+          certos (antes linkava Termo de Consentimento + Política, nunca
+          Termos de Uso) — decisão 4 do prompt da fase padronizou esse
+          texto em todo o projeto. A lógica em volta (accepted_terms,
+          obrigatoriedade, o que client-link.server.ts faz com isso)
+          continua EXATAMENTE como estava: o aceite de verdade dos 5
+          consentimentos passou a ser o gate (ClientConsentGate), não mais
+          esta caixinha — mas ela permanece porque o servidor ainda exige
+          accepted_terms pra criar o cadastro novo (ver decisão da fase:
+          "se o servidor exigir accepted_terms, MANTENHA como está"). */}
       <label className="flex items-start gap-2.5 text-xs text-muted-foreground leading-relaxed">
         <Checkbox
           checked={signup.accepted_terms}
@@ -263,13 +273,13 @@ export function SignupStep({
           className="mt-0.5"
         />
         <span>
-          Li e aceito o{" "}
+          Li e aceito os{" "}
           <Link
-            to="/termo-consentimento"
+            to="/termos-de-uso"
             target="_blank"
             className="text-foreground underline underline-offset-2"
           >
-            Termo de Consentimento
+            Termos de Uso
           </Link>{" "}
           e a{" "}
           <Link

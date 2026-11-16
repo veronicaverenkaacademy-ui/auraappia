@@ -17,7 +17,16 @@ export type MyClient = {
   cpf: string | null;
 };
 
-export type ClientAuthView = "closed" | "phone" | "otp" | "signup" | "ready";
+// FASE CONSENT-1D: "consent" fica entre a cliente resolvida e "ready" —
+// toda cliente resolvida por resolveClient() passa por "consent" antes de
+// "ready" (nunca pula direto), pra cobrir TODA cliente que entra no
+// portal por qualquer um dos dois consumidores deste hook
+// (ClientAccountPanel e BookingFlow), nova ou pré-cadastrada, sem
+// depender de qual caminho ela usou. Quem decide se há algo pra perguntar
+// é o componente ClientConsentGate (fetch de getMyClientConsentStatus) —
+// se não houver nada pendente, ele mesmo chama setView("ready") sem
+// exigir nenhum clique extra da cliente.
+export type ClientAuthView = "closed" | "phone" | "otp" | "signup" | "consent" | "ready";
 
 export type SignupFields = {
   full_name: string;
@@ -83,7 +92,10 @@ export function useClientAuth(ownerId: string) {
         },
       });
       setMyClient(res.client);
-      setView("ready");
+      // FASE CONSENT-1D: nunca "ready" direto — ClientConsentGate decide
+      // (consultando o servidor) se ainda falta algum dos 5 aceites antes
+      // de liberar o portal de verdade.
+      setView("consent");
       return true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

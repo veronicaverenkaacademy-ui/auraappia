@@ -22,6 +22,7 @@ import { displayStepFor } from "@/lib/portal/portal-booking-steps";
 import { getPortalMediaPublicUrl } from "@/lib/portal/portal-media-browser";
 import { SlotPicker, type PickedSlot } from "./slot-picker";
 import { AuthCard, PhoneStep, OtpStep, SignupStep } from "./client-auth-steps";
+import { ClientConsentGate } from "./client-consent-gate";
 import { BookingHeader } from "@/components/portal/portal-header";
 import { StepIndicator } from "@/components/portal/step-indicator";
 import { PortalImg } from "@/components/portal/portal-image";
@@ -366,6 +367,21 @@ export function BookingFlow({
                   setSignup={auth.setSignup}
                   loading={auth.loading}
                   onSubmit={auth.confirmSignup}
+                />
+              )}
+              {/* FASE CONSENT-1D: entre a cliente resolvida e "confirm" —
+                  mesmo gate do painel "Minha conta", cobrindo o funil de
+                  agendamento também (ver comentário de ClientAuthView em
+                  use-client-auth.ts). */}
+              {auth.view === "consent" && auth.myClient && (
+                <ClientConsentGate
+                  ownerId={ownerId}
+                  clientId={auth.myClient.id}
+                  onDone={() => auth.setView("ready")}
+                  onSignOut={() => {
+                    void auth.logout();
+                    setStep("slot");
+                  }}
                 />
               )}
               {(auth.view === "closed" || auth.view === "ready") && (
