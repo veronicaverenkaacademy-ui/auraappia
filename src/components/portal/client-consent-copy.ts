@@ -82,9 +82,10 @@ export const IMAGE_USE_COPY: OptionalConsentCopy = {
  * cliente lê é a frase INTEGRAL do termo (seção D, os 3 blocos de
  * aceite), não mais um rótulo curto. A CHAVE de cada entrada é o valor
  * gravado no ledger (ConsentChoice) — isso não muda. Ordem de exibição no
- * form (granted, granted_no_face, denied) é a mesma já usada antes desta
- * FIX; o termo lista na ordem inversa (denied, granted_no_face, granted) —
- * ambas são aceitáveis por decisão desta FIX, só não pode haver pré-seleção. */
+ * form desde CONSENT-1F (denied, granted_no_face, granted) passou a seguir
+ * a mesma ordem do termo — opção mais protetiva primeiro —, substituindo a
+ * ordem anterior (granted, granted_no_face, denied); nenhuma das duas tem
+ * pré-seleção. */
 export const IMAGE_USE_OPTION_LABELS: Record<"granted" | "granted_no_face" | "denied", string> = {
   granted: "Autorizo o uso das minhas fotos em divulgação, inclusive com o rosto.",
   granted_no_face: "Autorizo o uso das minhas fotos em divulgação sem mostrar meu rosto.",
