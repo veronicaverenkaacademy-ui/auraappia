@@ -271,16 +271,22 @@ END $passo4d$;
 -- (e) authenticated: UPDATE de full_name na própria linha funciona
 -- normalmente, e updated_at é atualizado (prova que o trigger novo não
 -- interfere em updates comuns nem no profiles_updated_at pré-existente).
+-- CORREÇÃO (aplicação real, tentativa 1→2): dentro de uma única transação
+-- de teste (BEGIN...ROLLBACK), now() é FIXO (timestamp do início da
+-- transação, não do statement) — pg_sleep() não muda isso. Comparar
+-- "antes < depois" com os dois lidos via now() dentro da MESMA transação
+-- nunca pode passar, mesmo com o trigger funcionando perfeitamente (não é
+-- um problema da migração/trigger, é do formato do teste). Fix: como
+-- profiles_updated_at usa now() (não clock_timestamp()), o valor certo e
+-- determinístico pra provar que o trigger disparou é updated_at = now()
+-- (o mesmo now() congelado desta transação) depois do UPDATE — não uma
+-- comparação de "antes vs depois".
 DO $passo4e$
 DECLARE
   v_owner_a uuid := (SELECT valor FROM zzfx_pta_ids WHERE chave='owner_a');
-  v_updated_antes timestamptz;
   v_updated_depois timestamptz;
   v_full_name text;
 BEGIN
-  SELECT updated_at INTO v_updated_antes FROM public.profiles WHERE id = v_owner_a;
-  PERFORM pg_sleep(0.01);
-
   SET ROLE authenticated;
   PERFORM set_config('request.jwt.claim.sub', v_owner_a::text, true);
   UPDATE public.profiles SET full_name = 'Nome Atualizado Pela Própria' WHERE id = v_owner_a;
@@ -290,8 +296,8 @@ BEGIN
   INSERT INTO zzfx_pta_results (caso, detalhe, passou) VALUES
     ('04e_authenticated_altera_outro_campo_proprio', format('full_name=%s', v_full_name),
      v_full_name = 'Nome Atualizado Pela Própria'),
-    ('04e_updated_at_continua_funcionando', format('antes=%s depois=%s', v_updated_antes, v_updated_depois),
-     v_updated_depois > v_updated_antes);
+    ('04e_updated_at_continua_funcionando', format('updated_at=%s now=%s', v_updated_depois, now()),
+     v_updated_depois = now());
 END $passo4e$;
 
 -- (f) authenticated: upsert (INSERT ... ON CONFLICT DO UPDATE) com

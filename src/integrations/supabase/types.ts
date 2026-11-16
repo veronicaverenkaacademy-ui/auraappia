@@ -1893,6 +1893,7 @@ export type Database = {
           profession: string | null
           state: string | null
           terms_accepted_at: string | null
+          terms_accepted_version: string | null
           updated_at: string
         }
         Insert: {
@@ -1908,6 +1909,7 @@ export type Database = {
           profession?: string | null
           state?: string | null
           terms_accepted_at?: string | null
+          terms_accepted_version?: string | null
           updated_at?: string
         }
         Update: {
@@ -1923,6 +1925,7 @@ export type Database = {
           profession?: string | null
           state?: string | null
           terms_accepted_at?: string | null
+          terms_accepted_version?: string | null
           updated_at?: string
         }
         Relationships: []
