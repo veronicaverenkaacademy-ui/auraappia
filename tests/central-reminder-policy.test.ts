@@ -23,6 +23,7 @@ function baseInput(overrides: Partial<Parameters<typeof decideReminderJobAction>
     recipientPhoneValid: true,
     recipientPhoneE164: "+5547988887777",
     recipientBlocked: false,
+    whatsappRemindersDenied: false,
     remindersEnabled: true,
     testMode: false,
     testPhones: [],
@@ -143,6 +144,67 @@ test("FASE LEMBRETES-1: bloqueio é checado mesmo em modo teste com telefone na 
   const r = decideReminderJobAction(
     baseInput({
       recipientBlocked: true,
+      testMode: true,
+      testPhones: ["+5547988887777"],
+    }),
+  );
+  assert.equal(r.action, "skip_terminal");
+});
+
+// ===== FASE CONSENT-FINAL (PR 3): resposta atual de whatsapp_reminders =====
+// Tabela de decisão completa pedida no relatório: granted/nunca
+// respondeu/denied depois de granted -> envia; denied/granted depois de
+// denied -> pula. O valor de entrada já é o booleano calculado por
+// computeCurrentAnswers + "?.choice === 'denied'" em
+// processCentralReminderJob — esta suíte não re-testa o helper do ledger
+// (já cobrido em tests/consent-current-answers.test.ts), só a decisão pura
+// dado o resultado.
+
+test("CONSENT-FINAL: resposta atual granted (whatsappRemindersDenied=false) — envia", () => {
+  const r = decideReminderJobAction(baseInput({ whatsappRemindersDenied: false }));
+  assert.equal(r.action, "send");
+});
+
+test("CONSENT-FINAL: nunca respondeu (whatsappRemindersDenied=false) — envia, comportamento atual sem mudança", () => {
+  const r = decideReminderJobAction(baseInput({ whatsappRemindersDenied: false }));
+  assert.equal(r.action, "send");
+});
+
+test("CONSENT-FINAL: resposta atual denied — skip_terminal, motivo genérico sem dado pessoal", () => {
+  const r = decideReminderJobAction(baseInput({ whatsappRemindersDenied: true }));
+  assert.equal(r.action, "skip_terminal");
+  if (r.action === "skip_terminal") {
+    assert.match(r.reason, /não autoriza receber lembretes/i);
+    // Nunca telefone/nome/IP no motivo.
+    assert.doesNotMatch(r.reason, /\+?\d{8,}/);
+  }
+});
+
+test("CONSENT-FINAL: denied vale também pro lembrete_2h", () => {
+  const r = decideReminderJobAction(
+    baseInput({ templateKey: "lembrete_2h", whatsappRemindersDenied: true }),
+  );
+  assert.equal(r.action, "skip_terminal");
+});
+
+test("CONSENT-FINAL: granted depois de denied (resultado já recalculado para false) — volta a enviar", () => {
+  // Simula 'denied' seguido de um novo 'granted' mais recente: quem chama
+  // (computeCurrentAnswers) já recalculou a resposta ATUAL para granted,
+  // então o booleano de entrada aqui já é false — a política só lê o
+  // resultado, nunca o histórico.
+  const r = decideReminderJobAction(baseInput({ whatsappRemindersDenied: false }));
+  assert.equal(r.action, "send");
+});
+
+test("CONSENT-FINAL: denied depois de granted (resultado já recalculado para true) — pula", () => {
+  const r = decideReminderJobAction(baseInput({ whatsappRemindersDenied: true }));
+  assert.equal(r.action, "skip_terminal");
+});
+
+test("CONSENT-FINAL: denied é checado mesmo em modo teste com telefone na lista", () => {
+  const r = decideReminderJobAction(
+    baseInput({
+      whatsappRemindersDenied: true,
       testMode: true,
       testPhones: ["+5547988887777"],
     }),

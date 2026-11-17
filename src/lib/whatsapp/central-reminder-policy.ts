@@ -25,6 +25,16 @@ export type MetaStatus = "NOT_SUBMITTED" | "PENDING" | "APPROVED" | "REJECTED";
  */
 export const BLOCKED_RECIPIENT_REASON =
   "Cliente pediu para parar de receber mensagens pelo WhatsApp (bloqueio ativo).";
+/**
+ * FASE CONSENT-FINAL (PR 3): mesmo texto usado em `last_error` quando um job
+ * de lembrete (24h/2h) é cancelado por a resposta ATUAL de whatsapp_reminders
+ * (ledger client_consents, por client_id) ser 'denied'. Motivo GENÉRICO, sem
+ * telefone/nome — mesma regra de BLOCKED_RECIPIENT_REASON acima. Vale só
+ * para os dois lembretes centrais; OTP, confirmação imediata de agendamento
+ * e resposta a conversa iniciada pela cliente não passam por esta função.
+ */
+export const WHATSAPP_REMINDERS_DENIED_REASON =
+  "Cliente não autoriza receber lembretes de agendamento pelo WhatsApp (consentimento negado).";
 /** Resposta da cliente ao botão do WhatsApp (central-reply-decision.ts) — lida de novo aqui pra decidir se AINDA vale mandar o lembrete. */
 export type ClientConfirmationStatus =
   "pending" | "confirmed" | "declined" | "reschedule_requested";
@@ -47,6 +57,14 @@ export type ReminderPolicyInput = {
    * central-opt-out.server.ts. Nunca enviar lembrete pra quem pediu pra
    * parar, mesmo em modo teste. */
   recipientBlocked: boolean;
+  /** FASE CONSENT-FINAL (PR 3): true quando a resposta ATUAL (ledger
+   * client_consents, mais recente por client_id) de whatsapp_reminders é
+   * 'denied'. Nunca respondeu (null) é false aqui — comportamento atual
+   * (envia), sem mudança. Checado no mesmo grupo de condições terminais e
+   * silenciosas que recipientBlocked, pelo mesmo motivo: só alguém mudando
+   * a resposta de novo (pelo portal/tela do estúdio) muda isto, nunca a
+   * própria varredura. */
+  whatsappRemindersDenied: boolean;
   remindersEnabled: boolean;
   testMode: boolean;
   testPhones: readonly string[];
@@ -221,6 +239,18 @@ export function decideReminderJobAction(input: ReminderPolicyInput): ReminderPol
     return {
       action: "skip_terminal",
       reason: BLOCKED_RECIPIENT_REASON,
+    };
+  }
+
+  // FASE CONSENT-FINAL (PR 3): decisão da advogada — o lembrete de 24h/2h é
+  // enviado, EXCETO quando a resposta ATUAL de whatsapp_reminders da
+  // cliente da consulta for 'denied'. Mesma categoria de skip_terminal que
+  // recipientBlocked (condição do próprio consentimento, não do
+  // agendamento/job em si, e não reversível pela própria varredura).
+  if (input.whatsappRemindersDenied) {
+    return {
+      action: "skip_terminal",
+      reason: WHATSAPP_REMINDERS_DENIED_REASON,
     };
   }
 
