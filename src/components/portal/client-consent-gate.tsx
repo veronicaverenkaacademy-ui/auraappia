@@ -128,18 +128,38 @@ export function ClientConsentGate({
     }
   };
 
+  // FASE CONSENT-1I: nos 4 estados abaixo, a classe de altura mínima de
+  // tela cheia fica só como fallback (100vh) — o `style` inline com
+  // 100dvh é o que de fato vale em qualquer navegador que suporte (estilo
+  // inline sempre tem prioridade sobre classe; se dvh não for suportado,
+  // essa declaração inline é só descartada como inválida e o 100vh da
+  // classe volta a valer — não dá pra confiar em empilhar as duas CLASSES
+  // do Tailwind pra isso, porque a ordem de geração do Tailwind coloca a
+  // regra de altura dinâmica ANTES da de tela cheia fixa, então a fixa
+  // sempre venceria por último se fossem só classes). Nenhum dos 4
+  // combina alinhamento central do flex (vertical + horizontal) com
+  // rolagem no mesmo elemento — essa combinação, junto com conteúdo mais
+  // alto que a tela, cortava o topo sem poder rolar até ele. A
+  // centralização vertical-quando-sobra-espaço agora é por margem
+  // automática no filho interno, que simplesmente não tem efeito (sem
+  // cortar nada) quando o conteúdo é mais alto que a tela, já que os dois
+  // hospedeiros (BookingFlow e ClientAccountPanel) já têm seu próprio
+  // único contêiner real de rolagem por fora.
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      <div className="min-h-screen flex flex-col bg-background" style={{ minHeight: "100dvh" }}>
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground m-auto" />
       </div>
     );
   }
 
   if (isError || !status) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background px-6">
-        <div className="w-full max-w-sm text-center space-y-6">
+      <div
+        className="min-h-screen flex flex-col bg-background px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
+        style={{ minHeight: "100dvh" }}
+      >
+        <div className="w-full max-w-sm text-center space-y-6 m-auto">
           <div className="space-y-2">
             <h1 className="text-lg font-medium">Não foi possível continuar</h1>
             <p className="text-sm text-muted-foreground leading-relaxed">
@@ -164,15 +184,18 @@ export function ClientConsentGate({
     // onDone() já foi disparado pelo useEffect — nada pra renderizar além
     // do indicador, evita qualquer flash do form.
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      <div className="min-h-screen flex flex-col bg-background" style={{ minHeight: "100dvh" }}>
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground m-auto" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-6 py-10 overflow-y-auto">
-      <div className="w-full max-w-sm space-y-6">
+    <div
+      className="min-h-screen flex flex-col bg-background px-6 pt-10 pb-[max(2.5rem,env(safe-area-inset-bottom))]"
+      style={{ minHeight: "100dvh" }}
+    >
+      <div className="w-full max-w-sm space-y-6 m-auto">
         <div className="text-center space-y-2">
           <h1 className="text-lg font-medium">Antes de continuar</h1>
           <p className="text-sm text-muted-foreground leading-relaxed">
