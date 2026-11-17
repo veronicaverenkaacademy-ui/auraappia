@@ -94,37 +94,55 @@ export const ClientAccountPanel = forwardRef<
           é, ela própria, uma sobreposição (ex.: atalho/menu da home nova),
           o conteúdo fica visível só "no lugar" onde o componente foi
           montado, que pode estar fora da área vista pela cliente. */}
+      {/* FASE CONSENT-1K: o "fixed inset-0" é o ÚNICO contêiner de rolagem
+          (overflow-y-auto + overscroll-contain) e NUNCA usa
+          flex/items-center/justify-center nele — mesmo antipadrão já
+          corrigido no gate do portal (CONSENT-1I) e no DialogShell da ficha
+          (CONSENT-1J): com conteúdo mais alto que a tela (teclado do iOS
+          aberto, iPhone pequeno, o passo de cadastro com vários campos),
+          isso transbordava pra CIMA, região que a rolagem nunca alcança. O
+          wrapper interno (min-h-dvh, min-h-screen só como fallback de
+          100vh) é quem tem flex-col; o conteúdo fica com margem automática
+          (m-auto), que centraliza quando sobra espaço e não corta nada
+          quando o conteúdo é mais alto que a tela. z-40 NÃO muda — é o
+          mesmo z-index do painel logado (ClientDashboard), que já
+          funcionava bem antes desta correção. */}
       {auth.view !== "closed" && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-background/95 p-6 overflow-y-auto">
-          <div className="w-full max-w-sm">
-            {auth.view === "phone" && (
-              <PhoneStep
-                phone={auth.phone}
-                setPhone={auth.setPhone}
-                loading={auth.loading}
-                onSubmit={auth.sendCode}
-                onCancel={() => auth.setView("closed")}
-              />
-            )}
-            {auth.view === "otp" && (
-              <OtpStep
-                code={auth.code}
-                setCode={auth.setCode}
-                loading={auth.loading}
-                onSubmit={auth.verify}
-                onBack={() => auth.setView("phone")}
-                resendAvailableAt={auth.resendAvailableAt}
-                onResend={auth.resendCode}
-              />
-            )}
-            {auth.view === "signup" && (
-              <SignupStep
-                signup={auth.signup}
-                setSignup={auth.setSignup}
-                loading={auth.loading}
-                onSubmit={auth.confirmSignup}
-              />
-            )}
+        <div className="fixed inset-0 z-40 bg-background/95 overflow-y-auto overscroll-contain">
+          <div
+            className="min-h-screen flex flex-col px-6 pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
+            style={{ minHeight: "100dvh" }}
+          >
+            <div className="w-full max-w-sm m-auto">
+              {auth.view === "phone" && (
+                <PhoneStep
+                  phone={auth.phone}
+                  setPhone={auth.setPhone}
+                  loading={auth.loading}
+                  onSubmit={auth.sendCode}
+                  onCancel={() => auth.setView("closed")}
+                />
+              )}
+              {auth.view === "otp" && (
+                <OtpStep
+                  code={auth.code}
+                  setCode={auth.setCode}
+                  loading={auth.loading}
+                  onSubmit={auth.verify}
+                  onBack={() => auth.setView("phone")}
+                  resendAvailableAt={auth.resendAvailableAt}
+                  onResend={auth.resendCode}
+                />
+              )}
+              {auth.view === "signup" && (
+                <SignupStep
+                  signup={auth.signup}
+                  setSignup={auth.setSignup}
+                  loading={auth.loading}
+                  onSubmit={auth.confirmSignup}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}
