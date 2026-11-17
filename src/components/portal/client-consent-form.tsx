@@ -220,7 +220,11 @@ function FieldHeader({ copy, id }: { copy: OptionalConsentCopy; id: string }) {
   );
 }
 
-function GrantedDeniedField({
+/** Exportado desde FASE CONSENT-FINAL-2 — reusado por
+ * client-my-consents.tsx (tela "Meus consentimentos" do portal) pra abrir
+ * as opções INTEGRAIS de um único tipo ao "Alterar", sem duplicar o JSX
+ * nem o texto do termo. Nenhuma mudança de comportamento aqui. */
+export function GrantedDeniedField({
   type,
   copy,
   value,
@@ -261,7 +265,9 @@ function GrantedDeniedField({
   );
 }
 
-function ImageUseField({
+/** Exportado desde FASE CONSENT-FINAL-2 — ver comentário de
+ * GrantedDeniedField acima, mesmo motivo. */
+export function ImageUseField({
   copy,
   value,
   onChange,

@@ -10,6 +10,7 @@ import { initials } from "@/lib/clients";
 import { useClientAuth, type MyClient } from "@/hooks/use-client-auth";
 import { PhoneStep, OtpStep, SignupStep } from "./client-auth-steps";
 import { ClientConsentGate } from "./client-consent-gate";
+import { ClientMyConsents } from "./client-my-consents";
 import { SlotPicker, type PickedSlot } from "./slot-picker";
 import { fetchMyAppointments, type MyAppointment } from "@/lib/clientPortal";
 import { updateMyClientProfile, deleteMyClientAccount } from "@/lib/clientPortal.functions";
@@ -375,6 +376,10 @@ function ClientDashboard({
               ))}
             </div>
           )}
+        </section>
+
+        <section className="mt-8">
+          <ClientMyConsents ownerId={ownerId} clientId={client.id} />
         </section>
 
         <section className="mt-8">
