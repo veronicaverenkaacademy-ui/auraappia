@@ -170,11 +170,34 @@ function RowMeta({
   );
 }
 
+// FASE CONSENT-1J: o "fixed inset-0" é o ÚNICO contêiner de rolagem
+// (overflow-y-auto + overscroll-contain, pra não rolar o fundo por trás)
+// e NUNCA usa flex/items-end/items-center/justify-center nele — essa
+// combinação, com conteúdo mais alto que a tela, transbordava pra CIMA
+// (lado negativo), região que a rolagem nunca alcança (mesma causa raiz
+// já corrigida no gate do portal, CONSENT-1I — aqui é o mesmo antipadrão
+// num diálogo diferente). O wrapper interno (min-h-dvh, com min-h-screen
+// só como fallback de 100vh) é quem tem flex-col; o cartão fica com
+// margem automática (m-auto), que centraliza quando sobra espaço e
+// simplesmente não corta nada quando o conteúdo é mais alto que a tela.
+// z-[60] (maior que o z-50 da MobileBottomNav — ver app-shell.tsx/
+// mobile-bottom-nav.tsx) garante que a barra do app nunca cobre
+// "Continuar"/"Cancelar" na pintura da tela; a folga inferior (5rem, mais
+// que a altura real h-16=4rem da MobileBottomNav, já que AppShell SEMPRE
+// a mostra na web fora do app nativo — ver showWebBottomNav) garante que
+// esses botões também não fiquem visualmente ATRÁS dela, e
+// env(safe-area-inset-bottom) soma a área segura do iPhone/iPad por cima
+// disso.
 function DialogShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 overflow-y-auto">
-      <div className="w-full max-w-sm bg-card border border-border/60 rounded-3xl p-5 space-y-4 my-6">
-        {children}
+    <div className="fixed inset-0 z-[60] bg-background/95 backdrop-blur-sm overflow-y-auto overscroll-contain">
+      <div
+        className="min-h-screen flex flex-col px-4 pt-6 pb-[calc(5rem+env(safe-area-inset-bottom))]"
+        style={{ minHeight: "100dvh" }}
+      >
+        <div className="w-full max-w-sm bg-card border border-border/60 rounded-3xl p-5 space-y-4 m-auto">
+          {children}
+        </div>
       </div>
     </div>
   );
