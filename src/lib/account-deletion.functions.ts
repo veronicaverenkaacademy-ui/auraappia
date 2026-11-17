@@ -5,26 +5,21 @@
 // que é o mesmo tipo de fluxo mas pro lado da cliente do portal público —
 // arquiteturas de auth separadas, sem sobreposição.
 //
-// Estratégia, nesta ordem, sempre: NUNCA apagar auth.users primeiro.
-//   1. Anonimizar (UPDATE) o que precisa sobreviver por integridade
-//      histórica/fiscal (clients, appointments, finance_transactions).
-//   2. Apagar (DELETE) o que é só operacional/sensível sem valor de manter.
-//   3. Revogar o token da Meta (se houver conexão WhatsApp) e apagar
-//      whatsapp_instances.
-//   4. Apagar os arquivos de verdade no Storage (client-photos, company-assets).
-//   5. Só por último: supabaseAdmin.auth.admin.deleteUser(userId).
-// audit_log nunca é tocado (mantido intacto, rastreabilidade) — só recebe
-// uma linha nova registrando que a exclusão aconteceu.
-//
-// Idempotência: todo passo antes do deleteUser final é um UPDATE/DELETE por
-// owner_id/user_id — rodar de novo em cima do que já foi processado é
-// sempre um no-op (0 linhas afetadas), nunca um erro. deleteUser é
-// estritamente o último passo, então uma segunda tentativa só é possível
-// enquanto ele ainda não tiver rodado (depois disso a sessão nem existe
-// mais pra chamar de novo) — não existe estado "meio anonimizado mas ainda
-// logável" que sobreviva a um retry.
+// FASE LEGAL-2 (17/11/2026): a exclusão em si (banco + Storage + contas de
+// portal de clientes + auth.admin.deleteUser) é orquestrada por
+// src/lib/owner-erasure.server.ts (eraseMyOwnerAccountCore), que chama
+// owner_erasure_plan/erase_owner_data (migração 20261117140000) — UMA
+// transação atômica no banco, nunca mais DELETEs soltos com erro ignorado.
+// Por decisão D1 da dona (reflete a Política de Privacidade aprovada pela
+// advogada, seção 7): clients/appointments/client_consents são APAGADOS de
+// verdade, nunca anonimizados — o comentário antigo deste arquivo, que
+// citava "anonimizar por integridade histórica/fiscal", estava desatualizado
+// em relação a essa decisão e foi removido. audit_log nunca é tocado
+// (mantido intacto) — erase_owner_data já grava 1 linha genérica
+// registrando a exclusão.
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { OwnerErasureDb } from "@/lib/owner-erasure.server";
 
 export type AccountDeletionEligibility =
   | { role: "admin"; blocked: true; activeTeamCount: number }
@@ -158,137 +153,27 @@ async function deleteStaffAccount(
   return { ok: true };
 }
 
-// Dona excluindo a própria conta — já bloqueado antes de chegar aqui se
-// houver equipe vinculada (ver checkAccountDeletionEligibility), mas
-// checa de novo por segurança (nunca confia só na checagem da tela).
+// Dona excluindo a própria conta — orquestrado por
+// src/lib/owner-erasure.server.ts (ver comentário do topo deste arquivo).
+// Erros já vêm com mensagem segura pra mostrar à dona (genérica, ou a
+// específica de equipe vinculada); nenhum detalhe técnico escapa daqui.
 async function deleteOwnerAccount(
   supabaseAdmin: AdminClient,
   userId: string,
 ): Promise<InnerDeleteResult> {
-  const { count: teamCount } = await supabaseAdmin
-    .from("team_members")
-    .select("id", { count: "exact", head: true })
-    .eq("owner_id", userId)
-    .neq("status", "terminated");
-  if ((teamCount ?? 0) > 0) {
+  const { eraseMyOwnerAccountCore } = await import("@/lib/owner-erasure.server");
+  const { revokeAccessToken } = await import("@/lib/whatsapp/providers/meta-cloud-api.server");
+  try {
+    await eraseMyOwnerAccountCore(
+      supabaseAdmin as unknown as OwnerErasureDb,
+      userId,
+      revokeAccessToken,
+    );
+    return { ok: true };
+  } catch (e) {
     return {
       ok: false,
-      error: "Remova ou desvincule todas as colaboradoras da equipe antes de excluir sua conta.",
+      error: e instanceof Error ? e.message : "Não foi possível excluir sua conta agora.",
     };
-  }
-
-  // 1. Anonimizar — mantém a linha (integridade histórica/fiscal), remove PII.
-  await supabaseAdmin
-    .from("clients")
-    .update({
-      full_name: "Cliente removida",
-      phone: null,
-      email: null,
-      birthday: null,
-      cpf: null,
-      how_found: null,
-      notes: null,
-      avatar_url: null,
-      user_id: null,
-    })
-    .eq("owner_id", userId);
-
-  await supabaseAdmin.from("appointments").update({ notes: null }).eq("owner_id", userId);
-  await supabaseAdmin
-    .from("finance_transactions")
-    .update({ description: null })
-    .eq("owner_id", userId);
-
-  // 2. Apagar — sensível sem valor fiscal, ou puramente operacional/futuro.
-  const deleteByOwner = async (table: string) => {
-    await supabaseAdmin
-      .from(table as never)
-      .delete()
-      .eq("owner_id", userId);
-  };
-  for (const table of [
-    "client_anamnesis",
-    "client_photos",
-    "whatsapp_messages",
-    "conversations", // messages caem junto via ON DELETE CASCADE em conversation_id
-    "whatsapp_confirmation_threads",
-    "notification_jobs",
-    "marketing_sends",
-    "service_materials",
-    "stock_movements",
-    "products",
-    "product_batches",
-    "suppliers",
-    "agenda_blocks",
-    "finance_goals",
-    "finance_settings",
-    "automations",
-    "journeys", // journey_steps caem junto via ON DELETE CASCADE em journey_id
-    "message_templates",
-    "communication_provider_config",
-  ]) {
-    await deleteByOwner(table);
-  }
-
-  // Defensivo: sent_by não tem ON DELETE na FK pra auth.users — sem isso o
-  // deleteUser final falha com violação de FK se sobrar alguma mensagem
-  // (ex: enviada numa conversation de outro owner_id, caso exista).
-  await supabaseAdmin.from("messages").update({ sent_by: null }).eq("sent_by", userId);
-
-  // 3. Revogar o token da Meta antes de apagar a conexão local.
-  const { data: instance } = await supabaseAdmin
-    .from("whatsapp_instances")
-    .select("instance_token")
-    .eq("owner_id", userId)
-    .maybeSingle();
-  if (instance?.instance_token) {
-    const { revokeAccessToken } = await import("@/lib/whatsapp/providers/meta-cloud-api.server");
-    const revoked = await revokeAccessToken(instance.instance_token);
-    if (!revoked.ok) {
-      console.error(
-        `[account-deletion] Falha ao revogar token Meta (owner ${userId}): ${revoked.error}`,
-      );
-    }
-  }
-  await supabaseAdmin.from("whatsapp_instances").delete().eq("owner_id", userId);
-
-  // 4. Storage — apagar os arquivos de verdade, não só o registro.
-  await supabaseAdmin.storage.from("company-assets").remove([`${userId}/logo`, `${userId}/cover`]);
-  await removeAllUnderPrefix(supabaseAdmin, "client-photos", userId);
-
-  // 5. audit_log — registra a exclusão em si antes de apagar a identidade.
-  await supabaseAdmin.from("audit_log").insert({
-    owner_id: userId,
-    actor_id: userId,
-    action: "account_deleted",
-    resource: "professional_account",
-    details: { via: "self_service" } as never,
-  });
-
-  // 6. Por último: apagar a conta de login. profiles, company_profiles,
-  // user_roles e whatsapp_instances (já vazio) somem sozinhos via ON DELETE
-  // CASCADE real com auth.users — não precisam de tratamento explícito.
-  const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
-}
-
-// client-photos usa path {owner_id}/{clientId}/{arquivo} — dois níveis, sem
-// jeito de apagar por prefixo direto (o list() do Storage não é
-// recursivo), então lista as subpastas de clientes primeiro.
-async function removeAllUnderPrefix(
-  supabaseAdmin: AdminClient,
-  bucket: string,
-  ownerId: string,
-): Promise<void> {
-  const { data: clientFolders } = await supabaseAdmin.storage.from(bucket).list(ownerId);
-  for (const folder of clientFolders ?? []) {
-    const { data: files } = await supabaseAdmin.storage
-      .from(bucket)
-      .list(`${ownerId}/${folder.name}`);
-    const paths = (files ?? []).map((f) => `${ownerId}/${folder.name}/${f.name}`);
-    if (paths.length > 0) {
-      await supabaseAdmin.storage.from(bucket).remove(paths);
-    }
   }
 }
