@@ -17,7 +17,12 @@ function overviewWithHealth(choice: "granted" | "denied" | null): ClientConsentO
       healthData:
         choice == null
           ? null
-          : { choice, source: "portal", createdAt: "2026-11-15T10:00:00Z", documentVersion: "2026-11-15" },
+          : {
+              choice,
+              source: "portal",
+              createdAt: "2026-11-15T10:00:00Z",
+              documentVersion: "2026-11-15",
+            },
       imageUse: null,
       marketing: null,
       whatsappReminders: null,

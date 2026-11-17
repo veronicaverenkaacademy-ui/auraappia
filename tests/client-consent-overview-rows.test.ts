@@ -4,7 +4,10 @@
 // mapeamento 1-para-1 opção→valor→entrada do lote.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeCurrentAnswers, type ConsentLedgerRow } from "../src/lib/consent/current-answers.ts";
+import {
+  computeCurrentAnswers,
+  type ConsentLedgerRow,
+} from "../src/lib/consent/current-answers.ts";
 import {
   buildConsentRows,
   buildOptionalConsentEntries,
@@ -14,7 +17,9 @@ import {
   isSameAnswer,
 } from "../src/lib/consent/client-consent-overview-rows.ts";
 
-function row(partial: Partial<ConsentLedgerRow> & Pick<ConsentLedgerRow, "type" | "choice" | "createdAt">): ConsentLedgerRow {
+function row(
+  partial: Partial<ConsentLedgerRow> & Pick<ConsentLedgerRow, "type" | "choice" | "createdAt">,
+): ConsentLedgerRow {
   return {
     documentKey: "termo-consentimento",
     source: "portal",
@@ -35,8 +40,18 @@ test("buildConsentRows: tudo vazio — terms pendente (sem botão), os 4 opciona
 test("buildConsentRows: terms com os dois documentos granted — linha somente-leitura com resposta/data/origem", () => {
   const rows = buildConsentRows(
     computeCurrentAnswers([
-      row({ type: "terms_privacy", documentKey: "termos-de-uso", choice: "granted", createdAt: "2026-11-16T08:00:00Z" }),
-      row({ type: "terms_privacy", documentKey: "politica-de-privacidade", choice: "granted", createdAt: "2026-11-16T09:00:00Z" }),
+      row({
+        type: "terms_privacy",
+        documentKey: "termos-de-uso",
+        choice: "granted",
+        createdAt: "2026-11-16T08:00:00Z",
+      }),
+      row({
+        type: "terms_privacy",
+        documentKey: "politica-de-privacidade",
+        choice: "granted",
+        createdAt: "2026-11-16T09:00:00Z",
+      }),
     ]),
   );
   const terms = rows[0];
@@ -51,7 +66,12 @@ test("buildConsentRows: terms com os dois documentos granted — linha somente-l
 test("buildConsentRows: opcional respondido vira 'answered' com rótulo/data/origem — nunca some pra 'unanswered'", () => {
   const rows = buildConsentRows(
     computeCurrentAnswers([
-      row({ type: "health_data", choice: "denied", createdAt: "2026-11-16T10:00:00Z", source: "studio_device" }),
+      row({
+        type: "health_data",
+        choice: "denied",
+        createdAt: "2026-11-16T10:00:00Z",
+        source: "studio_device",
+      }),
     ]),
   );
   const healthRow = rows.find((r) => r.type === "health_data");
@@ -64,21 +84,46 @@ test("buildConsentRows: opcional respondido vira 'answered' com rótulo/data/ori
 
 test("getUnansweredOptionalTypes: só os que NUNCA tiveram nenhuma linha, de qualquer source", () => {
   const answers = computeCurrentAnswers([
-    row({ type: "health_data", choice: "granted", createdAt: "2026-11-16T08:00:00Z", source: "studio_device" }),
-    row({ type: "marketing", choice: "denied", createdAt: "2026-11-16T08:00:00Z", source: "portal" }),
+    row({
+      type: "health_data",
+      choice: "granted",
+      createdAt: "2026-11-16T08:00:00Z",
+      source: "studio_device",
+    }),
+    row({
+      type: "marketing",
+      choice: "denied",
+      createdAt: "2026-11-16T08:00:00Z",
+      source: "portal",
+    }),
   ]);
   assert.deepEqual(getUnansweredOptionalTypes(answers).sort(), ["image_use", "whatsapp_reminders"]);
 });
 
 test("getUnansweredOptionalTypes: PROVA da propriedade do gate — um tipo colhido pelo estúdio (studio_device) some de 'unanswered' igual a um colhido pelo portal", () => {
   const viaPortal = computeCurrentAnswers([
-    row({ type: "whatsapp_reminders", choice: "granted", createdAt: "2026-11-16T08:00:00Z", source: "portal" }),
+    row({
+      type: "whatsapp_reminders",
+      choice: "granted",
+      createdAt: "2026-11-16T08:00:00Z",
+      source: "portal",
+    }),
   ]);
   const viaEstudio = computeCurrentAnswers([
-    row({ type: "whatsapp_reminders", choice: "granted", createdAt: "2026-11-16T08:00:00Z", source: "studio_device" }),
+    row({
+      type: "whatsapp_reminders",
+      choice: "granted",
+      createdAt: "2026-11-16T08:00:00Z",
+      source: "studio_device",
+    }),
   ]);
   const viaProfissional = computeCurrentAnswers([
-    row({ type: "whatsapp_reminders", choice: "granted", createdAt: "2026-11-16T08:00:00Z", source: "professional_assisted" }),
+    row({
+      type: "whatsapp_reminders",
+      choice: "granted",
+      createdAt: "2026-11-16T08:00:00Z",
+      source: "professional_assisted",
+    }),
   ]);
   for (const answers of [viaPortal, viaEstudio, viaProfissional]) {
     assert.ok(!getUnansweredOptionalTypes(answers).includes("whatsapp_reminders"));
@@ -108,7 +153,10 @@ test("choicesForType: image_use tem as 3 opções (denied, granted_no_face, gran
 });
 
 test("buildOptionalConsentEntries: mapeamento 1-para-1 opção→valor→entrada (document_key/version sempre do servidor)", () => {
-  const entries = buildOptionalConsentEntries({ health_data: "granted", image_use: "granted_no_face" });
+  const entries = buildOptionalConsentEntries({
+    health_data: "granted",
+    image_use: "granted_no_face",
+  });
   assert.equal(entries.length, 2);
   const health = entries.find((e) => e.consentType === "health_data");
   const image = entries.find((e) => e.consentType === "image_use");

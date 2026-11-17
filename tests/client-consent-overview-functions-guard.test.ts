@@ -23,7 +23,10 @@ test("GUARDA: as 2 server functions usam requireSupabaseAuth (nunca uma rota sem
 });
 
 test("GUARDA: as 2 server functions reusam fetchVisibleClient/assertCanManageClient IMPORTADOS de consent.functions.ts (nunca duplicados aqui)", () => {
-  assert.match(src, /import \{ fetchVisibleClient, assertCanManageClient \} from "\.\/consent\.functions\.ts"/);
+  assert.match(
+    src,
+    /import \{ fetchVisibleClient, assertCanManageClient \} from "\.\/consent\.functions\.ts"/,
+  );
   assert.doesNotMatch(src, /export (async )?function fetchVisibleClient/);
   assert.doesNotMatch(src, /export (async )?function assertCanManageClient/);
 });
@@ -42,7 +45,10 @@ test("GUARDA: recordClientConsentsAssisted chama assertCanManageClient ANTES de 
   const adminImportIdx = fnBody.indexOf("client.server");
   assert.ok(permCheckIdx > -1);
   assert.ok(adminImportIdx > -1);
-  assert.ok(permCheckIdx < adminImportIdx, "a permissão deveria ser checada antes de usar supabaseAdmin");
+  assert.ok(
+    permCheckIdx < adminImportIdx,
+    "a permissão deveria ser checada antes de usar supabaseAdmin",
+  );
 });
 
 test("GUARDA: recordClientConsentsAssisted resolve ownerId SEMPRE a partir de client.owner_id (nunca de data.ownerId/data.owner_id) — e o schema do input nem declara esse campo", () => {
@@ -68,8 +74,13 @@ test("GUARDA: 'professional_assisted' SEMPRE exige confirmed===true (z.literal(t
     src.indexOf("const RecordAssistedInput"),
     src.indexOf("export const recordClientConsentsAssisted"),
   );
-  const studioBlock = unionBlock.slice(unionBlock.indexOf('mode: z.literal("studio_device")'), unionBlock.indexOf('mode: z.literal("professional_assisted")'));
-  const assistedBlock = unionBlock.slice(unionBlock.indexOf('mode: z.literal("professional_assisted")'));
+  const studioBlock = unionBlock.slice(
+    unionBlock.indexOf('mode: z.literal("studio_device")'),
+    unionBlock.indexOf('mode: z.literal("professional_assisted")'),
+  );
+  const assistedBlock = unionBlock.slice(
+    unionBlock.indexOf('mode: z.literal("professional_assisted")'),
+  );
   assert.doesNotMatch(studioBlock, /confirmed/);
   assert.match(assistedBlock, /confirmed:\s*z\.literal\(true\)/);
 });
@@ -105,7 +116,10 @@ test("GUARDA: as 2 server functions envolvem o corpo em try/catch com toConsentE
 
 test("GUARDA: cliente excluída (overview.deleted) é tratada como NOT_FOUND na gravação — nunca grava em cima de uma cliente excluída", () => {
   const fnBody = src.slice(src.indexOf("export const recordClientConsentsAssisted"));
-  assert.match(fnBody, /if \(!overview \|\| overview\.deleted\)\s*\n?\s*throw new ConsentError\("NOT_FOUND"/);
+  assert.match(
+    fnBody,
+    /if \(!overview \|\| overview\.deleted\)\s*\n?\s*throw new ConsentError\("NOT_FOUND"/,
+  );
 });
 
 test("GUARDA: nenhuma coluna/campo de responsável legal (guardian/signer_role) existe em lugar nenhum", () => {

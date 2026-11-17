@@ -6,7 +6,9 @@ import assert from "node:assert/strict";
 import { deriveImageUseNotice } from "../src/components/clients/image-use-notice-logic.ts";
 import type { ClientConsentOverview } from "../src/lib/consent/client-consent-overview.server.ts";
 
-function overviewWithImageUse(choice: "granted" | "denied" | "granted_no_face" | null): ClientConsentOverview {
+function overviewWithImageUse(
+  choice: "granted" | "denied" | "granted_no_face" | null,
+): ClientConsentOverview {
   return {
     deleted: false,
     currentAnswers: {
@@ -15,7 +17,12 @@ function overviewWithImageUse(choice: "granted" | "denied" | "granted_no_face" |
       imageUse:
         choice == null
           ? null
-          : { choice, source: "portal", createdAt: "2026-11-15T10:00:00Z", documentVersion: "2026-11-15" },
+          : {
+              choice,
+              source: "portal",
+              createdAt: "2026-11-15T10:00:00Z",
+              documentVersion: "2026-11-15",
+            },
       marketing: null,
       whatsappReminders: null,
     },

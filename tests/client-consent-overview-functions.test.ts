@@ -14,7 +14,10 @@ import {
   performStudioDeviceRecord,
   resolveClientConsentOverview,
 } from "../src/lib/consent/client-consent-overview.server.ts";
-import { recordConsentRows, type ClientConsentsDb } from "../src/lib/consent/client-consents-store.server.ts";
+import {
+  recordConsentRows,
+  type ClientConsentsDb,
+} from "../src/lib/consent/client-consents-store.server.ts";
 import { ConsentError } from "../src/lib/consent/types.ts";
 import type { CurrentAnswers } from "../src/lib/consent/current-answers.ts";
 
@@ -75,7 +78,12 @@ test("resolveClientConsentOverview: cliente normal — lê o ledger e calcula a 
     ownerId: OWNER_A,
     clientId: CLIENT_A,
     rows: [
-      { consentType: "health_data", choice: "granted", documentKey: "termo-consentimento", documentVersion: "2026-11-15" },
+      {
+        consentType: "health_data",
+        choice: "granted",
+        documentKey: "termo-consentimento",
+        documentVersion: "2026-11-15",
+      },
     ],
     source: "studio_device",
     collectedByUserId: "staff-1",
@@ -101,7 +109,12 @@ test("resolveClientConsentOverview: NUNCA inclui IP/user-agent/signer_name no re
     ownerId: OWNER_A,
     clientId: CLIENT_A,
     rows: [
-      { consentType: "marketing", choice: "granted", documentKey: "termo-consentimento", documentVersion: "2026-11-15" },
+      {
+        consentType: "marketing",
+        choice: "granted",
+        documentKey: "termo-consentimento",
+        documentVersion: "2026-11-15",
+      },
     ],
     source: "professional_assisted",
     collectedByUserId: "staff-1",
@@ -140,7 +153,12 @@ test("GUARDA: performStudioDeviceRecord REJEITA um tipo já respondido em `answe
   const db = new FakeSupabaseAdmin({ tables: { client_consents: [] } });
   const currentAnswers: CurrentAnswers = {
     ...emptyAnswers(),
-    healthData: { choice: "granted", source: "portal", createdAt: "2026-11-15T10:00:00Z", documentVersion: "2026-11-15" },
+    healthData: {
+      choice: "granted",
+      source: "portal",
+      createdAt: "2026-11-15T10:00:00Z",
+      documentVersion: "2026-11-15",
+    },
   };
   await assert.rejects(
     () =>
@@ -166,7 +184,12 @@ test("performProfessionalAssistedRecord: resposta DIFERENTE da atual grava uma l
   const db = new FakeSupabaseAdmin({ tables: { client_consents: [] } });
   const currentAnswers: CurrentAnswers = {
     ...emptyAnswers(),
-    marketing: { choice: "denied", source: "portal", createdAt: "2026-11-15T10:00:00Z", documentVersion: "2026-11-15" },
+    marketing: {
+      choice: "denied",
+      source: "portal",
+      createdAt: "2026-11-15T10:00:00Z",
+      documentVersion: "2026-11-15",
+    },
   };
   const result = await performProfessionalAssistedRecord(db as unknown as ClientConsentsDb, {
     ownerId: OWNER_A,
@@ -188,7 +211,12 @@ test("performProfessionalAssistedRecord: resposta IGUAL à atual NÃO grava (cha
   const db = new FakeSupabaseAdmin({ tables: { client_consents: [] } });
   const currentAnswers: CurrentAnswers = {
     ...emptyAnswers(),
-    imageUse: { choice: "granted_no_face", source: "studio_device", createdAt: "2026-11-15T10:00:00Z", documentVersion: "2026-11-15" },
+    imageUse: {
+      choice: "granted_no_face",
+      source: "studio_device",
+      createdAt: "2026-11-15T10:00:00Z",
+      documentVersion: "2026-11-15",
+    },
   };
   const result = await performProfessionalAssistedRecord(db as unknown as ClientConsentsDb, {
     ownerId: OWNER_A,
