@@ -3,6 +3,11 @@ import { z } from "zod";
 import { normalizePhoneBR, isValidPhoneBR } from "@/lib/phone";
 import { verifyClientOtpCore } from "@/lib/verify-client-otp.server";
 import { getRequestIp } from "@/lib/server/request-signature";
+import {
+  shouldBlockByGlobalCap,
+  getGlobalOtpCapCounts,
+  OTP_GLOBAL_HOURLY_CAP,
+} from "./otp-global-cap";
 
 const RATE_LIMIT_MSG = "Por segurança, aguarde alguns minutos antes de tentar novamente.";
 const SEND_FAILED_MSG = "Não conseguimos enviar o código agora. Tente novamente em instantes.";
@@ -14,6 +19,12 @@ const COOLDOWN_MS = 60 * 1000;
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_REQUESTS_PER_PHONE_IN_WINDOW = 5;
 const MAX_REQUESTS_PER_IP_IN_WINDOW = 10;
+// Teto GLOBAL (FASE CONSENT-FINAL 4, todos os telefones/owners somados) —
+// os números (OTP_GLOBAL_HOURLY_CAP = 60, OTP_GLOBAL_DAILY_CAP = 300) e a
+// regra de decisão vivem em otp-global-cap.ts (num único lugar, junto da
+// função pura que os usa) para serem testáveis sem I/O; importados aqui
+// para ficarem visíveis junto das demais constantes de rate-limit deste
+// arquivo.
 
 // Extraído para src/lib/server/request-signature.ts (FASE CONSENT-1A,
 // reaproveitado por recordClientConsent) — mesmo comportamento exato,
@@ -51,14 +62,47 @@ export const requestClientOtp = createServerFn({ method: "POST" })
     const { generateOtpCode, hashOtpCode } = await import("./otp-crypto.server");
     const { sendOtpViaMeta } = await import("./send-otp-meta.server");
 
-    const logAttempt = (action: string, details: Record<string, unknown> = {}) =>
+    // `includeIdentity: false` omite phone/ip do log — usado só pelo evento
+    // de teto GLOBAL abaixo: aquele bloqueio não tem relação com ESTE
+    // telefone/IP específico (é um teto da plataforma inteira, que teria
+    // disparado do mesmo jeito pra qualquer outra cliente que tivesse feito
+    // esta mesma chamada), então gravar o telefone mascarado/IP desta
+    // cliente em particular só ligaria um dado pessoal dela a um evento que
+    // não foi causado por ela, sem nenhum ganho de diagnóstico (o que
+    // importa saber ali é só "o teto global disparou", não "quem disparou").
+    const logAttempt = (
+      action: string,
+      details: Record<string, unknown> = {},
+      opts: { includeIdentity?: boolean } = {},
+    ) =>
       supabaseAdmin.from("audit_log").insert({
         owner_id: data.owner_id,
         action,
         resource: "client_otp",
-        details: { phone: maskPhone(phone), ip, ...details } as never,
-        ip: ip ?? undefined,
+        details: (opts.includeIdentity === false
+          ? details
+          : { phone: maskPhone(phone), ip, ...details }) as never,
+        ip: opts.includeIdentity === false ? undefined : (ip ?? undefined),
       } as never);
+
+    // Teto GLOBAL de envios de OTP do portal da cliente (todos os
+    // telefones/owners somados — ver otp-global-cap.ts). Entra ANTES de
+    // qualquer outra checagem (inclusive a por IP, abaixo): é a mais barata
+    // de cortar cedo porque, quando ela dispara, é justamente no cenário de
+    // um pico de abuso/custo em que cada consulta extra (IP, telefone)
+    // pesa — não há motivo pra gastar essas outras duas queries se o
+    // pedido já vai ser bloqueado de qualquer forma. Não muda a ORDEM
+    // RELATIVA das checagens já existentes (IP continua antes de
+    // cooldown/telefone), só insere este passo novo antes de ambas.
+    const { hourlyCount, dailyCount } = await getGlobalOtpCapCounts(supabaseAdmin, now);
+    if (shouldBlockByGlobalCap(hourlyCount, dailyCount)) {
+      // Log de uma linha, fixo e genérico — nunca o valor da contagem nem
+      // qual dos dois tetos (hora/dia) disparou é exposto ao usuário (só ao
+      // audit_log, para operação interna).
+      const scope = hourlyCount >= OTP_GLOBAL_HOURLY_CAP ? "global_hourly" : "global_daily";
+      await logAttempt("client_otp_rate_limited", { scope }, { includeIdentity: false });
+      throw new Error(RATE_LIMIT_MSG);
+    }
 
     // Rate limit por IP (janela de 15min), usando o próprio audit_log — evita
     // criar uma segunda tabela só para isso.
