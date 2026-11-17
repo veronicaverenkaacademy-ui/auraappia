@@ -23,6 +23,9 @@ import {
 import { isValidPhoneBR } from "../phone.ts";
 import { sameInstant } from "./time-instant.ts";
 import { isPhoneBlocked, type OptOutRecipientsDb } from "./central-opt-out.server.ts";
+import { computeCurrentAnswers, type ConsentLedgerRow } from "../consent/current-answers.ts";
+import type { ConsentChoice, ConsentType } from "../consent/types.ts";
+import type { LegalDocumentKey } from "../legal-versions.ts";
 
 const REMINDER_24H_MS = 24 * 60 * 60 * 1000;
 const REMINDER_2H_MS = 2 * 60 * 60 * 1000;
@@ -227,6 +230,57 @@ export async function scanAndEnqueueCentralReminders(
   return { enqueued, recalculated, cancelledBobo };
 }
 
+// FASE CONSENT-FINAL (PR 3): interface mínima própria (mesmo padrão de
+// OptOutRecipientsDb acima) pra ler client_consents — src/integrations/
+// supabase/types.ts não a conhece (ver client-consents-store.server.ts),
+// então quem chama passa o cliente real com `as unknown as ConsentLedgerDb`.
+// Só o SELECT simples por client_id, sem order/limit: computeCurrentAnswers
+// (helper compartilhado) já resolve "qual é a linha mais recente" a partir
+// de TODAS as linhas, independente da ordem em que chegam.
+export interface ConsentLedgerDb {
+  from(table: "client_consents"): {
+    select(cols: string): {
+      eq(
+        col: string,
+        val: unknown,
+      ): PromiseLike<{
+        data: Array<{
+          consent_type: string;
+          document_key: string;
+          choice: string;
+          source: string;
+          created_at: string;
+          document_version: string;
+        }> | null;
+        error: { message: string; code?: string } | null;
+      }>;
+    };
+  };
+}
+
+/**
+ * FASE CONSENT-FINAL (PR 3): true quando a resposta ATUAL (mais recente,
+ * calculada por computeCurrentAnswers) de whatsapp_reminders desta cliente
+ * for 'denied'. Nunca respondeu (null) devolve false — comportamento atual
+ * (envia), sem mudança.
+ */
+async function isWhatsappRemindersDenied(db: ConsentLedgerDb, clientId: string): Promise<boolean> {
+  const { data, error } = await db
+    .from("client_consents")
+    .select("consent_type, document_key, choice, source, created_at, document_version")
+    .eq("client_id", clientId);
+  if (error) throw new Error(error.message);
+  const rows: ConsentLedgerRow[] = (data ?? []).map((r) => ({
+    type: r.consent_type as ConsentType,
+    documentKey: r.document_key as LegalDocumentKey,
+    choice: r.choice as ConsentChoice,
+    source: r.source as ConsentLedgerRow["source"],
+    createdAt: r.created_at,
+    documentVersion: r.document_version,
+  }));
+  return computeCurrentAnswers(rows).whatsappReminders?.choice === "denied";
+}
+
 type ClaimedReminderJob = {
   id: string;
   owner_id: string;
@@ -331,6 +385,37 @@ export async function processCentralReminderJob(
     return "held";
   }
 
+  let whatsappRemindersDenied: boolean;
+  try {
+    // FASE CONSENT-FINAL (PR 3): lida AGORA, no momento do envio (não na
+    // criação do job) — por construção já reflete qualquer mudança de
+    // resposta da cliente depois de o job ter sido enfileirado. Filtra
+    // por job.client_id (o cadastro ESPECÍFICO usado nesta consulta),
+    // NUNCA por telefone — se o mesmo telefone tiver mais de um cadastro
+    // com respostas diferentes, só a resposta do cadastro desta consulta
+    // importa.
+    whatsappRemindersDenied = await isWhatsappRemindersDenied(
+      // Cast: client_consents ainda não está em types.ts (ver
+      // ConsentLedgerDb acima) — mesmo padrão do cast de isPhoneBlocked.
+      supabaseAdmin as unknown as ConsentLedgerDb,
+      job.client_id,
+    );
+  } catch (e) {
+    // Mesmo tratamento FALHA FECHADA do bloco de isPhoneBlocked acima: erro
+    // de leitura do ledger não é falha definitiva nem sucesso — adia pra
+    // tentar de novo na próxima rodada (nunca 'sent', nunca 'failed').
+    const msg = e instanceof Error ? e.message : String(e);
+    await supabaseAdmin
+      .from("notification_jobs")
+      .update({
+        status: "pending",
+        attempts: Math.max(job.attempts - 1, 0),
+        last_error: `Falha fechada: não foi possível consultar o consentimento de lembretes — envio adiado por segurança: ${msg}`,
+      })
+      .eq("id", job.id);
+    return "held";
+  }
+
   const decision = decideReminderJobAction({
     templateKey,
     now: now(),
@@ -345,6 +430,7 @@ export async function processCentralReminderJob(
     recipientPhoneValid: isValidPhoneBR(phone),
     recipientPhoneE164: phone,
     recipientBlocked,
+    whatsappRemindersDenied,
     remindersEnabled: remindersEnabled(),
     testMode: testModeEnabled(),
     testPhones: testPhones(),

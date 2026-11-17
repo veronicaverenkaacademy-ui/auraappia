@@ -898,6 +898,147 @@ test("FASE LEMBRETES-1 ponto 3(d): FALHA FECHADA — erro ao consultar bloqueio 
   assert.match(String(db.tables.notification_jobs[0].last_error ?? ""), /falha fechada/i);
 });
 
+// ===== FASE CONSENT-FINAL (PR 3): resposta atual de whatsapp_reminders =====
+// client_consents ainda não está em types.ts (mesma lição de
+// whatsapp_blocked_recipients) — os testes abaixo seedam a tabela
+// diretamente em `tables.client_consents` (FakeSupabaseAdmin não exige
+// schema fixo). Nenhum dado pessoal real nos testes (nomes/telefones são
+// fixtures, nunca de produção).
+
+function consentRow(overrides: Partial<Row> = {}): Row {
+  return {
+    client_id: "client-1",
+    consent_type: "whatsapp_reminders",
+    document_key: "termo-consentimento",
+    choice: "granted",
+    source: "portal",
+    created_at: "2026-11-01T00:00:00.000Z",
+    document_version: "v1",
+    ...overrides,
+  };
+}
+
+// As quatro cenários abaixo (nunca respondeu/granted/denied-depois-de-
+// granted-recalculado/client_id diferente) NÃO são bloqueados pelo
+// consentimento — por isso chegam ao MESMO ponto que o caminho padrão
+// chegaria sem este PR: o freio de "Modo teste: telefone fora da lista de
+// testes" (testModeEnabled() default ligado, WHATSAPP_REMINDERS_TEST_PHONES
+// vazio nesta suíte — nenhum dublê de fetch/rede é instalado, então
+// "outcome" só pode ser 'held' por esse motivo NUNCA 'cancelled'). A suíte
+// de decideReminderJobAction (tests/central-reminder-policy.test.ts) já
+// cobre "send" na função pura, sem a barreira de modo teste.
+test("CONSENT-FINAL: cliente nunca respondeu whatsapp_reminders (sem linha no ledger) — NÃO é bloqueada pelo consentimento (chega ao freio padrão de modo teste, não a 'cancelled')", async () => {
+  const db = new FakeSupabaseAdmin({
+    tables: baseJobTables({ client_consents: [] }),
+  });
+  const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
+  assert.equal(outcome, "held");
+  assert.match(String(db.tables.notification_jobs[0].last_error ?? ""), /modo teste/i);
+});
+
+test("CONSENT-FINAL: resposta atual granted — NÃO é bloqueada pelo consentimento (chega ao freio padrão de modo teste, não a 'cancelled')", async () => {
+  const db = new FakeSupabaseAdmin({
+    tables: baseJobTables({ client_consents: [consentRow({ choice: "granted" })] }),
+  });
+  const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
+  assert.equal(outcome, "held");
+  assert.match(String(db.tables.notification_jobs[0].last_error ?? ""), /modo teste/i);
+});
+
+test("CONSENT-FINAL: resposta atual denied — job é CANCELADO (skip_terminal), motivo genérico sem dado pessoal", async () => {
+  const db = new FakeSupabaseAdmin({
+    tables: baseJobTables({ client_consents: [consentRow({ choice: "denied" })] }),
+  });
+  const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
+  assert.equal(outcome, "cancelled");
+  assert.equal(db.tables.notification_jobs[0].status, "cancelled");
+  const reason = String(db.tables.notification_jobs[0].last_error ?? "");
+  assert.match(reason, /não autoriza receber lembretes/i);
+  assert.doesNotMatch(reason, /\+?\d{8,}/); // nunca telefone no motivo
+  assert.doesNotMatch(reason, /ana maria/i); // nunca nome no motivo
+});
+
+test("CONSENT-FINAL: denied vale pro lembrete_2h também", async () => {
+  const db = new FakeSupabaseAdmin({
+    tables: baseJobTables({ client_consents: [consentRow({ choice: "denied" })] }),
+  });
+  const outcome = await processCentralReminderJob(
+    db as never,
+    job({ type: "appointment_reminder_2h" }),
+    () => NOW,
+  );
+  assert.equal(outcome, "cancelled");
+});
+
+test("CONSENT-FINAL: denied antigo seguido de granted mais recente — resposta ATUAL é granted, NÃO bloqueia (chega ao freio padrão de modo teste)", async () => {
+  const db = new FakeSupabaseAdmin({
+    tables: baseJobTables({
+      client_consents: [
+        consentRow({ choice: "denied", created_at: "2026-10-01T00:00:00.000Z" }),
+        consentRow({ choice: "granted", created_at: "2026-11-05T00:00:00.000Z" }),
+      ],
+    }),
+  });
+  const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
+  assert.equal(outcome, "held");
+  assert.match(String(db.tables.notification_jobs[0].last_error ?? ""), /modo teste/i);
+});
+
+test("CONSENT-FINAL: granted antigo seguido de denied mais recente — resposta ATUAL é denied, pula", async () => {
+  const db = new FakeSupabaseAdmin({
+    tables: baseJobTables({
+      client_consents: [
+        consentRow({ choice: "granted", created_at: "2026-10-01T00:00:00.000Z" }),
+        consentRow({ choice: "denied", created_at: "2026-11-05T00:00:00.000Z" }),
+      ],
+    }),
+  });
+  const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
+  assert.equal(outcome, "cancelled");
+});
+
+test("CONSENT-FINAL: filtra por client_id da CONSULTA, nunca por telefone — linha denied de OUTRO client_id não afeta este job", async () => {
+  const db = new FakeSupabaseAdmin({
+    tables: baseJobTables({
+      client_consents: [consentRow({ client_id: "client-OUTRO", choice: "denied" })],
+    }),
+  });
+  const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
+  assert.equal(outcome, "held"); // não bloqueado — chega ao freio padrão de modo teste
+  assert.match(String(db.tables.notification_jobs[0].last_error ?? ""), /modo teste/i);
+});
+
+test("CONSENT-FINAL: FALHA FECHADA — erro ao consultar o ledger de consentimentos nunca envia o lembrete, job é adiado (held/pending), nunca 'sent'/'failed'", async () => {
+  const db = new FakeSupabaseAdmin({ tables: baseJobTables() });
+  const realFrom = db.from.bind(db);
+  db.from = ((table: string) => {
+    if (table === "client_consents") {
+      return {
+        select() {
+          return {
+            eq() {
+              return Promise.resolve({
+                data: null,
+                error: { message: "falha simulada de conexão com o banco" },
+              });
+            },
+          };
+        },
+      };
+    }
+    return realFrom(table);
+  }) as typeof db.from;
+
+  const outcome = await processCentralReminderJob(db as never, job(), () => NOW);
+  assert.equal(outcome, "held");
+  assert.equal(db.tables.notification_jobs[0].status, "pending");
+  assert.equal(db.tables.notification_jobs[0].attempts, 0); // mesmo desconto de hold_pending/defer
+  assert.match(
+    String(db.tables.notification_jobs[0].last_error ?? ""),
+    /falha fechada.*consentimento de lembretes/i,
+  );
+});
+
 // ===== M3 (corrige recálculo indevido, 28/10/2026) =====
 // A suíte acima (ex.: "M2: duas varreduras...") nunca pegou o bug porque o
 // banco simulado guarda `scheduled_for` EXATAMENTE como foi inserido (string

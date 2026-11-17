@@ -381,6 +381,7 @@ test("LEMBRETES-6 (Parte 3): remarcar um agendamento 'confirmed' faz a política
     recipientPhoneValid: true,
     recipientPhoneE164: "+5547988887777",
     recipientBlocked: false,
+    whatsappRemindersDenied: false,
     remindersEnabled: true,
     testMode: false,
     testPhones: [],
