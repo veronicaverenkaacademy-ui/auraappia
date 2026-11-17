@@ -2,9 +2,14 @@
 // idêntico nos PRs que o incluem). Pura, sem JSX, importável direto.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeCurrentAnswers, type ConsentLedgerRow } from "../src/lib/consent/current-answers.ts";
+import {
+  computeCurrentAnswers,
+  type ConsentLedgerRow,
+} from "../src/lib/consent/current-answers.ts";
 
-function row(partial: Partial<ConsentLedgerRow> & Pick<ConsentLedgerRow, "type" | "choice" | "createdAt">): ConsentLedgerRow {
+function row(
+  partial: Partial<ConsentLedgerRow> & Pick<ConsentLedgerRow, "type" | "choice" | "createdAt">,
+): ConsentLedgerRow {
   return {
     documentKey: "termo-consentimento",
     source: "portal",
