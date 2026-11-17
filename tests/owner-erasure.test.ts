@@ -1,13 +1,18 @@
-// FASE LEGAL-2 (17/11/2026): eraseMyOwnerAccountCore
-// (src/lib/owner-erasure.server.ts) — orquestra revogação do token Meta ->
-// plan -> erase_owner_data (SQL transacional) -> Storage -> contas de
-// portal órfãs -> deleteUser, NESTA ordem. A política "o que é apagado"
-// mora na migração (testada em supabase/tests/owner_erasure.sql, contra
-// Postgres de verdade); este arquivo testa SÓ a orquestração: ordem,
-// Storage NUNCA bloqueia (D4), contas de portal só removidas quando sem
-// outro vínculo (D3), equipe ativa recusa com mensagem específica,
-// idempotência, e que nenhuma mensagem exposta à dona carrega detalhe
-// técnico nem dado pessoal.
+// FASE LEGAL-2 (17/11/2026), corrigido na FASE LEGAL-2B (defeito de ordem):
+// eraseMyOwnerAccountCore (src/lib/owner-erasure.server.ts) — orquestra
+// plan -> (checagem de equipe) -> revogação do token Meta ->
+// erase_owner_data (SQL transacional) -> Storage -> contas de portal
+// órfãs -> deleteUser, NESTA ordem. A revogação da Meta só roda DEPOIS de
+// confirmar que a exclusão vai prosseguir (plan ok e equipe não bloqueia)
+// — na versão original ela rodava primeiro e desconectava o WhatsApp
+// mesmo quando a exclusão era bloqueada ou falhava a seguir. A política
+// "o que é apagado" mora na migração (testada em
+// supabase/tests/owner_erasure.sql, contra Postgres de verdade); este
+// arquivo testa SÓ a orquestração: ordem, Storage NUNCA bloqueia (D4),
+// contas de portal só removidas quando sem outro vínculo (D3), equipe
+// ativa recusa com mensagem específica SEM revogar nada, idempotência, e
+// que nenhuma mensagem exposta à dona carrega detalhe técnico nem dado
+// pessoal.
 // Rodar com: node --experimental-strip-types --test tests/owner-erasure.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -146,7 +151,25 @@ function silentLogger() {
 
 const alwaysRevokeOk = async () => ({ ok: true });
 
-test("ordem: revoga token -> plan -> erase -> storage -> contas de portal -> deleteUser, nesta ordem exata", async () => {
+// Conta quantas vezes revokeInstanceToken (a função externa, não a leitura
+// do token no banco) foi chamada de fato — usado pelos testes da FASE
+// LEGAL-2B que provam que a Meta NUNCA é tocada antes de confirmar que a
+// exclusão vai prosseguir.
+function trackedRevoke(ok = true) {
+  let calls = 0;
+  const fn = async () => {
+    calls++;
+    return { ok };
+  };
+  return {
+    fn,
+    get calls() {
+      return calls;
+    },
+  };
+}
+
+test("ordem (corrigida na FASE LEGAL-2B): plan -> revoga token -> erase -> storage -> contas de portal -> deleteUser, nesta ordem exata", async () => {
   const { db, calls } = makeFakeDb({
     instanceToken: "fake-token",
     plan: {
@@ -160,8 +183,8 @@ test("ordem: revoga token -> plan -> erase -> storage -> contas de portal -> del
   const result = await eraseMyOwnerAccountCore(db, OWNER_ID, alwaysRevokeOk, silentLogger().logger);
   assert.deepEqual(result, { ok: true });
   assert.deepEqual(calls, [
-    "read-instance-token",
     "plan",
+    "read-instance-token",
     "erase",
     "storage-remove:company-assets",
     "storage-remove:client-photos",
@@ -169,45 +192,68 @@ test("ordem: revoga token -> plan -> erase -> storage -> contas de portal -> del
   ]);
 });
 
-test("owner_exists=false (já excluído antes — duplo clique/retry): pula erase/storage, vai direto pro deleteUser", async () => {
-  const { db, calls } = makeFakeDb({ plan: { owner_exists: false } });
-  const result = await eraseMyOwnerAccountCore(db, OWNER_ID, alwaysRevokeOk, silentLogger().logger);
-  assert.deepEqual(result, { ok: true });
-  assert.deepEqual(calls, ["read-instance-token", "plan", `deleteUser:${OWNER_ID}`]);
+test("caminho feliz: revoga o token da Meta ANTES de erase_owner_data (nunca depois)", async () => {
+  const revoke = trackedRevoke();
+  const { db, calls } = makeFakeDb({ instanceToken: "fake-token" });
+  await eraseMyOwnerAccountCore(db, OWNER_ID, revoke.fn, silentLogger().logger);
+  assert.equal(revoke.calls, 1);
+  const revokeIdx = calls.indexOf("read-instance-token");
+  const eraseIdx = calls.indexOf("erase");
+  assert.ok(
+    revokeIdx > -1 && eraseIdx > -1 && revokeIdx < eraseIdx,
+    "revoke deve vir antes de erase",
+  );
 });
 
-test("equipe ativa (active_team_count>0): recusa com a mensagem ESPECÍFICA e acionável, nunca chega a apagar nada", async () => {
-  const { db, calls } = makeFakeDb({ plan: { active_team_count: 2 } });
+test("owner_exists=false (já excluído antes — duplo clique/retry): pula erase/storage/Meta, vai direto pro deleteUser", async () => {
+  const revoke = trackedRevoke();
+  const { db, calls } = makeFakeDb({ plan: { owner_exists: false } });
+  const result = await eraseMyOwnerAccountCore(db, OWNER_ID, revoke.fn, silentLogger().logger);
+  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(calls, ["plan", `deleteUser:${OWNER_ID}`]);
+  assert.equal(revoke.calls, 0, "não deveria revogar nada — já não há o que revogar");
+});
+
+test("equipe ativa (active_team_count>0): recusa com a mensagem ESPECÍFICA e acionável, SEM revogar nada nem apagar nada", async () => {
+  const revoke = trackedRevoke();
+  const { db, calls } = makeFakeDb({
+    plan: { active_team_count: 2 },
+    instanceToken: "fake-token",
+  });
   await assert.rejects(
-    () => eraseMyOwnerAccountCore(db, OWNER_ID, alwaysRevokeOk, silentLogger().logger),
+    () => eraseMyOwnerAccountCore(db, OWNER_ID, revoke.fn, silentLogger().logger),
     (e: unknown) =>
       (e as Error).message ===
       "Remova ou desvincule todas as colaboradoras da equipe antes de excluir sua conta.",
   );
-  assert.deepEqual(calls, ["read-instance-token", "plan"]);
+  assert.deepEqual(calls, ["plan"]);
+  assert.equal(revoke.calls, 0, "equipe bloqueada: WhatsApp deve continuar conectado");
 });
 
-test("falha no plan (migração não aplicada): aborta ANTES de qualquer exclusão, mensagem genérica", async () => {
+test("falha no plan (migração não aplicada): aborta ANTES de qualquer exclusão ou revogação, mensagem genérica", async () => {
+  const revoke = trackedRevoke();
   const { db, calls } = makeFakeDb({
     planError: { message: "function owner_erasure_plan(uuid) does not exist" },
+    instanceToken: "fake-token",
   });
   const { logger, errors } = silentLogger();
   await assert.rejects(
-    () => eraseMyOwnerAccountCore(db, OWNER_ID, alwaysRevokeOk, logger),
+    () => eraseMyOwnerAccountCore(db, OWNER_ID, revoke.fn, logger),
     (e: unknown) =>
       (e as Error).message ===
       "Não foi possível excluir sua conta agora. Tente de novo ou fale com o suporte.",
   );
-  assert.deepEqual(calls, ["read-instance-token", "plan"]);
+  assert.deepEqual(calls, ["plan"]);
+  assert.equal(revoke.calls, 0, "plan falhou: nada deve ser tocado, nem a Meta");
   assert.match(String(errors[0]?.[1]), /does not exist/);
 });
 
-test("falha no erase_owner_data: aborta ANTES de Storage e deleteUser — banco intacto, retry possível", async () => {
+test("falha no erase_owner_data: aborta ANTES de Storage e deleteUser — banco intacto, retry possível (Meta já foi revogada antes — ver comentário de topo do módulo)", async () => {
   const { db, calls } = makeFakeDb({ eraseError: { message: "deadlock detected" } });
   await assert.rejects(() =>
     eraseMyOwnerAccountCore(db, OWNER_ID, alwaysRevokeOk, silentLogger().logger),
   );
-  assert.deepEqual(calls, ["read-instance-token", "plan", "erase"]);
+  assert.deepEqual(calls, ["plan", "read-instance-token", "erase"]);
 });
 
 test("D4: falha no Storage NUNCA bloqueia — segue até deleteUser e registra 1 linha genérica em audit_log", async () => {
@@ -354,5 +400,5 @@ test("idempotência: 2ª chamada com owner_exists=false (já processado pela 1ª
     silentLogger().logger,
   );
   assert.deepEqual(result, { ok: true });
-  assert.deepEqual(second.calls, ["read-instance-token", "plan", `deleteUser:${OWNER_ID}`]);
+  assert.deepEqual(second.calls, ["plan", `deleteUser:${OWNER_ID}`]);
 });

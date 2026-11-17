@@ -24,31 +24,44 @@
 //     NENHUMA mudança em erase_client_data/client-erasure.server.ts.
 //
 // ORDEM — nunca mudar:
-//   1. Revogar o token da Meta (melhor esforço — se a leitura ou a
-//      chamada falhar, só loga, nunca bloqueia; a conexão local é apagada
-//      pelo passo 3 de qualquer forma).
-//   2. owner_erasure_plan (SÓ LEITURA) — se não existir (migração não
-//      aplicada) ou falhar, aborta ANTES de tocar em qualquer coisa.
-//      owner_exists=false (duplo clique/retry depois de já ter concluído)
-//      vai direto pro passo 5 (idempotente). active_team_count>0 recusa
-//      com a MESMA mensagem específica e acionável que a tela já mostra
-//      hoje (preBloqueio em checkAccountDeletionEligibility) — não é uma
-//      falha técnica, é um estado esperado com ação clara pra dona.
-//   3. erase_owner_data — UMA transação, tudo ou nada (D1: apaga, nunca
+//   1. owner_erasure_plan (SÓ LEITURA) — se não existir (migração não
+//      aplicada) ou falhar, aborta ANTES de tocar em qualquer coisa
+//      (inclusive o WhatsApp — ver nota FASE LEGAL-2B abaixo).
+//   2. owner_exists=false (duplo clique/retry depois de já ter concluído)
+//      vai direto pro deleteUser (idempotente), SEM tocar na Meta — já não
+//      há nada pra revogar porque uma tentativa anterior já fez isso.
+//   3. active_team_count>0 recusa com a MESMA mensagem específica e
+//      acionável que a tela já mostra hoje (preBloqueio em
+//      checkAccountDeletionEligibility), SEM revogar nada — não é uma
+//      falha técnica, é um estado esperado com ação clara pra dona, e ela
+//      ainda pode continuar usando o WhatsApp normalmente enquanto resolve
+//      a equipe.
+//   4. Revogar o token da Meta (melhor esforço — se a leitura ou a chamada
+//      falhar, só loga, nunca bloqueia). FASE LEGAL-2B (correção): este
+//      passo rodava ANTES do plan/checagem de equipe, o que desconectava o
+//      WhatsApp mesmo quando a exclusão era bloqueada ou falhava a seguir
+//      — agora só roda depois de confirmar que a exclusão VAI prosseguir.
+//   5. erase_owner_data — UMA transação, tudo ou nada (D1: apaga, nunca
 //      anonimiza). Falha aqui = erro genérico, Storage e deleteUser NUNCA
-//      rodam, a conta continua intacta e a dona pode tentar de novo.
-//   4. Storage (os 3 buckets: company-assets, client-photos, portal-media)
+//      rodam, a conta continua intacta e a dona pode tentar de novo — mas
+//      o WhatsApp já foi desconectado no passo 4; aceitável (reconectar é
+//      possível) porque não há como confirmar sucesso de erase_owner_data
+//      ANTES de revogar sem reordenar a revogação para depois do banco, o
+//      que reabriria o risco original (revogar depois de já ter apagado os
+//      dados é equivalente em efeito prático a revogar antes de apagar,
+//      já que ambos são passos irreversíveis independentes).
+//   6. Storage (os 3 buckets: company-assets, client-photos, portal-media)
 //      — melhor esforço; "não encontrado" é sucesso; qualquer outra falha
 //      só é CONTADA e registrada em audit_log (sem dado pessoal: só o
 //      bucket e a contagem), nunca bloqueia (D4).
-//   5. Contas de portal de clientes (D3): só remove auth.users de
-//      user_ids que, DEPOIS do passo 3, não aparecem mais em NENHUMA
+//   7. Contas de portal de clientes (D3): só remove auth.users de
+//      user_ids que, DEPOIS do passo 5, não aparecem mais em NENHUMA
 //      linha de `clients` de NENHUM outro dono — checagem funciona porque
 //      erase_owner_data já apagou as linhas de `clients` DESTE dono antes
 //      de chegar aqui. Falha ao remover uma conta específica só loga,
-//      nunca bloqueia as demais nem o passo 6.
-//   6. auth.admin.deleteUser(ownerId) — só por último. Falha aqui = erro
-//      genérico; retry é seguro porque o passo 3 é idempotente (chamar de
+//      nunca bloqueia as demais nem o passo 8.
+//   8. auth.admin.deleteUser(ownerId) — só por último. Falha aqui = erro
+//      genérico; retry é seguro porque o passo 5 é idempotente (chamar de
 //      novo encontra zero linhas e devolve zeros, nunca erro).
 // Nenhuma mensagem de erro exposta à dona contém detalhe técnico nem dado
 // pessoal — tudo logado só no servidor.
@@ -135,7 +148,39 @@ export async function eraseMyOwnerAccountCore(
   revokeInstanceToken: RevokeInstanceToken,
   logger: Logger = console,
 ): Promise<EraseMyOwnerAccountResult> {
-  // 1. Token Meta — melhor esforço, nunca bloqueia.
+  // 1. Plano — só leitura. Nada é revogado/apagado antes disto.
+  const { data: plan, error: planError } = await db.rpc("owner_erasure_plan", {
+    _owner_id: ownerId,
+  });
+  if (planError) {
+    logger.error("[owner-erasure] owner_erasure_plan falhou", planError.message);
+    throw new Error(GENERIC_ERROR_MSG);
+  }
+
+  if (!plan || !plan.owner_exists) {
+    // Já não existe — duplo clique/retry depois de uma tentativa anterior
+    // que já tinha concluído até o deleteUser. Idempotente: sucesso. Não
+    // toca na Meta — uma tentativa anterior já revogou (ou nunca houve
+    // instância pra revogar).
+    const { error: deleteUserError } = await db.auth.admin.deleteUser(ownerId);
+    if (deleteUserError && !isUserAlreadyGone(deleteUserError)) {
+      logger.error(
+        "[owner-erasure] auth.admin.deleteUser falhou (owner já não existia no plano)",
+        deleteUserError.message,
+      );
+      throw new Error(GENERIC_ERROR_MSG);
+    }
+    return { ok: true };
+  }
+
+  if (plan.active_team_count > 0) {
+    // Recusa SEM revogar nada — a dona continua podendo usar o WhatsApp
+    // normalmente enquanto resolve a equipe.
+    throw new Error(TEAM_BLOCKED_MSG);
+  }
+
+  // 2. Token Meta — só agora que a exclusão VAI prosseguir. Melhor
+  // esforço: se a leitura ou a chamada falhar, só loga, nunca bloqueia.
   try {
     const { data: instance } = await db
       .from("whatsapp_instances")
@@ -150,33 +195,6 @@ export async function eraseMyOwnerAccountCore(
     }
   } catch (e) {
     logger.error("[owner-erasure] erro inesperado ao revogar token Meta (melhor esforço)", e);
-  }
-
-  // 2. Plano — só leitura.
-  const { data: plan, error: planError } = await db.rpc("owner_erasure_plan", {
-    _owner_id: ownerId,
-  });
-  if (planError) {
-    logger.error("[owner-erasure] owner_erasure_plan falhou", planError.message);
-    throw new Error(GENERIC_ERROR_MSG);
-  }
-
-  if (!plan || !plan.owner_exists) {
-    // Já não existe — duplo clique/retry depois de uma tentativa anterior
-    // que já tinha concluído até o deleteUser. Idempotente: sucesso.
-    const { error: deleteUserError } = await db.auth.admin.deleteUser(ownerId);
-    if (deleteUserError && !isUserAlreadyGone(deleteUserError)) {
-      logger.error(
-        "[owner-erasure] auth.admin.deleteUser falhou (owner já não existia no plano)",
-        deleteUserError.message,
-      );
-      throw new Error(GENERIC_ERROR_MSG);
-    }
-    return { ok: true };
-  }
-
-  if (plan.active_team_count > 0) {
-    throw new Error(TEAM_BLOCKED_MSG);
   }
 
   // 3. Erasure transacional — tudo ou nada.
