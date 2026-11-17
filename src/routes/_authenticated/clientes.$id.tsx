@@ -16,7 +16,7 @@ import {
 import {
   MessageCircle, Phone, Instagram, Pencil, Trash2, Upload, Calendar as CalIcon, X,
   Sparkles, Loader2, Star, MoreHorizontal, AlertTriangle, ArrowRight, Share2,
-  Music2, Snowflake, Coffee, ChevronRight, FileText, Signature, QrCode, TrendingUp,
+  Music2, Snowflake, Coffee, QrCode, TrendingUp,
   Heart, Clock, Award,
 } from "lucide-react";
 import {
@@ -26,6 +26,9 @@ import {
 } from "@/lib/clients";
 import { ClientFormDialog } from "@/components/client-form";
 import { ReminderBlockBanner } from "@/components/reminder-block-banner";
+import { ClientConsentsTab } from "@/components/clients/client-consents-tab";
+import { useHealthDataConsentGate, AnamnesisConsentLockNotice } from "@/components/clients/anamnesis-consent-gate";
+import { ImageUseNotice } from "@/components/clients/image-use-notice";
 
 export const Route = createFileRoute("/_authenticated/clientes/$id")({
   head: () => ({
@@ -283,7 +286,7 @@ function ClientDetail() {
           <TabItem value="anamnese">Anamnese</TabItem>
           <TabItem value="fotos">Fotos</TabItem>
           <TabItem value="financeiro">Financeiro</TabItem>
-          <TabItem value="documentos">Documentos</TabItem>
+          <TabItem value="documentos">Consentimentos</TabItem>
           <TabItem value="ia">IA</TabItem>
         </TabsList>
 
@@ -292,7 +295,7 @@ function ClientDetail() {
         <TabsContent value="anamnese"><AnamnesisTab clientId={id} /></TabsContent>
         <TabsContent value="fotos"><PhotosTab clientId={id} /></TabsContent>
         <TabsContent value="financeiro"><FinanceiroTab ins={ins} /></TabsContent>
-        <TabsContent value="documentos"><DocumentosTab /></TabsContent>
+        <TabsContent value="documentos"><ClientConsentsTab clientId={id} /></TabsContent>
         <TabsContent value="ia"><DnaTab ins={ins} /></TabsContent>
       </Tabs>
 
@@ -553,31 +556,6 @@ function FinanceiroTab({ ins }: { ins: Insights }) {
   );
 }
 
-function DocumentosTab() {
-  const docs = [
-    { icon: FileText, label: "Anamnese assinada", meta: "Assinar" },
-    { icon: Signature, label: "Termo de consentimento", meta: "Enviar" },
-    { icon: FileText, label: "Contrato de pacote", meta: "Novo" },
-  ];
-  return (
-    <div className="space-y-2.5">
-      {docs.map((d) => (
-        <button key={d.label} type="button" className="w-full flex items-center gap-3 p-4 rounded-2xl border border-border/60 bg-card text-left hover:border-border transition">
-          <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center">
-            <d.icon className="w-4 h-4" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium truncate">{d.label}</div>
-            <div className="text-xs text-muted-foreground">Nenhum arquivo</div>
-          </div>
-          <span className="text-xs text-primary">{d.meta}</span>
-          <ChevronRight className="w-4 h-4 text-muted-foreground" />
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function DnaTab({ ins }: { ins: Insights }) {
   const bestDay = ins.lastAppt
     ? new Date(ins.lastAppt.starts_at).toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "")
@@ -683,6 +661,7 @@ function AnamnesisTab({ clientId }: { clientId: string }) {
   const { data, isLoading } = useQuery({ queryKey: ["anamnesis", clientId], queryFn: () => getAnamnesis(clientId) });
   const [form, setForm] = useState<Partial<Anamnesis>>({});
   const current = { ...(data ?? {}), ...form };
+  const healthGate = useHealthDataConsentGate(clientId);
 
   const save = useMutation({
     mutationFn: () => upsertAnamnesis(clientId, current),
@@ -697,6 +676,7 @@ function AnamnesisTab({ clientId }: { clientId: string }) {
 
   return (
     <div className="space-y-5">
+      <AnamnesisConsentLockNotice gate={healthGate} />
       {/* Contraindicações destaque */}
       {(current.allergies || current.contraindications) && (
         <div className="p-5 rounded-3xl border border-amber-500/30 bg-amber-500/5">
@@ -722,24 +702,24 @@ function AnamnesisTab({ clientId }: { clientId: string }) {
         </p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <AreaField label="Alergias" value={current.allergies ?? ""} onChange={(v) => setForm({ ...form, allergies: v })} />
-        <AreaField label="Medicamentos em uso" value={current.medications ?? ""} onChange={(v) => setForm({ ...form, medications: v })} />
-        <AreaField label="Restrições" value={current.restrictions ?? ""} onChange={(v) => setForm({ ...form, restrictions: v })} />
-        <AreaField label="Contraindicações" value={current.contraindications ?? ""} onChange={(v) => setForm({ ...form, contraindications: v })} />
+        <AreaField label="Alergias" value={current.allergies ?? ""} onChange={(v) => setForm({ ...form, allergies: v })} disabled={!healthGate.allowed} />
+        <AreaField label="Medicamentos em uso" value={current.medications ?? ""} onChange={(v) => setForm({ ...form, medications: v })} disabled={!healthGate.allowed} />
+        <AreaField label="Restrições" value={current.restrictions ?? ""} onChange={(v) => setForm({ ...form, restrictions: v })} disabled={!healthGate.allowed} />
+        <AreaField label="Contraindicações" value={current.contraindications ?? ""} onChange={(v) => setForm({ ...form, contraindications: v })} disabled={!healthGate.allowed} />
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-1.5">
           <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-normal">Tipo de pele</Label>
-          <Input value={current.skin_type ?? ""} onChange={(e) => setForm({ ...form, skin_type: e.target.value })} className="h-11 rounded-xl bg-background border-0" />
+          <Input value={current.skin_type ?? ""} onChange={(e) => setForm({ ...form, skin_type: e.target.value })} className="h-11 rounded-xl bg-background border-0" disabled={!healthGate.allowed} />
         </div>
         <div className="flex items-center justify-between rounded-xl bg-background px-4 h-11">
           <Label className="text-sm">Gestante</Label>
-          <Switch checked={!!current.pregnant} onCheckedChange={(v) => setForm({ ...form, pregnant: v })} />
+          <Switch checked={!!current.pregnant} onCheckedChange={(v) => setForm({ ...form, pregnant: v })} disabled={!healthGate.allowed} />
         </div>
       </div>
-      <AreaField label="Outras observações" value={current.notes ?? ""} onChange={(v) => setForm({ ...form, notes: v })} />
+      <AreaField label="Outras observações" value={current.notes ?? ""} onChange={(v) => setForm({ ...form, notes: v })} disabled={!healthGate.allowed} />
       <div className="flex justify-end">
-        <Button onClick={() => save.mutate()} disabled={save.isPending} className="rounded-xl">
+        <Button onClick={() => save.mutate()} disabled={save.isPending || !healthGate.allowed} className="rounded-xl">
           {save.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar anamnese"}
         </Button>
       </div>
@@ -752,11 +732,11 @@ function Tag({ children }: { children: React.ReactNode }) {
   return <span className="inline-flex items-center h-7 px-3 rounded-full bg-background border border-border/60 text-xs">{children}</span>;
 }
 
-function AreaField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function AreaField({ label, value, onChange, disabled }: { label: string; value: string; onChange: (v: string) => void; disabled?: boolean }) {
   return (
     <div className="space-y-1.5">
       <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-normal">{label}</Label>
-      <Textarea value={value} onChange={(e) => onChange(e.target.value)} rows={2} className="rounded-xl bg-background border-0 resize-none" />
+      <Textarea value={value} onChange={(e) => onChange(e.target.value)} rows={2} className="rounded-xl bg-background border-0 resize-none" disabled={disabled} />
     </div>
   );
 }
@@ -793,6 +773,7 @@ function PhotosTab({ clientId }: { clientId: string }) {
 
   return (
     <div>
+      <ImageUseNotice clientId={clientId} />
       <div className="mb-4 flex items-center justify-between">
         <p className="text-xs text-muted-foreground">{photos.length} foto{photos.length === 1 ? "" : "s"}</p>
         <Button size="sm" variant="outline" className="rounded-full gap-1.5" onClick={() => fileRef.current?.click()} disabled={uploading}>
