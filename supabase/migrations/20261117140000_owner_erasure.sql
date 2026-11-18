@@ -51,15 +51,34 @@
 --     corrigido em erase_client_data (FASE LEGAL-1C) — mesma correção
 --     aplicada aqui: zera as duas colunas ANTES de apagar whatsapp_messages.
 --   - team_members.access_level_id → access_levels(id) ON DELETE RESTRICT;
---     team_members NÃO tem FK nenhuma pra auth.users (nem owner_id nem
---     user_id têm CASCADE — user_id é SET NULL, owner_id não tem FK
---     nenhuma). Isso significa: uma colaboradora 'terminated' (que não
---     bloqueia a exclusão) nunca seria limpa pela cascata nem pela rotina
---     antiga — e, se ainda referenciasse um access_level, bloquearia a
---     cascata de access_levels (CASCADE de auth.users) com RESTRICT,
---     fazendo o auth.admin.deleteUser final falhar. Corrigido aqui: zera
---     access_level_id de QUALQUER team_members do owner (incluindo
---     'terminated') antes de apagar team_members e access_levels.
+--     team_members.owner_id não tem FK pra auth.users; team_members.user_id
+--     tem FK pra auth.users, mas ON DELETE SET NULL (confirmado via
+--     pg_constraint — confdeltype='n', não 'a'/NO ACTION). Isso significa:
+--     uma colaboradora 'terminated' (que não bloqueia a exclusão) nunca
+--     seria limpa pela cascata nem pela rotina antiga — e, se ainda
+--     referenciasse um access_level, bloquearia a cascata de access_levels
+--     (CASCADE de auth.users) com RESTRICT, fazendo o auth.admin.deleteUser
+--     final falhar.
+--     FASE LEGAL-2C (18/11/2026) — correção da correção: a primeira versão
+--     desta função zerava team_members.access_level_id via UPDATE antes do
+--     DELETE. Descoberto (empiricamente, contra produção, dentro de
+--     BEGIN...ROLLBACK, nada aplicado) que isso quebra de verdade: existe um
+--     trigger `trg_protect_access_level_id_update` (BEFORE UPDATE em
+--     team_members, função protect_access_level_id_update) que só libera a
+--     troca de access_level_id quando auth.uid() = owner_id OU
+--     staff_can(...) — SEM bypass pra service_role (ao contrário de
+--     automations_protect_system_delete, que usa aura_system_bypass() e por
+--     isso não bloqueia). Chamado como service_role (como erase_owner_data
+--     sempre é), auth.uid() é NULL e staff_can() devolve false — o UPDATE
+--     sempre falhava com "Você não tem permissão para alterar o nível de
+--     acesso desta colaboradora." (P0001), pra QUALQUER owner real que já
+--     teve colaboradora com access_level_id preenchido (o caso comum, não
+--     uma exceção). RESOLVIDO sem o UPDATE: basta apagar team_members (o
+--     FILHO) ANTES de access_levels (o PAI, mais abaixo) — quando a linha
+--     de access_levels for apagada, zero linhas de team_members ainda a
+--     referenciam, então o RESTRICT nunca dispara. Confirmado empiricamente
+--     (mesmo ambiente, mesma técnica) que esta ordem, sem UPDATE nenhum,
+--     passa sem erro.
 --   - portal_configurations.owner_id → company_profiles(owner_id) ON DELETE
 --     CASCADE (não é FK direta pra auth.users); published_by/updated_by →
 --     auth.users(id) SEM ON DELETE. Como esta função apaga
@@ -87,11 +106,15 @@
 --     mudança de política aqui; só centralizado nesta função por
 --     atomicidade.
 --
--- GRANTS/SECURITY: mesmo padrão de erase_client_data/purge_client_consent_pii
--- — SEM SECURITY DEFINER (service_role já tem ALL grant em todas as tabelas
--- tocadas, confirmado por information_schema.role_table_grants na fase
--- anterior), só SET search_path = public + REVOKE ALL FROM PUBLIC, anon,
--- authenticated + GRANT EXECUTE TO service_role.
+-- GRANTS/SECURITY: erase_owner_data segue o mesmo padrão de
+-- erase_client_data/purge_client_consent_pii — SEM SECURITY DEFINER
+-- (service_role já tem ALL grant em todas as tabelas que ela toca,
+-- confirmado por information_schema.role_table_grants), só
+-- SET search_path = public + REVOKE ALL FROM PUBLIC, anon, authenticated +
+-- GRANT EXECUTE TO service_role. owner_erasure_plan é a ÚNICA exceção
+-- (ver comentário dela): é SECURITY DEFINER porque precisa ler auth.users,
+-- onde service_role não tem GRANT de tabela nesta base — com guarda
+-- explícita via aura_private.aura_system_bypass().
 --
 -- IDEMPOTENTE: toda condição é "WHERE owner_id = _owner_id" (ou equivalente)
 -- — reexecutar depois de já ter concluído tudo encontra zero linhas em toda
@@ -105,11 +128,37 @@ SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '30s';
 
 -- ===================== SEÇÃO A — plano somente leitura =====================
+-- FASE LEGAL-2C (18/11/2026): esta função PRECISA ler auth.users (para
+-- 'owner_exists') — confirmado empiricamente, contra produção, dentro de
+-- BEGIN...ROLLBACK, que service_role NÃO tem GRANT de tabela em auth.users
+-- neste projeto (information_schema.role_table_grants só lista 'postgres';
+-- erro real reproduzido: "permission denied for table users", com o HINT do
+-- próprio Postgres confirmando a ausência do GRANT). Sem isso, TODA chamada
+-- do orquestrador (sempre via service_role) falharia já no primeiro passo,
+-- antes de tocar em qualquer dado — pior que o bug do passo 4, que só afeta
+-- quem tem colaboradora com access_level. Por isso, diferente de
+-- erase_owner_data (que nunca toca auth.users e continua sem
+-- SECURITY DEFINER, como client_erasure_plan/erase_client_data), esta
+-- função é SECURITY DEFINER — mesmo padrão já usado no projeto pra tocar
+-- auth.users (handle_new_user, grant_admin_on_new_user,
+-- seed_access_levels_on_new_admin, seed_system_automations_on_new_admin,
+-- todas SECURITY DEFINER) — com guarda explícita reaproveitando
+-- aura_private.aura_system_bypass() (mesma função que já protege
+-- automations_protect_system_delete): só passa quando chamada como
+-- service_role sem JWT de usuário (auth.uid() IS NULL) — a mesma condição
+-- que o GRANT EXECUTE abaixo já deveria garantir, mas a guarda fica como
+-- defesa em profundidade caso o GRANT seja alterado por engano no futuro.
 CREATE OR REPLACE FUNCTION public.owner_erasure_plan(_owner_id uuid)
-RETURNS jsonb LANGUAGE plpgsql SET search_path = public AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
   _result jsonb;
 BEGIN
+  IF NOT aura_private.aura_system_bypass() THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '42501',
+      MESSAGE = 'AURA_OWNER_ERASURE_PLAN_FORBIDDEN: só service_role pode chamar esta função.';
+  END IF;
+
   SELECT jsonb_build_object(
     'owner_exists', EXISTS (SELECT 1 FROM auth.users WHERE id = _owner_id),
     'active_team_count', (
@@ -267,11 +316,15 @@ BEGIN
   GET DIAGNOSTICS _c = ROW_COUNT; _n := _n || jsonb_build_object('communication_provider_config_deleted', _c);
 
   -- Passo 4 — equipe (inclui 'terminated', que não bloqueou o passo 0) ANTES
-  -- de access_levels — team_members.access_level_id é ON DELETE RESTRICT,
-  -- sem isso o DELETE em access_levels (passo 7) falharia.
-  UPDATE public.team_members SET access_level_id = NULL
-  WHERE owner_id = _owner_id AND access_level_id IS NOT NULL;
-
+  -- de access_levels (passo 7) — team_members.access_level_id é ON DELETE
+  -- RESTRICT, mas isso só importa enquanto a linha-filha existir: apagando
+  -- TODO team_members do owner aqui, antes de chegar em access_levels mais
+  -- abaixo, zero linhas restam referenciando qualquer access_level deste
+  -- owner — o RESTRICT nunca dispara. NUNCA fazer UPDATE SET access_level_id
+  -- = NULL aqui (ver comentário do topo do arquivo, FASE LEGAL-2C): esse
+  -- UPDATE é bloqueado pelo trigger protect_access_level_id_update mesmo
+  -- como service_role, pra qualquer owner real com colaboradora já
+  -- vinculada a um access_level.
   DELETE FROM public.team_members WHERE owner_id = _owner_id;
   GET DIAGNOSTICS _c = ROW_COUNT; _n := _n || jsonb_build_object('team_members_deleted', _c);
 

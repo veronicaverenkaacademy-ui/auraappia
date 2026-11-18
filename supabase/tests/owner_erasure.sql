@@ -91,6 +91,7 @@ DECLARE
   v_msg_a_out uuid; v_msg_a_resolved uuid; v_msg_a2_out uuid; v_msg_a2_resolved uuid;
   v_msg_b_out uuid; v_msg_b_resolved uuid;
   v_al_a uuid;
+  v_product_a uuid; v_service_a uuid; v_conv_a uuid; v_automation_a uuid;
 BEGIN
   INSERT INTO auth.users (id) VALUES (v_owner_a), (v_owner_b), (v_shared);
 
@@ -104,9 +105,9 @@ BEGIN
   UPDATE zzoe_ids SET valor = v_client_a2 WHERE chave = 'client_a2_portal';
   UPDATE zzoe_ids SET valor = v_client_b1 WHERE chave = 'client_b1';
 
-  INSERT INTO public.appointments (owner_id, client_id, starts_at) VALUES (v_owner_a, v_client_a1, now()+interval '1 day') RETURNING id INTO v_appt_a1;
-  INSERT INTO public.appointments (owner_id, client_id, starts_at) VALUES (v_owner_a, v_client_a2, now()+interval '2 day') RETURNING id INTO v_appt_a2;
-  INSERT INTO public.appointments (owner_id, client_id, starts_at) VALUES (v_owner_b, v_client_b1, now()+interval '1 day') RETURNING id INTO v_appt_b1;
+  INSERT INTO public.appointments (owner_id, client_id, starts_at, ends_at) VALUES (v_owner_a, v_client_a1, now()+interval '1 day', now()+interval '1 day 1 hour') RETURNING id INTO v_appt_a1;
+  INSERT INTO public.appointments (owner_id, client_id, starts_at, ends_at) VALUES (v_owner_a, v_client_a2, now()+interval '2 day', now()+interval '2 day 1 hour') RETURNING id INTO v_appt_a2;
+  INSERT INTO public.appointments (owner_id, client_id, starts_at, ends_at) VALUES (v_owner_b, v_client_b1, now()+interval '1 day', now()+interval '1 day 1 hour') RETURNING id INTO v_appt_b1;
 
   INSERT INTO public.client_anamnesis (owner_id, client_id) VALUES (v_owner_a, v_client_a1);
   INSERT INTO public.client_photos (owner_id, client_id, storage_path) VALUES (v_owner_a, v_client_a1, v_owner_a::text || '/' || v_client_a1::text || '/foto1.jpg');
@@ -116,55 +117,61 @@ BEGIN
   -- fixture de LEGAL-1C (outbound separado da mensagem "resolvida", senão
   -- o CASCADE de outbound_message_id mascara o defeito que estamos
   -- provando que NÃO acontece mais).
-  INSERT INTO public.whatsapp_messages (owner_id, client_id, recipient_phone) VALUES (v_owner_a, NULL, '+5511900000001') RETURNING id INTO v_msg_a_out;
-  INSERT INTO public.whatsapp_messages (owner_id, client_id, recipient_phone) VALUES (v_owner_a, v_client_a1, '+5511900000001') RETURNING id INTO v_msg_a_resolved;
-  INSERT INTO public.whatsapp_central_threads (owner_id, client_id, appointment_id, outbound_message_id, resolved_by_message_id)
-    VALUES (v_owner_a, v_client_a1, v_appt_a1, v_msg_a_out, v_msg_a_resolved);
+  INSERT INTO public.whatsapp_messages (owner_id, client_id, direction, message_type, recipient_phone) VALUES (v_owner_a, NULL, 'outbound', 'template', '+5511900000001') RETURNING id INTO v_msg_a_out;
+  INSERT INTO public.whatsapp_messages (owner_id, client_id, direction, message_type, recipient_phone) VALUES (v_owner_a, v_client_a1, 'inbound', 'template', '+5511900000001') RETURNING id INTO v_msg_a_resolved;
+  INSERT INTO public.whatsapp_central_threads (owner_id, client_id, appointment_id, outbound_message_id, resolved_by_message_id, template_key, appointment_starts_at_snapshot)
+    VALUES (v_owner_a, v_client_a1, v_appt_a1, v_msg_a_out, v_msg_a_resolved, 'lembrete_24h', now()+interval '1 day');
 
-  INSERT INTO public.whatsapp_messages (owner_id, client_id, recipient_phone) VALUES (v_owner_a, NULL, '+5511900000002') RETURNING id INTO v_msg_a2_out;
-  INSERT INTO public.whatsapp_messages (owner_id, client_id, recipient_phone) VALUES (v_owner_a, v_client_a2, '+5511900000002') RETURNING id INTO v_msg_a2_resolved;
-  INSERT INTO public.whatsapp_confirmation_threads (owner_id, client_id, appointment_id, outbound_message_id, resolved_by_message_id)
-    VALUES (v_owner_a, v_client_a2, v_appt_a2, v_msg_a2_out, v_msg_a2_resolved);
+  INSERT INTO public.whatsapp_messages (owner_id, client_id, direction, message_type, recipient_phone) VALUES (v_owner_a, NULL, 'outbound', 'template', '+5511900000002') RETURNING id INTO v_msg_a2_out;
+  INSERT INTO public.whatsapp_messages (owner_id, client_id, direction, message_type, recipient_phone) VALUES (v_owner_a, v_client_a2, 'inbound', 'template', '+5511900000002') RETURNING id INTO v_msg_a2_resolved;
+  INSERT INTO public.whatsapp_confirmation_threads (owner_id, client_id, appointment_id, outbound_message_id, resolved_by_message_id, appointment_starts_at_snapshot)
+    VALUES (v_owner_a, v_client_a2, v_appt_a2, v_msg_a2_out, v_msg_a2_resolved, now()+interval '2 day');
 
-  INSERT INTO public.whatsapp_messages (owner_id, client_id, recipient_phone) VALUES (v_owner_b, NULL, '+5511900000003') RETURNING id INTO v_msg_b_out;
-  INSERT INTO public.whatsapp_messages (owner_id, client_id, recipient_phone) VALUES (v_owner_b, v_client_b1, '+5511900000003') RETURNING id INTO v_msg_b_resolved;
-  INSERT INTO public.whatsapp_central_threads (owner_id, client_id, appointment_id, outbound_message_id, resolved_by_message_id)
-    VALUES (v_owner_b, v_client_b1, v_appt_b1, v_msg_b_out, v_msg_b_resolved);
+  INSERT INTO public.whatsapp_messages (owner_id, client_id, direction, message_type, recipient_phone) VALUES (v_owner_b, NULL, 'outbound', 'template', '+5511900000003') RETURNING id INTO v_msg_b_out;
+  INSERT INTO public.whatsapp_messages (owner_id, client_id, direction, message_type, recipient_phone) VALUES (v_owner_b, v_client_b1, 'inbound', 'template', '+5511900000003') RETURNING id INTO v_msg_b_resolved;
+  INSERT INTO public.whatsapp_central_threads (owner_id, client_id, appointment_id, outbound_message_id, resolved_by_message_id, template_key, appointment_starts_at_snapshot)
+    VALUES (v_owner_b, v_client_b1, v_appt_b1, v_msg_b_out, v_msg_b_resolved, 'lembrete_24h', now()+interval '1 day');
 
   INSERT INTO public.whatsapp_blocked_recipients (owner_id, phone_e164) VALUES (v_owner_a, '+5511900000099');
-  INSERT INTO public.whatsapp_instances (owner_id, instance_token) VALUES (v_owner_a, 'zz-fake-token-a');
-  INSERT INTO public.whatsapp_instances (owner_id, instance_token) VALUES (v_owner_b, 'zz-fake-token-b');
+  INSERT INTO public.whatsapp_instances (owner_id, instance_token, instance_name) VALUES (v_owner_a, 'zz-fake-token-a', 'zz Instância A');
+  INSERT INTO public.whatsapp_instances (owner_id, instance_token, instance_name) VALUES (v_owner_b, 'zz-fake-token-b', 'zz Instância B');
 
-  INSERT INTO public.notification_jobs (owner_id, client_id, appointment_id) VALUES (v_owner_a, v_client_a1, v_appt_a1);
-  INSERT INTO public.marketing_sends (owner_id, client_id) VALUES (v_owner_a, v_client_a1);
+  INSERT INTO public.notification_jobs (owner_id, client_id, appointment_id, type, recipient_phone) VALUES (v_owner_a, v_client_a1, v_appt_a1, 'test', '+5511900000001');
+  INSERT INTO public.automations (owner_id, name, category) VALUES (v_owner_a, 'zz Automação A', 'zz_categoria') RETURNING id INTO v_automation_a;
+  -- marketing_sends exige automation_id OU journey_step_id preenchido.
+  INSERT INTO public.marketing_sends (owner_id, client_id, automation_id) VALUES (v_owner_a, v_client_a1, v_automation_a);
 
-  INSERT INTO public.service_materials (owner_id) VALUES (v_owner_a);
-  INSERT INTO public.stock_movements (owner_id) VALUES (v_owner_a);
-  INSERT INTO public.products (owner_id) VALUES (v_owner_a);
-  INSERT INTO public.product_batches (owner_id) VALUES (v_owner_a);
-  INSERT INTO public.suppliers (owner_id) VALUES (v_owner_a);
-  INSERT INTO public.agenda_blocks (owner_id) VALUES (v_owner_a);
-  INSERT INTO public.finance_goals (owner_id) VALUES (v_owner_a);
+  INSERT INTO public.products (owner_id, name) VALUES (v_owner_a, 'zz Produto A') RETURNING id INTO v_product_a;
+  INSERT INTO public.services (owner_id, name) VALUES (v_owner_a, 'zz Serviço A') RETURNING id INTO v_service_a;
+  INSERT INTO public.service_materials (owner_id, service_id, product_id) VALUES (v_owner_a, v_service_a, v_product_a);
+  INSERT INTO public.stock_movements (owner_id, product_id, kind, quantity) VALUES (v_owner_a, v_product_a, 'in', 1);
+  INSERT INTO public.product_batches (owner_id, product_id) VALUES (v_owner_a, v_product_a);
+  INSERT INTO public.suppliers (owner_id, name) VALUES (v_owner_a, 'zz Fornecedor A');
+  INSERT INTO public.agenda_blocks (owner_id, starts_at, ends_at) VALUES (v_owner_a, now()+interval '3 day', now()+interval '3 day 1 hour');
+  INSERT INTO public.finance_goals (owner_id, period) VALUES (v_owner_a, 'month');
   INSERT INTO public.finance_settings (owner_id) VALUES (v_owner_a);
-  INSERT INTO public.automations (owner_id) VALUES (v_owner_a);
-  INSERT INTO public.journeys (owner_id) VALUES (v_owner_a);
-  INSERT INTO public.message_templates (owner_id) VALUES (v_owner_a);
+  INSERT INTO public.journeys (owner_id, name, segment_key) VALUES (v_owner_a, 'zz Jornada A', 'zz_segmento');
+  INSERT INTO public.message_templates (owner_id, name, body) VALUES (v_owner_a, 'zz Template A', 'zz corpo do template');
   INSERT INTO public.communication_provider_config (owner_id) VALUES (v_owner_a);
-  INSERT INTO public.services (owner_id) VALUES (v_owner_a);
-  INSERT INTO public.portal_service_categories (owner_id) VALUES (v_owner_a);
+  INSERT INTO public.portal_service_categories (owner_id, name) VALUES (v_owner_a, 'zz Categoria Portal A');
 
   -- Equipe 'terminated' (não bloqueia) com access_level ainda vinculado —
   -- o caso que travava access_levels (RESTRICT) antes desta fase.
-  INSERT INTO public.access_levels (owner_id) VALUES (v_owner_a) RETURNING id INTO v_al_a;
-  INSERT INTO public.team_members (owner_id, status, access_level_id) VALUES (v_owner_a, 'terminated', v_al_a);
+  INSERT INTO public.access_levels (owner_id, name) VALUES (v_owner_a, 'zz Nível A') RETURNING id INTO v_al_a;
+  INSERT INTO public.team_members (owner_id, status, access_level_id, full_name) VALUES (v_owner_a, 'terminated', v_al_a, 'zz Ex-colaboradora A');
 
-  INSERT INTO public.company_profiles (owner_id) VALUES (v_owner_a);
-  INSERT INTO public.portal_configurations (owner_id, published_by, updated_by) VALUES (v_owner_a, v_owner_a, v_owner_a);
+  -- FASE LEGAL-2C: company_profiles tem um trigger AFTER INSERT
+  -- (portal_configurations_auto_create) que já cria a linha de
+  -- portal_configurations sozinho — inserir explicitamente colide com
+  -- PK (owner_id). Por isso aqui é UPDATE, nunca INSERT.
+  INSERT INTO public.company_profiles (owner_id, slug, display_name) VALUES (v_owner_a, 'zz-legal2b-owner-a', 'zz Empresa A');
+  UPDATE public.portal_configurations SET published_by = v_owner_a, updated_by = v_owner_a WHERE owner_id = v_owner_a;
 
-  INSERT INTO public.app_notifications (owner_id, recipient_user_id) VALUES (v_owner_a, v_owner_a);
-  INSERT INTO public.user_roles (user_id) VALUES (v_owner_a);
-  INSERT INTO public.profiles (id) VALUES (v_owner_a);
-  INSERT INTO public.finance_transactions (owner_id, description) VALUES (v_owner_a, 'zz descrição A');
+  INSERT INTO public.app_notifications (owner_id, recipient_user_id, kind, title, body) VALUES (v_owner_a, v_owner_a, 'test', 'zz título A', 'zz corpo A');
+  INSERT INTO public.user_roles (user_id, role) VALUES (v_owner_a, 'admin');
+  -- profiles já foi criado automaticamente pelo trigger on_auth_user_created
+  -- (handle_new_user) no INSERT de auth.users acima — NÃO inserir de novo.
+  INSERT INTO public.finance_transactions (owner_id, description, kind) VALUES (v_owner_a, 'zz descrição A', 'expense');
 
   INSERT INTO public.client_consents (owner_id, client_id, consent_type, choice, document_key, document_version, source, signer_name, evidence_ip, evidence_user_agent)
     VALUES (v_owner_a, v_client_a1, 'health_data', 'granted', 'termo-consentimento', '2026-08-04', 'studio_device', NULL, '203.0.113.1', 'zz-UA');
@@ -173,14 +180,18 @@ BEGIN
   INSERT INTO public.client_consents (owner_id, client_id, consent_type, choice, document_key, document_version, source)
     VALUES (v_owner_a, v_client_a2, 'image_use', 'granted_no_face', 'termo-consentimento', '2026-08-04', 'portal');
 
-  -- owner B — mesma forma, menor, só pra provar isolamento.
-  INSERT INTO public.client_anamnesis (owner_id, client_id) VALUES (v_owner_b, v_client_b1);
+  -- Chat legado (conversations/messages) — prova que o DELETE com subquery
+  -- (passo 3 da função, via conversation_id) também funciona de verdade.
+  INSERT INTO public.conversations (owner_id, client_id, contact_phone, contact_name) VALUES (v_owner_a, v_client_a1, '+5511900000001', 'zz A1') RETURNING id INTO v_conv_a;
+  INSERT INTO public.messages (owner_id, conversation_id, direction, content) VALUES (v_owner_a, v_conv_a, 'in', 'zz mensagem legada A');
+
+  -- owner B — mesma forma, menor, só pra provar isolamento. client_anamnesis
+  -- de B já foi inserido mais acima (client_id é PK, só 1 por cliente).
   INSERT INTO public.client_consents (owner_id, client_id, consent_type, choice, document_key, document_version, source)
     VALUES (v_owner_b, v_client_b1, 'health_data', 'granted', 'termo-consentimento', '2026-08-04', 'portal');
-  INSERT INTO public.app_notifications (owner_id, recipient_user_id) VALUES (v_owner_b, v_owner_b);
-  INSERT INTO public.user_roles (user_id) VALUES (v_owner_b);
-  INSERT INTO public.profiles (id) VALUES (v_owner_b);
-  INSERT INTO public.company_profiles (owner_id) VALUES (v_owner_b);
+  INSERT INTO public.app_notifications (owner_id, recipient_user_id, kind, title, body) VALUES (v_owner_b, v_owner_b, 'test', 'zz título B', 'zz corpo B');
+  INSERT INTO public.user_roles (user_id, role) VALUES (v_owner_b, 'admin');
+  INSERT INTO public.company_profiles (owner_id, slug, display_name) VALUES (v_owner_b, 'zz-legal2b-owner-b', 'zz Empresa B');
 
   INSERT INTO public.audit_log (owner_id, actor_id, action, resource) VALUES (v_owner_a, v_owner_a, 'zz_evento_anterior', 'zz_recurso');
 END $setup$;
@@ -200,7 +211,7 @@ DECLARE
   v_owner_a uuid := (SELECT valor FROM zzoe_ids WHERE chave='owner_a');
   v_sqlstate text; v_falhou boolean := false;
 BEGIN
-  INSERT INTO public.team_members (owner_id, status) VALUES (v_owner_a, 'active');
+  INSERT INTO public.team_members (owner_id, status, full_name) VALUES (v_owner_a, 'active', 'zz Colaboradora Ativa');
   BEGIN
     SET ROLE service_role;
     PERFORM public.erase_owner_data(v_owner_a);
@@ -474,7 +485,7 @@ BEGIN
   INSERT INTO auth.users (id) VALUES (v_owner_c);
   INSERT INTO public.clients (owner_id, full_name, user_id) VALUES (v_owner_c, 'zz C1 portal', v_shared) RETURNING id INTO v_client_c;
   INSERT INTO public.client_photos (owner_id, client_id, storage_path) VALUES (v_owner_c, v_client_c, v_owner_c::text || '/' || v_client_c::text || '/foto.jpg');
-  INSERT INTO public.company_profiles (owner_id) VALUES (v_owner_c);
+  INSERT INTO public.company_profiles (owner_id, slug, display_name) VALUES (v_owner_c, 'zz-legal2b-owner-c', 'zz Empresa C');
 
   SET ROLE service_role;
   SELECT public.owner_erasure_plan(v_owner_c) INTO v_plan;
