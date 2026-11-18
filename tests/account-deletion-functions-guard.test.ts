@@ -68,7 +68,10 @@ test("GUARDA: deleteStaffAccount/deleteOwnerAccount (lógica de dados) não fora
   const staffStart = src.indexOf("async function deleteStaffAccount");
   const ownerStart = src.indexOf("async function deleteOwnerAccount");
   const staffBody = src.slice(staffStart, ownerStart);
-  const ownerBody = src.slice(ownerStart, src.indexOf("async function removeAllUnderPrefix"));
+  // FASE LEGAL-2: deleteOwnerAccount passou a ser a última declaração do
+  // arquivo (removeAllUnderPrefix não existe mais — a limpeza de Storage
+  // agora é melhor esforço dentro de src/lib/owner-erasure.server.ts).
+  const ownerBody = src.slice(ownerStart);
   assert.doesNotMatch(staffBody, /appleRevokeRequired/);
   assert.doesNotMatch(ownerBody, /appleRevokeRequired/);
   assert.match(staffBody, /return \{ ok: true \};/);
