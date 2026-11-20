@@ -36,10 +36,25 @@ test("GUARDA: acceptPendingTerms só roda quando o checkbox foi marcado nesta et
   assert.match(body, /if \(!pendingSignup\?\.terms_accepted_at\) return;/);
 });
 
-test("GUARDA: os dois pontos que chamam applyPendingSignupData também chamam acceptPendingTerms logo depois", () => {
-  const occurrences = [
-    ...src.matchAll(/await applyPendingSignupData\([^)]*\);\s*\n\s*await acceptPendingTerms\(\);/g),
-  ];
+// FASE AUTH-1 (20/11/2026): os dois pontos de entrada (getSession().then e
+// onAuthStateChange) pararam de chamar applyPendingSignupData/
+// acceptPendingTerms diretamente — os dois agora chamam finishLogin, que
+// centraliza essa ordem (e também o claim do papel de profissional) num
+// único lugar. A garantia de ordem (applyPendingSignupData sempre antes
+// de acceptPendingTerms) passou a valer DENTRO de finishLogin; a garantia
+// de "os dois pontos de entrada chamam isso" passou a ser "os dois pontos
+// chamam finishLogin".
+test("GUARDA: finishLogin chama applyPendingSignupData e DEPOIS acceptPendingTerms, nesta ordem, uma única vez", () => {
+  const start = src.indexOf("const finishLogin = async (userId: string) => {");
+  assert.ok(start > -1, "finishLogin não encontrada");
+  const body = src.slice(start, src.indexOf("\n  };", start));
+  const applyIdx = body.indexOf("await applyPendingSignupData(userId);");
+  const acceptIdx = body.indexOf("await acceptPendingTerms();");
+  assert.ok(applyIdx > -1 && acceptIdx > -1 && applyIdx < acceptIdx);
+});
+
+test("GUARDA: os dois pontos de entrada (getSession + onAuthStateChange) chamam finishLogin, não mais applyPendingSignupData/acceptPendingTerms direto", () => {
+  const occurrences = [...src.matchAll(/await finishLogin\(/g)];
   assert.equal(
     occurrences.length,
     2,
