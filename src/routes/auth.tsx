@@ -10,9 +10,17 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { SIGNUP_STORAGE_KEY, type PendingSignupData } from "@/lib/signup";
+import {
+  SIGNUP_STORAGE_KEY,
+  type PendingSignupData,
+  markSignupInProgress,
+  hasSignupInProgress,
+  clearSignupInProgress,
+} from "@/lib/signup";
 import { formatCEP, lookupCEP } from "@/lib/cep";
 import { acceptMyTerms } from "@/lib/professional-terms.functions";
+import { claimProfessionalRole } from "@/lib/claim-professional-role.functions";
+import { phoneAuthErrorMessage } from "@/lib/phone-auth-error";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
@@ -90,6 +98,7 @@ function AuthPage() {
   const navigate = useNavigate();
   const search = Route.useSearch();
   const acceptTermsFn = useServerFn(acceptMyTerms);
+  const claimRoleFn = useServerFn(claimProfessionalRole);
   const [step, setStep] = useState<Step>("social");
   // Lê o rascunho de /cadastro (se houver) uma única vez, ao montar — usado pra
   // pré-preencher o telefone e pro painel de diagnóstico abaixo.
@@ -224,69 +233,146 @@ function AuthPage() {
     }
   };
 
+  // FASE AUTH-1 (20/11/2026) — concede o papel de profissional (ver
+  // src/lib/claim-professional-role.server.ts pro modelo de ameaça
+  // completo) assim que a autenticação conclui em modo cadastro. Nunca
+  // bloqueia o resto do fluxo se falhar (mesmo padrão de
+  // acceptPendingTerms acima): se a conta não puder virar profissional
+  // (já é cliente/colaboradora, por exemplo), ela simplesmente fica sem
+  // papel e o guard de _authenticated manda pra /conta-nao-concluida, sem
+  // loop — não precisa de tratamento especial aqui.
+  const claimRole = async () => {
+    try {
+      const result = await claimRoleFn();
+      if (!result.ok) {
+        console.error("[auth] claimProfessionalRole recusou conceder o papel", result.error);
+      }
+    } catch (e) {
+      console.error("[auth] Falha ao chamar claimProfessionalRole", e);
+    }
+  };
+
+  // Roda uma única vez por sessão detectada (getSession no mount OU o
+  // primeiro SIGNED_IN/INITIAL_SESSION de onAuthStateChange — nunca os
+  // dois pra mesma sessão, já que o listener só dispara de novo em
+  // mudanças futuras). Em modo cadastro (search.signup), reivindica o
+  // papel ANTES de aplicar o rascunho — claimProfessionalRole não depende
+  // dos dados de profiles, então a ordem entre os dois não importa pro
+  // resultado, mas chamar o claim primeiro deixa o papel (e os gatilhos de seed
+  // que ele dispara) prontos o quanto antes.
+  const finishLogin = async (userId: string) => {
+    if (search.signup) {
+      await claimRole();
+    }
+    await applyPendingSignupData(userId);
+    await acceptPendingTerms();
+    if (search.signup) {
+      clearSignupInProgress();
+    }
+    navigateAfterAuth();
+  };
+
   useEffect(() => {
+    // Restaura o contexto de cadastro perdido num redirect de OAuth —
+    // Apple/Google (fora de iframe) fazem um redirecionamento de página
+    // inteira pro redirect_uri, que nunca leva querystring (ver
+    // socialSignIn abaixo); a navegação aqui é só interna (replace, sem
+    // recarregar) e o próximo render já chega com search.signup=true, daí
+    // o `return` — evita rodar o resto deste efeito com o valor antigo.
+    if (!search.signup && hasSignupInProgress()) {
+      navigate({ to: "/auth", search: { next: search.next, signup: true }, replace: true });
+      return;
+    }
+
     supabase.auth.getSession().then(async ({ data }) => {
       if (data.session) {
-        await applyPendingSignupData(data.session.user.id);
-        await acceptPendingTerms();
-        navigateAfterAuth();
+        await finishLogin(data.session.user.id);
       }
     });
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
       if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session) {
-        await applyPendingSignupData(session.user.id);
-        await acceptPendingTerms();
-        navigateAfterAuth();
+        await finishLogin(session.user.id);
       }
     });
     return () => sub.subscription.unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigate, search.next]);
+  }, [navigate, search.next, search.signup]);
 
   const normalized = (raw: string) => {
     const digits = raw.replace(/\D/g, "");
     return digits.startsWith("55") ? `+${digits}` : `+55${digits}`;
   };
 
+  // FASE AUTH-1 (20/11/2026) — sendCode/verify agora SEMPRE em try/catch
+  // (antes, uma rejeição de promise — rede, CORS, SDK — ficava sem
+  // tratamento nenhum) e nunca mostram error.message cru nem o objeto de
+  // erro: tudo passa por phoneAuthErrorMessage (src/lib/phone-auth-error.ts),
+  // que também documenta a investigação do "{}" relatado na FASE LEGAL-2F
+  // (não confirmada). O erro real (não a mensagem amigável) só vai pro
+  // console, nunca pro toast, e nunca inclui o telefone.
   const sendCode = async () => {
     if (phone.replace(/\D/g, "").length < 10) {
       toast.error("Digite um número de telefone válido");
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({
-      phone: normalized(phone),
-      // Metadata só é gravada se essa verificação criar um auth.users novo (login de
-      // telefone já existente ignora). O trigger grant_admin_on_new_user só concede
-      // admin quando acha user_type:"professional" aqui — sem isso (inclusive o futuro
-      // login do portal da cliente, que usa a mesma signInWithOtp), a conta nasce sem
-      // role nenhuma.
-      ...(search.signup ? { options: { data: { user_type: "professional" } } } : {}),
-    });
-    setLoading(false);
-    if (error) {
-      toast.error(
-        error.message.includes("provider")
-          ? "SMS ainda não configurado. Ative um provedor SMS em Cloud → Auth."
-          : error.message,
-      );
-      return;
+    // Marca ANTES de enviar — se o app recarregar/perder o estado durante o
+    // envio (ou entre enviar o código e verificar), o cadastro ainda é
+    // recuperável (ver hasSignupInProgress no useEffect acima).
+    if (search.signup) markSignupInProgress();
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: normalized(phone),
+        // Metadata só é gravada se essa verificação criar um auth.users novo
+        // (login de telefone já existente ignora). ATENÇÃO (requisito 7 da
+        // FASE AUTH-1): isso é lido pelo trigger grant_admin_on_new_user
+        // SEM nenhuma checagem server-side — qualquer chamador direto do
+        // SDK do Supabase (não só este app) pode mandar esse metadata e se
+        // autodeclarar profissional. Comportamento PRÉ-EXISTENTE, mantido
+        // sem mudança por falta de autorização pra mexer no trigger — ver
+        // relatório desta fase. claimProfessionalRole (chamada em
+        // finishLogin, acima) é o caminho NOVO e seguro; este continua
+        // existindo em paralelo só pra não quebrar o comportamento atual.
+        ...(search.signup ? { options: { data: { user_type: "professional" } } } : {}),
+      });
+      if (error) {
+        toast.error(phoneAuthErrorMessage(error));
+        return;
+      }
+      toast.success("Código enviado por SMS");
+      setStep("otp");
+    } catch (e) {
+      console.error("[auth] Falha ao enviar código por telefone", e);
+      toast.error(phoneAuthErrorMessage(e));
+    } finally {
+      setLoading(false);
     }
-    toast.success("Código enviado por SMS");
-    setStep("otp");
   };
 
   const verify = async () => {
     if (code.length !== 6) return;
     setLoading(true);
-    const { error } = await supabase.auth.verifyOtp({
-      phone: normalized(phone),
-      token: code,
-      type: "sms",
-    });
-    setLoading(false);
-    if (error) return toast.error("Código inválido");
-    navigateAfterAuth();
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        phone: normalized(phone),
+        token: code,
+        type: "sms",
+      });
+      if (error) {
+        toast.error(phoneAuthErrorMessage(error));
+        return;
+      }
+      // A navegação pós-login roda via onAuthStateChange (useEffect acima)
+      // — o mesmo SIGNED_IN desta verificação dispara dali, passando por
+      // finishLogin (claim do papel + rascunho), igual ao caminho
+      // OAuth/sessão já existente. Chamar navigateAfterAuth aqui de novo
+      // duplicaria a navegação sem rodar claim/rascunho.
+    } catch (e) {
+      console.error("[auth] Falha ao verificar código", e);
+      toast.error(phoneAuthErrorMessage(e));
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Login de colaboradora: e-mail (identificador sintético gerado na criação) + senha
@@ -328,8 +414,22 @@ function AuthPage() {
     setLoading(true);
     try {
       window.sessionStorage.setItem("aura_auth_next", getDestination());
+      // FASE AUTH-1 (20/11/2026) — marca o cadastro em andamento ANTES do
+      // redirect (ver src/lib/signup.ts): é a fonte de verdade pra
+      // restaurar signup=true depois, porque @lovable.dev/cloud-auth-js
+      // (lido em node_modules/@lovable.dev/cloud-auth-js/dist/index.js),
+      // fora de iframe, faz `window.location.href = ...` — um
+      // redirecionamento de página inteira que não garante nada sobre o
+      // que volta no redirect_uri. Mesmo assim, inclui signup=true no
+      // redirect_uri abaixo só por garantia, caso o broker da Lovable
+      // preserve esse parâmetro no retorno (não verificado — fora deste
+      // repositório); se não preservar, o marcador em sessionStorage
+      // resolve sozinho.
+      if (search.signup) markSignupInProgress();
+      const redirectUri =
+        window.location.origin + "/auth" + (search.signup ? "?signup=true" : "");
       const res = await lovable.auth.signInWithOAuth(provider, {
-        redirect_uri: window.location.origin + "/auth",
+        redirect_uri: redirectUri,
       });
       // Cast solto só pra esse log/checagem de diagnóstico — não confio no shape exato
       // retornado pelo pacote externo (@lovable.dev/cloud-auth-js) sem ver o código-fonte dele.
@@ -364,7 +464,7 @@ function AuthPage() {
         : step === "staff"
           ? "Entrar como colaboradora"
           : search.signup
-            ? "Continue seu cadastro"
+            ? "Falta pouco: confirme sua identidade"
             : "Entre na sua conta";
 
   return (

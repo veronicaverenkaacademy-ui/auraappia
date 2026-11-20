@@ -16,6 +16,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as CadastroRouteImport } from './routes/cadastro'
 import { Route as ContaDesativadaRouteImport } from './routes/conta-desativada'
 import { Route as ContaExcluidaRouteImport } from './routes/conta-excluida'
+import { Route as ContaNaoConcluidaRouteImport } from './routes/conta-nao-concluida'
 import { Route as PoliticaDePrivacidadeRouteImport } from './routes/politica-de-privacidade'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as TermoConsentimentoRouteImport } from './routes/termo-consentimento'
@@ -110,6 +111,11 @@ const ContaDesativadaRoute = ContaDesativadaRouteImport.update({
 const ContaExcluidaRoute = ContaExcluidaRouteImport.update({
   id: '/conta-excluida',
   path: '/conta-excluida',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContaNaoConcluidaRoute = ContaNaoConcluidaRouteImport.update({
+  id: '/conta-nao-concluida',
+  path: '/conta-nao-concluida',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PoliticaDePrivacidadeRoute = PoliticaDePrivacidadeRouteImport.update({
@@ -450,6 +456,7 @@ export interface FileRoutesByFullPath {
   '/cadastro': typeof CadastroRoute
   '/conta-desativada': typeof ContaDesativadaRoute
   '/conta-excluida': typeof ContaExcluidaRoute
+  '/conta-nao-concluida': typeof ContaNaoConcluidaRoute
   '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
   '/portal': typeof PortalRoute
   '/termo-consentimento': typeof TermoConsentimentoRoute
@@ -519,6 +526,7 @@ export interface FileRoutesByTo {
   '/cadastro': typeof CadastroRoute
   '/conta-desativada': typeof ContaDesativadaRoute
   '/conta-excluida': typeof ContaExcluidaRoute
+  '/conta-nao-concluida': typeof ContaNaoConcluidaRoute
   '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
   '/portal': typeof PortalRoute
   '/termo-consentimento': typeof TermoConsentimentoRoute
@@ -581,6 +589,7 @@ export interface FileRoutesById {
   '/cadastro': typeof CadastroRoute
   '/conta-desativada': typeof ContaDesativadaRoute
   '/conta-excluida': typeof ContaExcluidaRoute
+  '/conta-nao-concluida': typeof ContaNaoConcluidaRoute
   '/politica-de-privacidade': typeof PoliticaDePrivacidadeRoute
   '/portal': typeof PortalRoute
   '/termo-consentimento': typeof TermoConsentimentoRoute
@@ -652,6 +661,7 @@ export interface FileRouteTypes {
     | '/cadastro'
     | '/conta-desativada'
     | '/conta-excluida'
+    | '/conta-nao-concluida'
     | '/politica-de-privacidade'
     | '/portal'
     | '/termo-consentimento'
@@ -721,6 +731,7 @@ export interface FileRouteTypes {
     | '/cadastro'
     | '/conta-desativada'
     | '/conta-excluida'
+    | '/conta-nao-concluida'
     | '/politica-de-privacidade'
     | '/portal'
     | '/termo-consentimento'
@@ -782,6 +793,7 @@ export interface FileRouteTypes {
     | '/cadastro'
     | '/conta-desativada'
     | '/conta-excluida'
+    | '/conta-nao-concluida'
     | '/politica-de-privacidade'
     | '/portal'
     | '/termo-consentimento'
@@ -853,6 +865,7 @@ export interface RootRouteChildren {
   CadastroRoute: typeof CadastroRoute
   ContaDesativadaRoute: typeof ContaDesativadaRoute
   ContaExcluidaRoute: typeof ContaExcluidaRoute
+  ContaNaoConcluidaRoute: typeof ContaNaoConcluidaRoute
   PoliticaDePrivacidadeRoute: typeof PoliticaDePrivacidadeRoute
   PortalRoute: typeof PortalRoute
   TermoConsentimentoRoute: typeof TermoConsentimentoRoute
@@ -909,6 +922,13 @@ declare module '@tanstack/react-router' {
       path: '/conta-excluida'
       fullPath: '/conta-excluida'
       preLoaderRoute: typeof ContaExcluidaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/conta-nao-concluida': {
+      id: '/conta-nao-concluida'
+      path: '/conta-nao-concluida'
+      fullPath: '/conta-nao-concluida'
+      preLoaderRoute: typeof ContaNaoConcluidaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/politica-de-privacidade': {
@@ -1565,6 +1585,7 @@ const rootRouteChildren: RootRouteChildren = {
   CadastroRoute: CadastroRoute,
   ContaDesativadaRoute: ContaDesativadaRoute,
   ContaExcluidaRoute: ContaExcluidaRoute,
+  ContaNaoConcluidaRoute: ContaNaoConcluidaRoute,
   PoliticaDePrivacidadeRoute: PoliticaDePrivacidadeRoute,
   PortalRoute: PortalRoute,
   TermoConsentimentoRoute: TermoConsentimentoRoute,

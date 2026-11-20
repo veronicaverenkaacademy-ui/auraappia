@@ -21,8 +21,18 @@ export const Route = createFileRoute("/_authenticated")({
       staleTime: 60_000,
     });
 
+    // FASE AUTH-1 (20/11/2026): sessão existe mas sem NENHUM papel é uma
+    // conta "órfã" — nasceu de um login (Apple/Google/telefone) que nunca
+    // chegou a virar profissional nem foi vinculada como colaboradora (ver
+    // claimProfessionalRole). Redirecionar pra /auth aqui, como antes,
+    // causava LOOP: supabase.auth.getSession() ainda encontra a sessão
+    // válida lá, então o próprio /auth navegava de volta pra uma rota
+    // protegida, que rodava este beforeLoad de novo e mandava pra /auth
+    // outra vez, indefinidamente. /conta-nao-concluida é rota IRMÃ (fora
+    // de _authenticated, mesmo padrão de /conta-desativada — ver o
+    // comentário lá) de propósito: não reentra neste beforeLoad.
     if (role !== "admin" && role !== "staff") {
-      throw authRedirect();
+      throw redirect({ to: "/conta-nao-concluida" });
     }
 
     // Checagem pós-login independente de como a sessão foi criada (Apple/Google via
