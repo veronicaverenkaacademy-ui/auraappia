@@ -20,6 +20,18 @@
 // por requireSupabaseAuth, no wrapper em claim-professional-role.functions.ts),
 // nunca de um campo que o chamador escolhe. E mesmo com um `userId` válido
 // (uma sessão real), a função recusa conceder o papel quando:
+//   - a conta tem `app_metadata.aura_account_kind === "client_portal"`
+//     (FASE AUTH-1C, 22/11/2026) — marca gravada SÓ pelo servidor, no
+//     momento em que o portal de clientes cria a conta (ver
+//     src/lib/otp/otp.functions.ts, createAuthUser). Fecha uma corrida
+//     real encontrada na FASE AUTH-1B: a cliente do portal já tem sessão
+//     (verifyClientOtp + setSession) ANTES de clients.user_id ser gravado
+//     (linkClientAccount, chamado depois, numa requisição separada —
+//     src/hooks/use-client-auth.ts, verify()); nessa janela, a checagem de
+//     clients.user_id abaixo ainda não via vínculo nenhum e aceitaria a
+//     reivindicação. app_metadata (ao contrário de user_metadata) só pode
+//     ser escrito pela Admin API (service_role) — o navegador não
+//     consegue forjar nem apagar essa marca.
 //   - a conta JÁ é uma colaboradora (team_members.user_id = userId) — ela
 //     já tem acesso pelo papel 'staff' que a dona concedeu; virar
 //     'admin' por este caminho seria escalar privilégio sem a dona saber.
@@ -28,8 +40,17 @@
 //     entrar no portal de alguma profissional como cliente; essa conta
 //     nunca deveria também virar "dona" de um estúdio novo sem uma decisão
 //     explícita (fora do escopo desta fase).
-// Em QUALQUER desses dois casos, nada é inserido em user_roles — a função
+// Em QUALQUER desses três casos, nada é inserido em user_roles — a função
 // devolve erro genérico, sem detalhe técnico.
+//
+// NOTA (FASE AUTH-1C): como auth.users.phone tem UNIQUE constraint
+// (confirmado em produção), o mesmo número não pode ter duas contas
+// separadas — uma profissional cujo telefone já foi usado como cliente de
+// ALGUM salão já era recusada por este mesmo motivo (vínculo em
+// `clients`) mesmo ANTES desta fase; a marca de app_metadata não piora
+// nem muda esse caso, só fecha a janela de corrida pra contas que ainda
+// não tinham o vínculo gravado. Contas de portal criadas ANTES desta fase
+// não têm a marca (risco residual — ver relatório da FASE AUTH-1C).
 //
 // IDEMPOTÊNCIA: se a conta já tem QUALQUER linha em user_roles (inclusive
 // uma concedida por uma chamada anterior desta mesma função), a segunda
@@ -52,7 +73,18 @@ export const CLAIM_PROFESSIONAL_ROLE_GENERIC_ERROR =
 
 type PgError = { message: string };
 
+const CLIENT_PORTAL_ACCOUNT_KIND = "client_portal";
+
 export type ClaimRoleDb = {
+  auth: {
+    admin: {
+      getUserById(userId: string): Promise<{
+        data: { user: { app_metadata?: Record<string, unknown> | null } | null };
+        error: PgError | null;
+      }>;
+    };
+  };
+} & {
   from(table: "user_roles"): {
     select(cols: string): {
       eq(
@@ -89,6 +121,15 @@ export async function claimProfessionalRoleCore(
     // Já tem papel (desta função ou de outro caminho) — nada a fazer, nunca
     // concede um segundo papel nem duplica o existente.
     return { ok: true, alreadyClaimed: true };
+  }
+
+  const { data: userData, error: userErr } = await db.auth.admin.getUserById(userId);
+  if (userErr) {
+    console.error("[claim-professional-role] Falha ao ler metadata da conta", userErr.message);
+    return { ok: false, error: CLAIM_PROFESSIONAL_ROLE_GENERIC_ERROR };
+  }
+  if (userData.user?.app_metadata?.aura_account_kind === CLIENT_PORTAL_ACCOUNT_KIND) {
+    return { ok: false, error: CLAIM_PROFESSIONAL_ROLE_GENERIC_ERROR };
   }
 
   const { data: clientLink, error: clientErr } = await db

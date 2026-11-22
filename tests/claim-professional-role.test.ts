@@ -18,6 +18,8 @@ const USER_ID = "user-x";
 type FakeOptions = {
   existingRoles?: { role: string }[];
   rolesReadError?: { message: string } | null;
+  appMetadata?: Record<string, unknown> | null;
+  getUserError?: { message: string } | null;
   clientLinks?: unknown[];
   clientsReadError?: { message: string } | null;
   teamLinks?: unknown[];
@@ -30,6 +32,21 @@ function makeFakeDb(opts: FakeOptions = {}) {
   const inserted: { user_id: string; role: string }[] = [];
 
   const db: ClaimRoleDb = {
+    auth: {
+      admin: {
+        getUserById: (userId: string) => {
+          assert.equal(userId, USER_ID);
+          calls.push("read-app-metadata");
+          if (opts.getUserError) {
+            return Promise.resolve({ data: { user: null }, error: opts.getUserError });
+          }
+          return Promise.resolve({
+            data: { user: { app_metadata: opts.appMetadata ?? {} } },
+            error: null,
+          });
+        },
+      },
+    },
     from(table: "user_roles" | "clients" | "team_members") {
       if (table === "user_roles") {
         return {
@@ -101,10 +118,48 @@ test("concede o papel a uma conta nova (sem role, sem vínculo de cliente/colabo
   assert.deepEqual(inserted, [{ user_id: USER_ID, role: "admin" }]);
   assert.deepEqual(calls, [
     "read-user-roles",
+    "read-app-metadata",
     "read-clients",
     "read-team-members",
     "insert-user-roles",
   ]);
+});
+
+// FASE AUTH-1C (22/11/2026): fecha a corrida achada na FASE AUTH-1B — uma
+// cliente do portal tem sessão antes de clients.user_id existir; a marca
+// em app_metadata (gravada só pelo servidor, ver otp.functions.ts) cobre
+// essa janela.
+test("recusa conta marcada como client_portal em app_metadata — erro genérico, nada inserido", async () => {
+  const { db, inserted, calls } = makeFakeDb({
+    appMetadata: { aura_account_kind: "client_portal" },
+  });
+  const result = await claimProfessionalRoleCore(USER_ID, db);
+  assert.deepEqual(result, { ok: false, error: CLAIM_PROFESSIONAL_ROLE_GENERIC_ERROR });
+  assert.deepEqual(inserted, []);
+  assert.ok(
+    !calls.includes("read-clients"),
+    "nem precisa checar clients.user_id depois de recusar pela marca — é exatamente o caso em que esse vínculo ainda não existe",
+  );
+});
+
+test("aceita conta sem a marca de portal (app_metadata vazio) — segue a checagem normal", async () => {
+  const { db, inserted } = makeFakeDb({ appMetadata: {} });
+  const result = await claimProfessionalRoleCore(USER_ID, db);
+  assert.deepEqual(result, { ok: true, alreadyClaimed: false });
+  assert.deepEqual(inserted, [{ user_id: USER_ID, role: "admin" }]);
+});
+
+test("aceita conta cujo app_metadata tem outras chaves, mas não aura_account_kind", async () => {
+  const { db } = makeFakeDb({ appMetadata: { provider: "apple" } });
+  const result = await claimProfessionalRoleCore(USER_ID, db);
+  assert.deepEqual(result, { ok: true, alreadyClaimed: false });
+});
+
+test("erro ao ler app_metadata (getUserById) devolve erro genérico, sem inserir nada", async () => {
+  const { db, inserted } = makeFakeDb({ getUserError: { message: "falha de rede" } });
+  const result = await claimProfessionalRoleCore(USER_ID, db);
+  assert.deepEqual(result, { ok: false, error: CLAIM_PROFESSIONAL_ROLE_GENERIC_ERROR });
+  assert.deepEqual(inserted, []);
 });
 
 test("idempotente: segunda chamada pra conta que já foi reivindicada não insere de novo", async () => {
