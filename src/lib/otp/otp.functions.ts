@@ -209,9 +209,19 @@ export const verifyClientOtp = createServerFn({ method: "POST" })
         verifyOtpCode,
         generateRandomPassword,
         createAuthUser: async (phoneForUser) => {
+          // FASE AUTH-1C (22/11/2026): marca a conta como "cliente do
+          // portal" em app_metadata — só a Admin API (service_role) grava
+          // ali, o navegador nunca consegue forjar nem apagar essa marca
+          // (ao contrário de user_metadata). claimProfessionalRoleCore
+          // (src/lib/claim-professional-role.server.ts) lê essa marca e
+          // recusa virar profissional, fechando a janela entre esta
+          // chamada e linkClientAccount gravar clients.user_id (achado da
+          // FASE AUTH-1B). Não muda nada do fluxo de OTP em si — só o
+          // objeto gravado na criação da conta.
           const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
             phone: phoneForUser,
             phone_confirm: true,
+            app_metadata: { aura_account_kind: "client_portal" },
           });
           if (!createErr && created.user) return { ok: true, userId: created.user.id };
           const code = (createErr as { code?: string } | null)?.code;
