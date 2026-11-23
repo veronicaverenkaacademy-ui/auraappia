@@ -1,0 +1,39 @@
+-- FASE OPS-1 (Parte B) — ligar o AGENDAMENTO da limpeza de
+-- client_otp_codes. ESTE ARQUIVO É SÓ COMENTÁRIO — nenhum comando SQL
+-- executável abaixo, mesmo padrão de 20261112210000_whatsapp_cron_schedule.sql
+-- (LEMBRETES-1): a migração 20261123190000 só PREPARA a função; ligar um
+-- job que passa a rodar sozinho, pra sempre, é uma decisão operacional
+-- separada da aplicação da função em si. Autorização própria, distinta de
+-- "AUTORIZO APLICAR MIGRAÇÃO FASE OPS-1".
+--
+-- MECANISMO ESCOLHIDO: pg_cron chamando a função SQL DIRETO (não via
+-- net.http_post/rota do app, diferente do job de lembretes do WhatsApp).
+-- Motivo: o job de lembretes PRECISA de código de aplicação (chamar a API
+-- da Meta, ler segredos do app) — por isso passa por uma rota HTTP com
+-- segredo no Vault. A limpeza daqui é SQL puro (um DELETE em lote); fazer
+-- pg_cron chamar a função direto remove dois pontos de falha que o job de
+-- lembretes precisa tolerar (rede HTTP, leitura de segredo) sem ganhar
+-- nada em troca — mais simples E mais confiável pro que esta tarefa
+-- precisa. pg_cron já está instalado e ativo nesta instância (extensão
+-- pg_cron 1.6.4, confirmado por consulta nesta fase; job
+-- 'whatsapp-reminders-pg-cron' já rodando desde LEMBRETES-1).
+--
+-- FREQUÊNCIA: de hora em hora é generoso o bastante — com os tetos atuais
+-- (OTP_GLOBAL_DAILY_CAP = 300/dia), o volume de linhas com mais de 48h
+-- num dado momento fica bem abaixo do lote de 5000 da função (ver
+-- cabeçalho de 20261123190000), então uma chamada por hora deve sempre
+-- zerar o backlog antes da próxima rodada — não há necessidade de rodar
+-- mais seguido que isso só para "não deixar acumular". Minuto 11 (fora de
+-- hora cheia) só para não competir no mesmo instante exato do job de
+-- lembretes (que roda em :00/:02/:04...).
+--
+-- Quando autorizado, o comando real (hoje só em comentário) seria:
+--
+-- select cron.schedule(
+--   'client-otp-codes-cleanup',
+--   '11 * * * *',  -- uma vez por hora, no minuto 11
+--   $$ select public.cleanup_old_client_otp_codes(); $$
+-- );
+--
+-- Reversão (depois de ligado, se for preciso desligar):
+-- select cron.unschedule('client-otp-codes-cleanup');
