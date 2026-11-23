@@ -86,12 +86,32 @@ test("GUARDA: o Conselho não tem mais 'impact' numérico inventado pela IA — 
   assert.match(src, /whatToMeasure/);
 });
 
+// FASE IA-1B (item 4) — a chave do Google (e qualquer outra) nunca vai como query param (?key=/
+// &key=) em nenhuma URL — fica sempre em header. URLs costumam acabar em logs de proxy/servidor fora
+// do nosso controle; headers não.
+test("GUARDA: nenhum adaptador/listador de modelos manda a chave de API como query param (?key=) na URL", () => {
+  const files = [
+    "src/lib/aura-ai/adapters/anthropic.server.ts",
+    "src/lib/aura-ai/adapters/google.server.ts",
+    "src/lib/aura-ai/adapters/lovable.server.ts",
+    "src/lib/aura-ai/laboratory/list-models.server.ts",
+  ];
+  for (const path of files) {
+    const src = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+    // Procura pelo padrão de CÓDIGO (interpolação depois de "?key=" ou "&key="), não por qualquer
+    // menção textual a "?key=" em comentário explicando a regra.
+    assert.doesNotMatch(src, /[?&]key=\$\{/, `${path} não deveria passar a chave como query param`);
+  }
+});
+
 test("GUARDA: nenhum adaptador escreve a chave de API em console.log/console.error (chave nunca vai pra log)", () => {
   const files = [
     "src/lib/aura-ai/adapters/anthropic.server.ts",
     "src/lib/aura-ai/adapters/google.server.ts",
     "src/lib/aura-ai/adapters/lovable.server.ts",
     "src/lib/aura-ai/generate.server.ts",
+    "src/lib/aura-ai/laboratory/list-models.server.ts",
+    "src/lib/aura-ai/laboratory/laboratory.functions.ts",
   ];
   for (const path of files) {
     const src = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");

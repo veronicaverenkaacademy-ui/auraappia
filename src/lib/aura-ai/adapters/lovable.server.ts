@@ -10,7 +10,7 @@ import { fetchWithRetry, AuraAiHttpError, type FetchLike } from "../http.server.
 const LOVABLE_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 
 interface LovableResponseBody {
-  choices?: Array<{ message?: { content?: string } }>;
+  choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
 
@@ -58,6 +58,8 @@ export function createLovableAdapter(apiKey: string, fetchImpl: FetchLike = fetc
         provider: "lovable",
         model,
         latencyMs,
+        // formato OpenAI-compatível do gateway: finish_reason "length" = cortado por limite de tokens.
+        truncated: json.choices?.[0]?.finish_reason === "length",
       };
     },
   };

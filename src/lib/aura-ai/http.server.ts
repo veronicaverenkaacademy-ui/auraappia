@@ -6,15 +6,35 @@ export const AURA_AI_TIMEOUT_MS = 25_000;
 
 export class AuraAiHttpError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** Corpo cru da resposta de erro (truncado) — só existe para DECIDIR, dentro do próprio adaptador,
+   * se um 400/404 é "modelo inexistente" (ver looksLikeModelNotFound); nunca é repassado ao chamador
+   * fora do adaptador nem incluído em nenhuma mensagem de AuraAiError. */
+  body?: string;
+  constructor(status: number, message: string, body?: string) {
     super(message);
     this.name = "AuraAiHttpError";
     this.status = status;
+    this.body = body;
   }
 }
 
 function isRetryableStatus(status: number): boolean {
   return status === 429 || (status >= 500 && status <= 599);
+}
+
+/** Heurística simples (busca de palavras-chave, sem parsing específico de um provedor) para saber se
+ * um 400/404 é "o modelo pedido não existe" — nunca repassa o corpo em si, só vira um booleano. */
+export function looksLikeModelNotFound(body: string | undefined): boolean {
+  if (!body) return false;
+  const lower = body.toLowerCase();
+  return (
+    lower.includes("not_found") ||
+    lower.includes("is not found") ||
+    (lower.includes("model") &&
+      (lower.includes("not found") ||
+        lower.includes("does not exist") ||
+        lower.includes("invalid")))
+  );
 }
 
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
@@ -51,7 +71,13 @@ export async function fetchWithRetry(
       if (res.ok) return res;
       lastStatus = res.status;
       if (!isRetryableStatus(res.status) || attempt === 1) {
-        throw new AuraAiHttpError(res.status, `Provedor devolveu status ${res.status}`);
+        let body: string | undefined;
+        try {
+          body = (await res.text()).slice(0, 2000);
+        } catch {
+          // corpo ilegível — segue sem ele, looksLikeModelNotFound trata undefined como "não bate".
+        }
+        throw new AuraAiHttpError(res.status, `Provedor devolveu status ${res.status}`, body);
       }
       // cai pro próximo attempt (uma única nova tentativa)
     } catch (e) {

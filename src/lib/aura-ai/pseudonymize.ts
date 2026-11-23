@@ -4,9 +4,6 @@
 // ("Cliente 1", "Cliente 2"...) ANTES de sair do servidor; o servidor
 // guarda o mapa rótulo -> cliente e troca de volta pelo nome só na
 // resposta final (nunca chega a sair do servidor sem essa troca).
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 /** Varre um array de clientIds (pode conter repetidos) e gera um rótulo estável por id. Ordenado por
  * id (não pela ordem de chegada) para o mesmo conjunto de clientes sempre gerar os mesmos rótulos. */
@@ -40,19 +37,29 @@ export function pseudonymizeClientIds<T>(value: T, labelMap: Map<string, string>
   return value;
 }
 
+const CLIENT_LABEL_RE = /\bCliente (\d+)\b/g;
+
 /** Troca de volta os rótulos ("Cliente N") pelo nome real na resposta da IA — chamado só depois que a
- * IA já respondeu, nunca antes. Rótulo que não está em `namesByClientId` (ex.: a IA inventou um número
- * de cliente que não existe) simplesmente não é trocado — nunca lança erro. */
+ * IA já respondeu, nunca antes. Numa ÚNICA passada pelo texto (nunca substituições em cascata): cada
+ * ocorrência de "Cliente <número>" é resolvida pelo número EXATO que ela carrega, então "Cliente 1"
+ * nunca é confundido com o prefixo de "Cliente 10"/"Cliente 11" (o bug anterior fazia várias
+ * substituições sucessivas por rótulo, e "Cliente 1" como regex literal também casava dentro de
+ * "Cliente 10"). Rótulo cujo número não está no mapa (ex.: a IA inventou um número de cliente que não
+ * existe, ou não há nome cadastrado) simplesmente fica como está — nunca lança erro. Usa uma função
+ * de substituição (não uma string de replacement) para o nome real poder conter "$", "(", ")" etc.
+ * sem ser interpretado como padrão especial do `replace`. */
 export function restoreClientNames(
   text: string,
   labelMap: Map<string, string>,
   namesByClientId: Map<string, string>,
 ): string {
-  let result = text;
+  const nameByNumber = new Map<string, string>();
   for (const [clientId, label] of labelMap) {
+    const match = /^Cliente (\d+)$/.exec(label);
+    if (!match) continue;
     const name = namesByClientId.get(clientId);
     if (!name) continue;
-    result = result.replace(new RegExp(escapeRegExp(label), "g"), name);
+    nameByNumber.set(match[1], name);
   }
-  return result;
+  return text.replace(CLIENT_LABEL_RE, (full, number: string) => nameByNumber.get(number) ?? full);
 }

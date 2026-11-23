@@ -3,23 +3,31 @@
 // GEMINI_API_KEY não existirem (o app não pode quebrar hoje). Chat/
 // Conselho/Alerta usam o par AURA_AI_CHAT_*; Relatório semanal usa
 // AURA_AI_REPORT_*.
+// FASE IA-1B (item 3) — o modelo (quando a variável de ambiente não existe) e a validação de que o
+// ID do modelo bate com o provedor vêm de model-select.ts, compartilhado com o Laboratório.
 import type { AuraAiAdapter, AuraAiTask, GenerateParams, GenerateResult } from "./types.ts";
 import { AuraAiError } from "./types.ts";
 import { createAnthropicAdapter } from "./adapters/anthropic.server.ts";
 import { createGoogleAdapter } from "./adapters/google.server.ts";
 import { createLovableAdapter } from "./adapters/lovable.server.ts";
+import { defaultModelFor, validateModelForProvider, type AuraAiModelTask } from "./model-select.ts";
 
 const DEFAULT_PROVIDER = "lovable";
-const DEFAULT_LOVABLE_MODEL = "google/gemini-3.6-flash"; // mesmo modelo já usado hoje via gateway
 
 function envProviderModel(task: AuraAiTask): { provider: string; model: string } {
   const isReport = task === "weekly_report";
   const provider =
     (isReport ? process.env.AURA_AI_REPORT_PROVIDER : process.env.AURA_AI_CHAT_PROVIDER) ||
     DEFAULT_PROVIDER;
-  const model =
-    (isReport ? process.env.AURA_AI_REPORT_MODEL : process.env.AURA_AI_CHAT_MODEL) ||
-    DEFAULT_LOVABLE_MODEL;
+  const modelTask: AuraAiModelTask = isReport ? "weekly_report" : "chat";
+  const envModel = isReport ? process.env.AURA_AI_REPORT_MODEL : process.env.AURA_AI_CHAT_MODEL;
+  const model = envModel || defaultModelFor(provider, modelTask);
+  if (!model) {
+    throw new AuraAiError(
+      `Provedor "${provider}" selecionado, mas nenhum modelo configurado para esta tarefa (defina ${isReport ? "AURA_AI_REPORT_MODEL" : "AURA_AI_CHAT_MODEL"}).`,
+    );
+  }
+  validateModelForProvider(provider, model);
   return { provider, model };
 }
 

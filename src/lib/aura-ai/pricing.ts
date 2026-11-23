@@ -53,15 +53,19 @@ export function getModelPrice(provider: string, model: string): ModelPrice | nul
   return PRICE_TABLE[`${provider}:${model}`] ?? null;
 }
 
+/** `reasoningOutputTokens` (tokens de "pensamento" do Google Gemini) soma ao custo de SAÍDA — os
+ * provedores cobram esses tokens como tokens de saída normais; o Laboratório mostra essa parcela
+ * separadamente na tela, mas o custo total já a inclui aqui. */
 export function estimateCostUSD(
-  usage: { inputTokens: number; outputTokens: number },
+  usage: { inputTokens: number; outputTokens: number; reasoningOutputTokens?: number },
   provider: string,
   model: string,
 ): number | null {
   const price = getModelPrice(provider, model);
   if (!price) return null;
+  const outputTokens = usage.outputTokens + (usage.reasoningOutputTokens ?? 0);
   return (
     (usage.inputTokens / 1_000_000) * price.inputPerMillionUSD +
-    (usage.outputTokens / 1_000_000) * price.outputPerMillionUSD
+    (outputTokens / 1_000_000) * price.outputPerMillionUSD
   );
 }

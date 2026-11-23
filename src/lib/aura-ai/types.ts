@@ -20,6 +20,9 @@ export interface GenerateParams {
 export interface GenerateUsage {
   inputTokens: number;
   outputTokens: number;
+  /** Tokens de "raciocínio" (thinking) do Google Gemini — somados ao custo de saída (ver pricing.ts)
+   * mas mostrados separadamente no Laboratório. Ausente/0 para provedores sem essa métrica. */
+  reasoningOutputTokens?: number;
 }
 
 export interface GenerateResult {
@@ -28,6 +31,10 @@ export interface GenerateResult {
   provider: string;
   model: string;
   latencyMs: number;
+  /** true quando o provedor cortou a resposta por limite de tokens (stop_reason "max_tokens" na
+   * Anthropic, finishReason "MAX_TOKENS" no Google) — nunca silenciado, o Laboratório mostra isso
+   * como "resposta cortada". */
+  truncated: boolean;
 }
 
 export interface AuraAiAdapter {

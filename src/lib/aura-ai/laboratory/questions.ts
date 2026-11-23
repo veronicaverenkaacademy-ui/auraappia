@@ -56,3 +56,16 @@ export const LAB_QUESTIONS: LabQuestion[] = [
 
 export const LAB_WEEKLY_REPORT_PROMPT =
   "Monte um relatório semanal curto da operação do estúdio, com os principais números e uma recomendação.";
+
+export const LAB_WEEKLY_REPORT_ID = "weekly_report";
+
+export const LAB_WEEKLY_REPORT_ITEM: LabQuestion = {
+  id: LAB_WEEKLY_REPORT_ID,
+  label: "Relatório semanal",
+  question: LAB_WEEKLY_REPORT_PROMPT,
+  isTrap: false,
+};
+
+/** As 9 perguntas fixas + a amostra de relatório semanal — usado tanto pelo servidor (para achar a
+ * pergunta pelo id) quanto pela tela (para montar a lista de itens a rodar, sem ida ao servidor). */
+export const LAB_ALL_ITEMS: LabQuestion[] = [...LAB_QUESTIONS, LAB_WEEKLY_REPORT_ITEM];

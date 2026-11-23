@@ -144,6 +144,147 @@ test("google: parsing correto de candidates/usageMetadata e role 'assistant' -> 
   assert.equal((capturedBody.contents as Array<{ role: string }>)[0].role, "model");
 });
 
+// FASE IA-1B (item 4) — a chave do Google vai no header x-goog-api-key, NUNCA como query param
+// (?key=) na URL.
+test("google: a chave vai no header x-goog-api-key, nunca na URL (?key=)", async () => {
+  let capturedUrl = "";
+  let capturedHeaders: Record<string, string> = {};
+  const fakeFetch = async (url: string, init: RequestInit) => {
+    capturedUrl = url;
+    capturedHeaders = init.headers as Record<string, string>;
+    return jsonResponse(200, {
+      candidates: [{ content: { parts: [{ text: "ok" }] } }],
+      usageMetadata: {},
+    });
+  };
+  const adapter = createGoogleAdapter("minha-chave-secreta", fakeFetch);
+  await adapter.generate(BASE_PARAMS, "gemini-3.6-flash");
+  assert.equal(capturedHeaders["x-goog-api-key"], "minha-chave-secreta");
+  assert.doesNotMatch(capturedUrl, /\?key=|&key=/);
+  assert.doesNotMatch(capturedUrl, /minha-chave-secreta/);
+});
+
+// FASE IA-1B (item 5) — parts com thought:true são ignoradas na montagem do texto, mas seus tokens
+// (thoughtsTokenCount) são devolvidos separados em reasoningOutputTokens.
+test("google: ignora parts de raciocínio (thought:true) no texto final, mas devolve os tokens de raciocínio separados", async () => {
+  const fakeFetch = async () =>
+    jsonResponse(200, {
+      candidates: [
+        {
+          content: {
+            parts: [
+              { text: "pensando...", thought: true },
+              { text: "Resposta final ", thought: false },
+              { text: "completa." },
+            ],
+          },
+        },
+      ],
+      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, thoughtsTokenCount: 50 },
+    });
+  const adapter = createGoogleAdapter("fake-key", fakeFetch);
+  const result = await adapter.generate(BASE_PARAMS, "gemini-3.6-flash");
+  assert.equal(result.text, "Resposta final completa.");
+  assert.equal(result.usage.reasoningOutputTokens, 50);
+});
+
+// FASE IA-1B (item 5) — finishReason/stop_reason de limite de tokens marca truncated:true.
+test("google: finishReason MAX_TOKENS marca truncated:true", async () => {
+  const fakeFetch = async () =>
+    jsonResponse(200, {
+      candidates: [
+        { content: { parts: [{ text: "resposta cortada" }] }, finishReason: "MAX_TOKENS" },
+      ],
+      usageMetadata: {},
+    });
+  const adapter = createGoogleAdapter("fake-key", fakeFetch);
+  const result = await adapter.generate(BASE_PARAMS, "gemini-3.6-flash");
+  assert.equal(result.truncated, true);
+});
+
+test("anthropic: stop_reason max_tokens marca truncated:true; caso normal fica truncated:false", async () => {
+  const fakeFetch = async () =>
+    jsonResponse(200, {
+      content: [{ type: "text", text: "ok" }],
+      usage: {},
+      stop_reason: "max_tokens",
+    });
+  const adapter = createAnthropicAdapter("fake-key", fakeFetch);
+  const result = await adapter.generate(BASE_PARAMS, "claude-haiku-5-5");
+  assert.equal(result.truncated, true);
+
+  const fakeFetch2 = async () =>
+    jsonResponse(200, {
+      content: [{ type: "text", text: "ok" }],
+      usage: {},
+      stop_reason: "end_turn",
+    });
+  const adapter2 = createAnthropicAdapter("fake-key", fakeFetch2);
+  const result2 = await adapter2.generate(BASE_PARAMS, "claude-haiku-5-5");
+  assert.equal(result2.truncated, false);
+});
+
+// FASE IA-1B (item 5) — max_tokens varia por tarefa: 1024 pra chat, 2048 pro relatório semanal.
+test("anthropic: max_tokens enviado no corpo varia por tarefa (chat=1024, weekly_report=2048)", async () => {
+  let capturedBody: Record<string, unknown> = {};
+  const fakeFetch = async (_url: string, init: RequestInit) => {
+    capturedBody = JSON.parse(init.body as string);
+    return jsonResponse(200, { content: [{ type: "text", text: "ok" }], usage: {} });
+  };
+  const adapter = createAnthropicAdapter("fake-key", fakeFetch);
+  await adapter.generate({ ...BASE_PARAMS, task: "chat" }, "claude-haiku-5-5");
+  assert.equal(capturedBody.max_tokens, 1024);
+  await adapter.generate({ ...BASE_PARAMS, task: "weekly_report" }, "claude-sonnet-5-5");
+  assert.equal(capturedBody.max_tokens, 2048);
+});
+
+// FASE IA-1B (item 6) — 404/400 que indicam "modelo inexistente" viram uma mensagem específica com o
+// ID do modelo (não é segredo); outros 400/404 continuam genéricos.
+test("anthropic: 404 com corpo indicando modelo inexistente vira 'Modelo não encontrado: <id>'", async () => {
+  const fakeFetch = async () =>
+    jsonResponse(404, {
+      type: "error",
+      error: { type: "not_found_error", message: "model: xyz not_found" },
+    });
+  const adapter = createAnthropicAdapter("fake-key", fakeFetch);
+  await assert.rejects(
+    () => adapter.generate(BASE_PARAMS, "claude-modelo-inexistente"),
+    (e) => {
+      assert.equal((e as Error).message, "Modelo não encontrado: claude-modelo-inexistente");
+      return true;
+    },
+  );
+});
+
+test("google: 404 com corpo indicando modelo inexistente vira 'Modelo não encontrado: <id>'", async () => {
+  const fakeFetch = async () =>
+    jsonResponse(404, {
+      error: { code: 404, message: "models/xyz is not found for API version", status: "NOT_FOUND" },
+    });
+  const adapter = createGoogleAdapter("fake-key", fakeFetch);
+  await assert.rejects(
+    () => adapter.generate(BASE_PARAMS, "gemini-modelo-inexistente"),
+    (e) => {
+      assert.equal((e as Error).message, "Modelo não encontrado: gemini-modelo-inexistente");
+      return true;
+    },
+  );
+});
+
+test("anthropic: 400 genérico (sem sinal de modelo inexistente) continua com mensagem genérica", async () => {
+  const fakeFetch = async () =>
+    jsonResponse(400, { error: { message: "parâmetro inválido qualquer" } });
+  const adapter = createAnthropicAdapter("fake-key", fakeFetch);
+  await assert.rejects(
+    () => adapter.generate(BASE_PARAMS, "claude-haiku-5-5"),
+    (e) => {
+      assert.ok(e instanceof AuraAiError);
+      assert.doesNotMatch((e as Error).message, /não encontrado/);
+      return true;
+    },
+  );
+});
+
 test("custo estimado: calculado a partir do usage e da tabela de preços", () => {
   const cost = estimateCostUSD(
     { inputTokens: 1_000_000, outputTokens: 1_000_000 },

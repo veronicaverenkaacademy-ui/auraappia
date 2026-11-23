@@ -72,6 +72,52 @@ test("restoreClientNames: rótulo que a IA citou mas não existe no mapa de nome
   assert.equal(result, "Fale com Cliente 1 e também com Cliente 99."); // nada trocado, sem erro
 });
 
+// FASE IA-1B (item 1) — bug anterior: substituições em cascata, uma por rótulo, faziam "Cliente 1"
+// (como regex literal, sem \b) casar dentro de "Cliente 10"/"Cliente 11". A reescrita faz UMA única
+// passada resolvendo pelo número exato.
+test("restoreClientNames: 12+ clientes — 'Cliente 1' e 'Cliente 10' na mesma frase não se confundem", () => {
+  // ids com zero-padding ("c01".."c12") pra que a ordenação lexical de buildClientLabelMap bata com a
+  // ordem numérica — garante Cliente 1 = c01, ..., Cliente 12 = c12, sem depender de como o mapa
+  // distribui os rótulos internamente.
+  const ids = Array.from({ length: 12 }, (_, i) => `c${String(i + 1).padStart(2, "0")}`);
+  const map = buildClientLabelMap(ids);
+  const names = new Map(ids.map((id, i) => [id, `Nome${i + 1}`]));
+  const text = "Cliente 1 e Cliente 10 e Cliente 11 e Cliente 12 estão sumindo.";
+  const result = restoreClientNames(text, map, names);
+  assert.equal(result, "Nome1 e Nome10 e Nome11 e Nome12 estão sumindo.");
+});
+
+test("restoreClientNames: rótulo seguido de pontuação é reconhecido (ponto, vírgula, parêntese)", () => {
+  const map = buildClientLabelMap(["c1", "c2"]);
+  const names = new Map([
+    ["c1", "Ana"],
+    ["c2", "Bia"],
+  ]);
+  const result = restoreClientNames(
+    "Fale com Cliente 1. Depois com (Cliente 2), se der.",
+    map,
+    names,
+  );
+  assert.equal(result, "Fale com Ana. Depois com (Bia), se der.");
+});
+
+test("restoreClientNames: rótulo inexistente (número fora do mapa) fica como está, sem quebrar os outros", () => {
+  const map = buildClientLabelMap(["c1"]);
+  const names = new Map([["c1", "Ana"]]);
+  const result = restoreClientNames("Cliente 1 e Cliente 50 não têm nada em comum.", map, names);
+  assert.equal(result, "Ana e Cliente 50 não têm nada em comum.");
+});
+
+test("restoreClientNames: nome real com caracteres especiais ($, parênteses) não é tratado como padrão de replace", () => {
+  const map = buildClientLabelMap(["c1", "c2"]);
+  const names = new Map([
+    ["c1", "Maria $$ (VIP)"],
+    ["c2", "João & Cia"],
+  ]);
+  const result = restoreClientNames("Cliente 1 e Cliente 2 são antigas.", map, names);
+  assert.equal(result, "Maria $$ (VIP) e João & Cia são antigas.");
+});
+
 test("requireAuraAdmin: deixa passar quando is_admin devolve true", async () => {
   const fakeDb = { rpc: async () => ({ data: true, error: null }) };
   await assert.doesNotReject(() => requireAuraAdmin(fakeDb, "user-1"));
