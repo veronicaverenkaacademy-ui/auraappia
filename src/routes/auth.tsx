@@ -22,6 +22,17 @@ import { acceptMyTerms } from "@/lib/professional-terms.functions";
 import { claimProfessionalRole } from "@/lib/claim-professional-role.functions";
 import { phoneAuthErrorMessage } from "@/lib/phone-auth-error";
 
+// FASE AUTH-2 (23/11/2026) — login/cadastro de PROFISSIONAL por telefone
+// (SMS) desligado no lançamento: falhou em produção ("Não foi possível
+// enviar o código agora") e depende de um provedor de SMS que o produto
+// não quer manter agora. O código (sendCode/verify, estados "phone"/"otp")
+// continua intacto abaixo — só fica inalcançável pela interface (o botão
+// "Prefere entrar por telefone?" não é mais renderizado). Religar é trocar
+// esta constante pra true, sem reescrever nada. NÃO afeta o portal de
+// clientes (OTP por WhatsApp, src/hooks/use-client-auth.ts), "Sou
+// colaboradora" nem claimProfessionalRole — nenhum dos três lê esta flag.
+export const PROFESSIONAL_PHONE_LOGIN_ENABLED = false;
+
 export const Route = createFileRoute("/auth")({
   ssr: false,
   validateSearch: (search: Record<string, unknown>) => ({
@@ -654,13 +665,15 @@ function AuthPage() {
                 )}
               </Button>
 
-              <button
-                onClick={() => setStep("phone")}
-                disabled={search.signup && !termsAccepted}
-                className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition pt-2 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Prefere entrar por telefone?
-              </button>
+              {PROFESSIONAL_PHONE_LOGIN_ENABLED && (
+                <button
+                  onClick={() => setStep("phone")}
+                  disabled={search.signup && !termsAccepted}
+                  className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition pt-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Prefere entrar por telefone?
+                </button>
+              )}
 
               {!search.signup && (
                 <>

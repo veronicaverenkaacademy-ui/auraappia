@@ -147,7 +147,7 @@ function Cadastro() {
           </div>
 
           <p className="mt-10 text-center text-xs text-muted-foreground/70 leading-relaxed">
-            No próximo passo você confirma sua identidade com Apple, Google ou telefone.
+            No próximo passo você confirma sua identidade com Apple ou Google.
           </p>
         </div>
       </div>
