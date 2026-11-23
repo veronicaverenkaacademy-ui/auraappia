@@ -135,7 +135,7 @@ function Council() {
               <VerdictBadge status={verdict.status} />
               <p className="mt-3 text-base leading-relaxed">{verdict.recommendation}</p>
               <div className="mt-4 text-sm font-semibold text-ai-glow">
-                Impacto estimado: {verdict.impact}
+                O que medir depois: {verdict.whatToMeasure}
               </div>
               <div className="mt-5 flex flex-wrap gap-2">
                 <button className="rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-semibold px-4 py-2">

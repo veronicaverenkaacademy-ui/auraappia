@@ -53,6 +53,7 @@ import { Route as LSlugRouteImport } from './routes/l.$slug'
 import { Route as AuthenticatedAuraIaIndexRouteImport } from './routes/_authenticated/aura-ia.index'
 import { Route as AuthenticatedAuraIaChatRouteImport } from './routes/_authenticated/aura-ia.chat'
 import { Route as AuthenticatedAuraIaConselhoRouteImport } from './routes/_authenticated/aura-ia.conselho'
+import { Route as AuthenticatedAuraIaLaboratorioRouteImport } from './routes/_authenticated/aura-ia.laboratorio'
 import { Route as AuthenticatedBiIndexRouteImport } from './routes/_authenticated/bi.index'
 import { Route as AuthenticatedBiClientesRouteImport } from './routes/_authenticated/bi.clientes'
 import { Route as AuthenticatedBiPreditivoRouteImport } from './routes/_authenticated/bi.preditivo'
@@ -306,6 +307,12 @@ const AuthenticatedAuraIaConselhoRoute =
     path: '/conselho',
     getParentRoute: () => AuthenticatedAuraIaRoute,
   } as any)
+const AuthenticatedAuraIaLaboratorioRoute =
+  AuthenticatedAuraIaLaboratorioRouteImport.update({
+    id: '/laboratorio',
+    path: '/laboratorio',
+    getParentRoute: () => AuthenticatedAuraIaRoute,
+  } as any)
 const AuthenticatedBiIndexRoute = AuthenticatedBiIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -492,6 +499,7 @@ export interface FileRoutesByFullPath {
   '/l/$slug': typeof LSlugRoute
   '/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
   '/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
+  '/aura-ia/laboratorio': typeof AuthenticatedAuraIaLaboratorioRoute
   '/bi/clientes': typeof AuthenticatedBiClientesRoute
   '/bi/preditivo': typeof AuthenticatedBiPreditivoRoute
   '/bi/servicos': typeof AuthenticatedBiServicosRoute
@@ -553,6 +561,7 @@ export interface FileRoutesByTo {
   '/l/$slug': typeof LSlugRoute
   '/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
   '/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
+  '/aura-ia/laboratorio': typeof AuthenticatedAuraIaLaboratorioRoute
   '/bi/clientes': typeof AuthenticatedBiClientesRoute
   '/bi/preditivo': typeof AuthenticatedBiPreditivoRoute
   '/bi/servicos': typeof AuthenticatedBiServicosRoute
@@ -625,6 +634,7 @@ export interface FileRoutesById {
   '/l/$slug': typeof LSlugRoute
   '/_authenticated/aura-ia/chat': typeof AuthenticatedAuraIaChatRoute
   '/_authenticated/aura-ia/conselho': typeof AuthenticatedAuraIaConselhoRoute
+  '/_authenticated/aura-ia/laboratorio': typeof AuthenticatedAuraIaLaboratorioRoute
   '/_authenticated/bi/clientes': typeof AuthenticatedBiClientesRoute
   '/_authenticated/bi/preditivo': typeof AuthenticatedBiPreditivoRoute
   '/_authenticated/bi/servicos': typeof AuthenticatedBiServicosRoute
@@ -697,6 +707,7 @@ export interface FileRouteTypes {
     | '/l/$slug'
     | '/aura-ia/chat'
     | '/aura-ia/conselho'
+    | '/aura-ia/laboratorio'
     | '/bi/clientes'
     | '/bi/preditivo'
     | '/bi/servicos'
@@ -758,6 +769,7 @@ export interface FileRouteTypes {
     | '/l/$slug'
     | '/aura-ia/chat'
     | '/aura-ia/conselho'
+    | '/aura-ia/laboratorio'
     | '/bi/clientes'
     | '/bi/preditivo'
     | '/bi/servicos'
@@ -829,6 +841,7 @@ export interface FileRouteTypes {
     | '/l/$slug'
     | '/_authenticated/aura-ia/chat'
     | '/_authenticated/aura-ia/conselho'
+    | '/_authenticated/aura-ia/laboratorio'
     | '/_authenticated/bi/clientes'
     | '/_authenticated/bi/preditivo'
     | '/_authenticated/bi/servicos'
@@ -1183,6 +1196,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAuraIaConselhoRouteImport
       parentRoute: typeof AuthenticatedAuraIaRoute
     }
+    '/_authenticated/aura-ia/laboratorio': {
+      id: '/_authenticated/aura-ia/laboratorio'
+      path: '/laboratorio'
+      fullPath: '/aura-ia/laboratorio'
+      preLoaderRoute: typeof AuthenticatedAuraIaLaboratorioRouteImport
+      parentRoute: typeof AuthenticatedAuraIaRoute
+    }
     '/_authenticated/bi/': {
       id: '/_authenticated/bi/'
       path: '/'
@@ -1364,12 +1384,14 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedAuraIaRouteChildren {
   AuthenticatedAuraIaChatRoute: typeof AuthenticatedAuraIaChatRoute
   AuthenticatedAuraIaConselhoRoute: typeof AuthenticatedAuraIaConselhoRoute
+  AuthenticatedAuraIaLaboratorioRoute: typeof AuthenticatedAuraIaLaboratorioRoute
   AuthenticatedAuraIaIndexRoute: typeof AuthenticatedAuraIaIndexRoute
 }
 
 const AuthenticatedAuraIaRouteChildren: AuthenticatedAuraIaRouteChildren = {
   AuthenticatedAuraIaChatRoute: AuthenticatedAuraIaChatRoute,
   AuthenticatedAuraIaConselhoRoute: AuthenticatedAuraIaConselhoRoute,
+  AuthenticatedAuraIaLaboratorioRoute: AuthenticatedAuraIaLaboratorioRoute,
   AuthenticatedAuraIaIndexRoute: AuthenticatedAuraIaIndexRoute,
 }
 
