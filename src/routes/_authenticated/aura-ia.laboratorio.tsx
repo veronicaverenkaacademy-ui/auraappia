@@ -1,0 +1,378 @@
+// FASE IA-1 (Parte 3) — Laboratório de comparação Anthropic x Google.
+// Acesso restrito (checado no SERVIDOR, não aqui): admin + e-mail em
+// AURA_LAB_ALLOWED_EMAILS. Não aparece em nenhum menu — só acessível por
+// quem souber a URL e estiver na lista. Dados sempre FALSOS (fake-studio).
+//
+// FASE IA-1B (item 2) — cada pergunta é uma chamada separada ao servidor (runLabQuestion), rodada em
+// sequência por provedor (no máximo 2 chamadas em voo ao mesmo tempo: uma por provedor), com cada
+// resposta aparecendo na tela assim que chega, em vez de esperar as 20 chamadas (9 perguntas + 1
+// relatório × 2 provedores) terminarem juntas numa única chamada monolítica (risco de timeout).
+import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import {
+  getLabStatus,
+  runLabQuestion,
+  listLabAvailableModels,
+  type LabStatusResult,
+  type RunLabQuestionResult,
+  type ListLabModelsResult,
+  type LabProviderId,
+} from "@/lib/aura-ai/laboratory/laboratory.functions";
+import { LAB_ALL_ITEMS, LAB_WEEKLY_REPORT_ID } from "@/lib/aura-ai/laboratory/questions";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+
+export const Route = createFileRoute("/_authenticated/aura-ia/laboratorio")({
+  component: Laboratorio,
+});
+
+const PROVIDERS: LabProviderId[] = ["anthropic", "google"];
+const PROVIDER_LABEL: Record<LabProviderId, string> = { anthropic: "Anthropic", google: "Google" };
+
+interface ItemRun {
+  status: "idle" | "loading" | "done";
+  data?: RunLabQuestionResult;
+}
+
+function keyFor(provider: LabProviderId, questionId: string): string {
+  return `${provider}:${questionId}`;
+}
+
+function resultToText(
+  provider: LabProviderId,
+  model: string | undefined,
+  runs: Record<string, ItemRun>,
+): string {
+  const lines: string[] = [
+    `=== ${PROVIDER_LABEL[provider].toUpperCase()} (${model ?? "sem modelo"}) ===`,
+  ];
+  for (const item of LAB_ALL_ITEMS) {
+    const run = runs[keyFor(provider, item.id)];
+    const r = run?.data?.result;
+    if (!r) continue;
+    lines.push(`\n--- ${r.question} ---`);
+    lines.push(r.error ? `[erro] ${r.error}` : r.answerText);
+    lines.push(
+      `latência=${r.latencyMs}ms tokens_in=${r.inputTokens} tokens_out=${r.outputTokens} raciocínio=${r.reasoningTokens} custo=${r.costUSD ?? "?"}${r.truncated ? " [CORTADA]" : ""}`,
+    );
+    if (r.unmatchedNumbers.length > 0)
+      lines.push(`⚠️ números não encontrados nos dados: ${r.unmatchedNumbers.join(", ")}`);
+    if (r.isTrap)
+      lines.push(
+        r.refusedTrapCorrectly
+          ? "✅ recusou a armadilha corretamente"
+          : "⚠️ pode ter caído na armadilha",
+      );
+  }
+  return lines.join("\n");
+}
+
+function Laboratorio() {
+  const fetchStatus = useServerFn(getLabStatus);
+  const runQuestion = useServerFn(runLabQuestion);
+  const listModels = useServerFn(listLabAvailableModels);
+
+  const [status, setStatus] = useState<LabStatusResult | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [runs, setRuns] = useState<Record<string, ItemRun>>({});
+  const [running, setRunning] = useState(false);
+  const [modelsResult, setModelsResult] = useState<
+    Record<LabProviderId, ListLabModelsResult | null>
+  >({
+    anthropic: null,
+    google: null,
+  });
+  const [modelsLoading, setModelsLoading] = useState<Record<LabProviderId, boolean>>({
+    anthropic: false,
+    google: false,
+  });
+
+  useEffect(() => {
+    fetchStatus()
+      .then(setStatus)
+      .catch(() =>
+        setStatus({
+          enabled: false,
+          disabledReason: "Falha ao verificar acesso ao Laboratório.",
+          providers: { anthropic: false, google: false },
+        }),
+      )
+      .finally(() => setStatusLoading(false));
+  }, [fetchStatus]);
+
+  async function runOne(provider: LabProviderId, questionId: string) {
+    const key = keyFor(provider, questionId);
+    setRuns((prev) => ({ ...prev, [key]: { status: "loading" } }));
+    try {
+      const data = await runQuestion({ data: { providerId: provider, questionId } });
+      setRuns((prev) => ({ ...prev, [key]: { status: "done", data } }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao rodar a pergunta.");
+      setRuns((prev) => ({ ...prev, [key]: { status: "idle" } }));
+    }
+  }
+
+  async function runProviderSequence(provider: LabProviderId) {
+    if (!status?.providers[provider]) return;
+    for (const item of LAB_ALL_ITEMS) {
+      await runOne(provider, item.id);
+    }
+  }
+
+  async function runAll() {
+    setRunning(true);
+    setRuns({});
+    // No máximo 2 chamadas em voo ao mesmo tempo: uma sequência por provedor, as duas em paralelo.
+    await Promise.all(PROVIDERS.map((p) => runProviderSequence(p)));
+    setRunning(false);
+  }
+
+  async function loadModels(provider: LabProviderId) {
+    setModelsLoading((prev) => ({ ...prev, [provider]: true }));
+    try {
+      const data = await listModels({ data: { providerId: provider } });
+      setModelsResult((prev) => ({ ...prev, [provider]: data }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao listar modelos.");
+    } finally {
+      setModelsLoading((prev) => ({ ...prev, [provider]: false }));
+    }
+  }
+
+  function copyProvider(provider: LabProviderId) {
+    const model = Object.values(runs).find((r) => r.data?.model)?.data?.model;
+    const text = resultToText(provider, model, runs);
+    navigator.clipboard.writeText(text).then(
+      () => toast.success("Copiado."),
+      () => toast.error("Não foi possível copiar."),
+    );
+  }
+
+  if (statusLoading) {
+    return (
+      <div className="mx-auto max-w-5xl px-4 md:px-8 py-10 text-sm text-muted-foreground">
+        Carregando…
+      </div>
+    );
+  }
+
+  if (status && !status.enabled) {
+    return (
+      <div className="mx-auto max-w-5xl px-4 md:px-8 py-10">
+        <div className="rounded-xl border border-dashed border-border p-6 text-sm text-muted-foreground">
+          {status.disabledReason}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-5xl px-4 md:px-8 py-6 md:py-10 space-y-6">
+      <div>
+        <h1 className="text-xl font-display font-medium">Laboratório de comparação — AURA IA</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Dados inteiramente falsos (estúdio sintético). Nunca usa o banco real.
+        </p>
+      </div>
+
+      <Button onClick={runAll} disabled={running}>
+        {running ? "Rodando…" : "Rodar comparação"}
+      </Button>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        {PROVIDERS.map((provider) => (
+          <ColumnView
+            key={provider}
+            provider={provider}
+            configured={status?.providers[provider] ?? false}
+            runs={runs}
+            onRunItem={(questionId) => runOne(provider, questionId)}
+            onCopy={() => copyProvider(provider)}
+            modelsResult={modelsResult[provider]}
+            modelsLoading={modelsLoading[provider]}
+            onLoadModels={() => loadModels(provider)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ColumnView({
+  provider,
+  configured,
+  runs,
+  onRunItem,
+  onCopy,
+  modelsResult,
+  modelsLoading,
+  onLoadModels,
+}: {
+  provider: LabProviderId;
+  configured: boolean;
+  runs: Record<string, ItemRun>;
+  onRunItem: (questionId: string) => void;
+  onCopy: () => void;
+  modelsResult: ListLabModelsResult | null;
+  modelsLoading: boolean;
+  onLoadModels: () => void;
+}) {
+  const itemRuns = LAB_ALL_ITEMS.map((item) => ({ item, run: runs[keyFor(provider, item.id)] }));
+  const doneCount = itemRuns.filter(({ run }) => run?.status === "done").length;
+  const model = itemRuns.map(({ run }) => run?.data?.model).find(Boolean);
+
+  const totals = itemRuns.reduce(
+    (acc, { run }) => {
+      const r = run?.data?.result;
+      if (!r || r.error) return acc;
+      return {
+        costUSD: r.costUSD === null || acc.costUSD === null ? null : acc.costUSD + r.costUSD,
+        latencyMs: acc.latencyMs + r.latencyMs,
+        inputTokens: acc.inputTokens + r.inputTokens,
+        outputTokens: acc.outputTokens + r.outputTokens,
+      };
+    },
+    { costUSD: 0 as number | null, latencyMs: 0, inputTokens: 0, outputTokens: 0 },
+  );
+
+  if (!configured) {
+    return (
+      <div className="rounded-2xl border border-border p-5">
+        <h2 className="font-semibold">{PROVIDER_LABEL[provider]}</h2>
+        <p className="text-sm text-muted-foreground mt-2">Chave não configurada.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-border p-5 space-y-4">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h2 className="font-semibold">{PROVIDER_LABEL[provider]}</h2>
+          <p className="text-xs text-muted-foreground">
+            {model ?? "modelo ainda não usado"} · {doneCount}/{LAB_ALL_ITEMS.length}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={onCopy}>
+          Copiar
+        </Button>
+      </div>
+
+      <Button variant="outline" size="sm" onClick={onLoadModels} disabled={modelsLoading}>
+        {modelsLoading ? "Carregando…" : `Ver modelos disponíveis do ${PROVIDER_LABEL[provider]}`}
+      </Button>
+      {modelsResult && <ModelsListView result={modelsResult} />}
+
+      <div className="space-y-3">
+        {itemRuns.map(({ item, run }) => (
+          <QuestionResultView
+            key={item.id}
+            label={item.label}
+            run={run}
+            onRun={() => onRunItem(item.id)}
+          />
+        ))}
+      </div>
+
+      {doneCount === LAB_ALL_ITEMS.length && (
+        <div className="text-xs text-muted-foreground border-t border-border pt-3">
+          Totais:{" "}
+          {totals.costUSD !== null ? `US$ ${totals.costUSD.toFixed(4)}` : "custo não estimável"} ·{" "}
+          {totals.latencyMs}ms · {totals.inputTokens} tokens entrada · {totals.outputTokens} tokens
+          saída
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ModelsListView({ result }: { result: ListLabModelsResult }) {
+  if (!result.configured) {
+    return <p className="text-xs text-muted-foreground">Chave não configurada.</p>;
+  }
+  if (result.error) {
+    return <p className="text-xs text-destructive">{result.error}</p>;
+  }
+  return (
+    <ul className="text-xs text-muted-foreground border border-border rounded-lg p-2 max-h-40 overflow-y-auto space-y-1">
+      {(result.models ?? []).map((m) => (
+        <li key={m.name}>
+          <span className="font-mono">{m.name}</span> — {m.displayName}
+          {m.supportedMethods && m.supportedMethods.length > 0 && (
+            <span className="opacity-70"> ({m.supportedMethods.join(", ")})</span>
+          )}
+        </li>
+      ))}
+      {(result.models ?? []).length === 0 && <li>Nenhum modelo com generateContent encontrado.</li>}
+    </ul>
+  );
+}
+
+function QuestionResultView({
+  label,
+  run,
+  onRun,
+}: {
+  label: string;
+  run: ItemRun | undefined;
+  onRun: () => void;
+}) {
+  const r = run?.data?.result;
+  return (
+    <div className="border-b border-border pb-3 last:border-0">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-semibold">{label}</div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-xs"
+          onClick={onRun}
+          disabled={run?.status === "loading"}
+        >
+          {run?.status === "loading"
+            ? "Rodando…"
+            : run?.status === "done"
+              ? "Rodar de novo"
+              : "Rodar"}
+        </Button>
+      </div>
+
+      {run?.status === "loading" && (
+        <p className="text-xs text-muted-foreground mt-1">Aguardando resposta…</p>
+      )}
+
+      {r && (
+        <>
+          {r.error ? (
+            <p className="text-xs text-destructive mt-1">{r.error}</p>
+          ) : (
+            <>
+              <p className="text-sm mt-1 whitespace-pre-wrap">{r.answerText}</p>
+              <div className="text-[11px] text-muted-foreground mt-1">
+                {r.latencyMs}ms · {r.inputTokens}/{r.outputTokens} tokens
+                {r.reasoningTokens > 0 ? ` (+${r.reasoningTokens} raciocínio)` : ""} ·{" "}
+                {r.costUSD !== null ? `US$ ${r.costUSD.toFixed(5)}` : "custo não estimável"}
+                {r.truncated ? " · cortada pelo limite de tokens" : ""}
+              </div>
+              {r.unmatchedNumbers.length > 0 && (
+                <div className="text-[11px] text-destructive mt-1">
+                  ⚠️ possível número inventado: {r.unmatchedNumbers.join(", ")}
+                </div>
+              )}
+              {r.isTrap && (
+                <div
+                  className={`text-[11px] mt-1 ${r.refusedTrapCorrectly ? "text-success" : "text-destructive"}`}
+                >
+                  {r.refusedTrapCorrectly
+                    ? "✅ recusou a armadilha"
+                    : "⚠️ pode ter caído na armadilha"}
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

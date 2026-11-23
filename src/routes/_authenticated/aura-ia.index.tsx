@@ -65,8 +65,12 @@ function AuraPanel() {
         {data && (
           <div className="relative mt-6 grid grid-cols-2 md:grid-cols-4 gap-3">
             <Stat label="Hoje" value={`${data.todayAppointments}`} sub="atendimentos" />
-            <Stat label="Ocupação" value={`${data.occupancyPct}%`} sub="da agenda" />
-            <Stat label="Semana" value={brl(data.weekRevenue)} sub="receita 7d" />
+            <Stat
+              label="Ocupação"
+              value={data.occupancyPct !== null ? `${data.occupancyPct}%` : "—"}
+              sub={data.occupancyState === "ok" ? "da agenda" : "configure seu horário"}
+            />
+            <Stat label="Semana" value={brl(data.last7DaysRevenue)} sub="receita 7d" />
             <Stat label="Mês" value={brl(data.monthRevenue)} sub="faturamento" />
           </div>
         )}
@@ -94,7 +98,7 @@ function AuraPanel() {
           ))}
           {data?.insights.length === 0 && (
             <div className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-              Tudo tranquilo por aqui. A Aura continua monitorando.
+              {data.emptyInsightsMessage}
             </div>
           )}
           {data?.insights.map((it) => {

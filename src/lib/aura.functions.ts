@@ -1,10 +1,34 @@
+// FASE IA-1 — reescrita completa: usa o motor de métricas real
+// (src/lib/aura-metrics/*) em vez dos números inventados anteriores (uma
+// margem fixa de lucro multiplicando a receita da semana; um ticket fixo
+// multiplicando a contagem de clientes inativas; a ocupação da agenda
+// dividindo a contagem de atendimentos por um número fixo de vagas; a
+// estimativa de impacto em R$ do Conselho, calculada pela própria IA) e
+// a camada de IA
+// trocável (src/lib/aura-ai/*) com pseudonimização de clientes.
+//
+// Guarda: só a DONA (role admin) usa a AURA IA — checado no SERVIDOR em
+// TODA função abaixo (requireAuraAdmin), não só escondendo botão na tela.
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import { loadAuraMetricsData } from "@/lib/aura-metrics/loader.server";
+import { buildMetricsBlock, type AuraMetricsBlock } from "@/lib/aura-metrics/engine";
+import { requireAuraAdmin } from "@/lib/aura-ai/require-admin.server";
+import { isAuraAiEnabledFor } from "@/lib/aura-ai/enabled";
+import { generate } from "@/lib/aura-ai/generate.server";
+import {
+  buildClientLabelMap,
+  pseudonymizeClientIds,
+  restoreClientNames,
+} from "@/lib/aura-ai/pseudonymize";
+import {
+  AURA_SYSTEM_PROMPT,
+  AURA_COUNCIL_SYSTEM_PROMPT,
+  buildMetricsContextBlock,
+} from "@/lib/aura-ai/system-prompt";
 
 // ---- Types shared with the client ----
-
-export type AuraMessage = { role: "user" | "assistant" | "system"; content: string };
 
 export type AuraInsight = {
   id: string;
@@ -20,12 +44,16 @@ export type AuraSummary = {
   headline: string;
   todayAppointments: number;
   todayRevenueForecast: number;
-  occupancyPct: number;
-  weekRevenue: number;
+  /** null = ocupação não calculável (sem horário de funcionamento configurado) — ver occupancyState. */
+  occupancyPct: number | null;
+  occupancyState: "ok" | "not_configured";
+  last7DaysRevenue: number;
   monthRevenue: number;
-  inactiveClients: number;
+  inactiveClientsInsufficientData: boolean;
   lowStock: number;
   insights: AuraInsight[];
+  /** Mostrado quando insights.length === 0 — nunca "tudo tranquilo" fingido quando faltam dados. */
+  emptyInsightsMessage: string;
 };
 
 export type CouncilPerspective = {
@@ -39,82 +67,50 @@ export type CouncilVerdict = {
   question: string;
   perspectives: CouncilPerspective[];
   recommendation: string;
-  impact: string;
+  /** Substitui o antigo campo de impacto estimado em R$ pela IA — ver FASE IA-1. */
+  whatToMeasure: string;
   status: "recomendado" | "atencao" | "nao_recomendado";
 };
 
-// ---- Helpers ----
+function brl(n: number) {
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
 
-function startOfDay(d = new Date()) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
-function endOfDay(d = new Date()) { const x = new Date(d); x.setHours(23,59,59,999); return x; }
-function startOfMonth(d = new Date()) { const x = new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x; }
-function endOfMonth(d = new Date()) { const x = startOfMonth(d); x.setMonth(x.getMonth()+1); x.setMilliseconds(-1); return x; }
-function brl(n: number) { return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }); }
+// ---- Helpers internos (guarda + carregar métricas) ----
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function gatherContext(supabase: any) {
-  const now = new Date();
-  const dayStart = startOfDay(now).toISOString();
-  const dayEnd = endOfDay(now).toISOString();
-  const mStart = startOfMonth(now).toISOString();
-  const mEnd = endOfMonth(now).toISOString();
-  const week = new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString();
-  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 3600 * 1000).toISOString();
-
-  const [today, monthTx, weekTx, clients, products, activeClientIds] = await Promise.all([
-    supabase.from("appointments").select("id, price, status, service_name, starts_at").gte("starts_at", dayStart).lte("starts_at", dayEnd),
-    supabase.from("finance_transactions").select("amount, kind, status, paid_at, description").gte("paid_at", mStart).lte("paid_at", mEnd).eq("status", "paid"),
-    supabase.from("finance_transactions").select("amount, kind, description").gte("paid_at", week).eq("status", "paid").eq("kind", "income"),
-    supabase.from("clients").select("id, full_name, created_at"),
-    supabase.from("products").select("id, name, stock, min_stock, unit"),
-    supabase.from("appointments").select("client_id").gte("starts_at", thirtyDaysAgo),
-  ]);
-
-  const todayList = (today.data ?? []) as Array<{ price: number; status: string; service_name: string | null; starts_at: string }>;
-  const monthList = (monthTx.data ?? []) as Array<{ amount: number; kind: string; description: string | null }>;
-  const weekList = (weekTx.data ?? []) as Array<{ amount: number; description: string | null }>;
-  const clientList = (clients.data ?? []) as Array<{ id: string; full_name: string }>;
-  const productList = (products.data ?? []) as Array<{ name: string; stock: number; min_stock: number; unit: string }>;
-  const activeIds = new Set(((activeClientIds.data ?? []) as Array<{ client_id: string }>).map((r) => r.client_id));
-
-  const todayRevenueForecast = todayList.filter((a) => a.status !== "cancelled").reduce((s, a) => s + Number(a.price || 0), 0);
-  const monthRevenue = monthList.filter((t) => t.kind === "income").reduce((s, t) => s + Number(t.amount), 0);
-  const monthExpense = monthList.filter((t) => t.kind === "expense").reduce((s, t) => s + Number(t.amount), 0);
-  const weekRevenue = weekList.reduce((s, t) => s + Number(t.amount), 0);
-
-  const serviceMap = new Map<string, { count: number; revenue: number }>();
-  for (const t of weekList) {
-    const key = t.description ?? "Outros";
-    const cur = serviceMap.get(key) ?? { count: 0, revenue: 0 };
-    cur.count += 1; cur.revenue += Number(t.amount);
-    serviceMap.set(key, cur);
+async function requireAuraAccess(context: { supabase: any; userId: string }): Promise<void> {
+  await requireAuraAdmin(context.supabase, context.userId);
+  if (!isAuraAiEnabledFor(context.userId)) {
+    throw new Error("A Aura IA não está disponível para esta conta agora.");
   }
-  const bestService = Array.from(serviceMap.entries()).sort((a,b) => b[1].revenue - a[1].revenue)[0];
+}
 
-  const inactiveClients = clientList.filter((c) => !activeIds.has(c.id)).length;
-  const lowStock = productList.filter((p) => Number(p.stock) <= Number(p.min_stock)).length;
-  const criticalStock = productList
-    .filter((p) => Number(p.stock) <= Number(p.min_stock))
-    .slice(0, 3)
-    .map((p) => `${p.name} (${p.stock} ${p.unit})`);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadMetricsBlock(supabase: any, now: Date): Promise<AuraMetricsBlock> {
+  const data = await loadAuraMetricsData(supabase, now);
+  return buildMetricsBlock({ ...data, now });
+}
 
-  const occupancy = todayList.length > 0 ? Math.min(100, Math.round((todayList.length / 10) * 100)) : 0;
+/** Junta todo clientId que aparece no bloco (hoje: vanishingClients) e devolve o rótulo-mapa +
+ * nomes reais correspondentes — os nomes NUNCA entram no bloco enviado à IA, só são usados depois
+ * para trocar "Cliente N" de volta na resposta final. */
 
-  return {
-    now,
-    todayAppointments: todayList.length,
-    todayRevenueForecast,
-    monthRevenue,
-    monthExpense,
-    weekRevenue,
-    weekProfit: weekRevenue * 0.68,
-    inactiveClients,
-    totalClients: clientList.length,
-    lowStock,
-    criticalStock,
-    bestService: bestService ? { name: bestService[0], revenue: bestService[1].revenue } : null,
-    occupancy,
-  };
+async function buildLabelsAndNames(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  block: AuraMetricsBlock,
+): Promise<{ labelMap: Map<string, string>; names: Map<string, string> }> {
+  const clientIds = (block.vanishingClients.value ?? []).map((c) => c.clientId);
+  const labelMap = buildClientLabelMap(clientIds);
+  const names = new Map<string, string>();
+  if (clientIds.length > 0) {
+    const { data } = await supabase.from("clients").select("id, full_name").in("id", clientIds);
+    for (const row of (data ?? []) as Array<{ id: string; full_name: string }>) {
+      names.set(row.id, row.full_name);
+    }
+  }
+  return { labelMap, names };
 }
 
 // ---- Executive Summary ----
@@ -122,43 +118,51 @@ async function gatherContext(supabase: any) {
 export const getExecutiveSummary = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<AuraSummary> => {
-    const ctx = await gatherContext(context.supabase);
-    const hour = ctx.now.getHours();
-    const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
+    await requireAuraAccess(context);
+    const now = new Date();
+    const block = await loadMetricsBlock(context.supabase, now);
 
     const insights: AuraInsight[] = [];
 
-    if (ctx.inactiveClients > 0) {
+    if (block.vanishingClients.state === "ok" && (block.vanishingClients.value?.length ?? 0) > 0) {
       insights.push({
-        id: "inactive",
+        id: "vanishing",
         tone: "warning",
         icon: "users",
-        title: `${ctx.inactiveClients} clientes sem retorno há 30 dias`,
-        detail: `Potencial estimado de ${brl(ctx.inactiveClients * 180)} em receita a recuperar.`,
-        action: "Criar campanha de reativação",
+        title: `${block.vanishingClients.value!.length} clientes sumindo`,
+        detail:
+          "Intervalo entre atendimentos bem maior que o costume delas, sem agendamento futuro.",
+        action: "Ver lista",
       });
     }
-    if (ctx.lowStock > 0) {
+    if (block.lowStock.value && block.lowStock.value.length > 0) {
       insights.push({
         id: "stock",
         tone: "warning",
         icon: "package",
-        title: `${ctx.lowStock} produtos abaixo do estoque mínimo`,
-        detail: ctx.criticalStock.length ? `Prioridade: ${ctx.criticalStock.join(", ")}.` : "Baseado no consumo médio recente.",
+        title: `${block.lowStock.value.length} produtos abaixo do estoque mínimo`,
+        detail: block.lowStock.value
+          .slice(0, 3)
+          .map((p) => `${p.name} (${p.stock} ${p.unit})`)
+          .join(", "),
         action: "Ver lista de compras",
       });
     }
-    if (ctx.bestService) {
+    if (
+      block.serviceBreakdownCurrentMonth.state === "ok" &&
+      (block.serviceBreakdownCurrentMonth.value?.length ?? 0) > 0
+    ) {
+      const top = block.serviceBreakdownCurrentMonth.value![0];
       insights.push({
-        id: "best",
+        id: "best_service",
         tone: "positive",
         icon: "trend-up",
-        title: `${ctx.bestService.name} lidera a receita da semana`,
-        detail: `Contribuiu com ${brl(ctx.bestService.revenue)} nos últimos 7 dias.`,
+        title: `${top.serviceName} lidera a receita do mês`,
+        detail: `Contribuiu com ${brl(top.revenue)} (${top.revenueSharePct.toFixed(0)}% do mês).`,
         action: "Ver relatório",
       });
     }
-    if (ctx.todayAppointments === 0) {
+    if (block.todayAppointments.value === 0) {
       insights.push({
         id: "empty",
         tone: "info",
@@ -167,112 +171,96 @@ export const getExecutiveSummary = createServerFn({ method: "GET" })
         detail: "Vale abrir a agenda online e disparar uma campanha de horários disponíveis.",
         action: "Abrir agenda",
       });
-    } else if (ctx.occupancy >= 90) {
+    } else if (
+      block.occupancyToday.state === "ok" &&
+      block.occupancyToday.value!.occupancyPct >= 90
+    ) {
       insights.push({
         id: "full",
         tone: "info",
         icon: "clock",
-        title: `Agenda ${ctx.occupancy}% ocupada hoje`,
+        title: `Agenda ${Math.round(block.occupancyToday.value!.occupancyPct)}% ocupada hoje`,
         detail: "Considere abrir horários extras ou uma lista de espera para encaixes.",
         action: "Gerir horários",
       });
     }
-    if (ctx.monthRevenue > 0) {
+    if (block.revenue.value && block.revenue.value.currentMonthRevenue > 0) {
       insights.push({
         id: "revenue",
         tone: "positive",
         icon: "wallet",
-        title: `Faturamento do mês: ${brl(ctx.monthRevenue)}`,
-        detail: `Despesas registradas: ${brl(ctx.monthExpense)} · Lucro estimado: ${brl(ctx.monthRevenue - ctx.monthExpense)}.`,
+        title: `Faturamento do mês: ${brl(block.revenue.value.currentMonthRevenue)}`,
+        detail: `Despesas registradas: ${brl(block.revenue.value.currentMonthExpense)}.`,
         action: "Ver DRE",
       });
     }
 
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite"; // placeholder trocado abaixo pelo valor do motor (fuso BR)
+
+    // Smart States: "tudo tranquilo" só quando TODAS as métricas relevantes estão com dados reais e
+    // nenhuma pediu atenção; senão, mensagem explícita de que ainda não há dados suficientes.
+    const anyInsufficientCore =
+      block.vanishingClients.state !== "ok" || block.serviceBreakdownCurrentMonth.state !== "ok";
+    const emptyInsightsMessage = anyInsufficientCore
+      ? "Ainda não há dados suficientes para a Aura analisar sua operação (é preciso algum histórico de atendimentos)."
+      : "Tudo tranquilo por aqui. A Aura continua monitorando.";
+
     return {
-      greeting: `${greeting}`,
-      headline: ctx.todayAppointments > 0
-        ? `Você tem ${ctx.todayAppointments} atendimento${ctx.todayAppointments > 1 ? "s" : ""} hoje. Receita prevista de ${brl(ctx.todayRevenueForecast)}.`
-        : `Nenhum atendimento na agenda hoje. Faturamento do mês: ${brl(ctx.monthRevenue)}.`,
-      todayAppointments: ctx.todayAppointments,
-      todayRevenueForecast: ctx.todayRevenueForecast,
-      occupancyPct: ctx.occupancy,
-      weekRevenue: ctx.weekRevenue,
-      monthRevenue: ctx.monthRevenue,
-      inactiveClients: ctx.inactiveClients,
-      lowStock: ctx.lowStock,
+      greeting: block.greeting || greeting,
+      headline:
+        block.todayAppointments.value! > 0
+          ? `Você tem ${block.todayAppointments.value} atendimento${block.todayAppointments.value! > 1 ? "s" : ""} hoje. Receita prevista de ${brl(block.todayRevenueForecast.value ?? 0)}.`
+          : `Nenhum atendimento na agenda hoje. Faturamento do mês: ${brl(block.revenue.value?.currentMonthRevenue ?? 0)}.`,
+      todayAppointments: block.todayAppointments.value ?? 0,
+      todayRevenueForecast: block.todayRevenueForecast.value ?? 0,
+      occupancyPct:
+        block.occupancyToday.state === "ok"
+          ? Math.round(block.occupancyToday.value!.occupancyPct)
+          : null,
+      occupancyState: block.occupancyToday.state === "ok" ? "ok" : "not_configured",
+      last7DaysRevenue: block.last7DaysRevenue.value ?? 0,
+      monthRevenue: block.revenue.value?.currentMonthRevenue ?? 0,
+      inactiveClientsInsufficientData: block.vanishingClients.state !== "ok",
+      lowStock: block.lowStock.value?.length ?? 0,
       insights: insights.slice(0, 6),
+      emptyInsightsMessage,
     };
   });
 
 // ---- Chat with Aura ----
 
 const ChatInput = z.object({
-  messages: z.array(z.object({
-    role: z.enum(["user", "assistant"]),
-    content: z.string().min(1).max(4000),
-  })).min(1).max(30),
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string().min(1).max(4000),
+      }),
+    )
+    .min(1)
+    .max(30),
 });
-
-function contextToPrompt(ctx: Awaited<ReturnType<typeof gatherContext>>) {
-  return [
-    `Data/hora atual: ${ctx.now.toLocaleString("pt-BR")}`,
-    `Atendimentos hoje: ${ctx.todayAppointments} · Receita prevista hoje: ${brl(ctx.todayRevenueForecast)}`,
-    `Faturamento semana (7d): ${brl(ctx.weekRevenue)} · Lucro estimado: ${brl(ctx.weekProfit)}`,
-    `Faturamento mês: ${brl(ctx.monthRevenue)} · Despesas mês: ${brl(ctx.monthExpense)} · Lucro estimado: ${brl(ctx.monthRevenue - ctx.monthExpense)}`,
-    `Clientes cadastradas: ${ctx.totalClients} · Sem retorno em 30 dias: ${ctx.inactiveClients}`,
-    `Produtos abaixo do estoque mínimo: ${ctx.lowStock}${ctx.criticalStock.length ? ` (${ctx.criticalStock.join(", ")})` : ""}`,
-    ctx.bestService ? `Serviço com maior receita na semana: ${ctx.bestService.name} (${brl(ctx.bestService.revenue)})` : `Sem serviços registrados na semana.`,
-    `Ocupação estimada da agenda hoje: ${ctx.occupancy}%`,
-  ].join("\n");
-}
-
-const SYSTEM_PROMPT = `Você é a AURA, a Gerente Executiva de Inteligência do aplicativo AURA para profissionais da beleza.
-Você NÃO é um chatbot genérico. Você acompanha diariamente a empresa da usuária e responde como uma gerente sênior: direta, estratégica, calorosa e baseada em dados reais.
-
-Diretrizes:
-- Sempre em português do Brasil, tom profissional e humano.
-- Use APENAS os dados fornecidos na seção "CONTEXTO OPERACIONAL". Se um dado não estiver disponível, diga isso e sugira como obtê-lo.
-- Respostas curtas por padrão (máx. 6 linhas). Use listas com "•" quando ajudar.
-- Sempre que possível, termine com uma recomendação ou próximo passo executável.
-- Formate valores em Real (R$) e percentuais.
-- Nunca invente números. Nunca prometa executar ações críticas — sugira e peça confirmação.`;
 
 export const chatWithAura = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => ChatInput.parse(input))
   .handler(async ({ data, context }): Promise<{ reply: string }> => {
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("LOVABLE_API_KEY não configurado.");
+    await requireAuraAccess(context);
+    const now = new Date();
+    const block = await loadMetricsBlock(context.supabase, now);
+    const { labelMap, names } = await buildLabelsAndNames(context.supabase, block);
 
-    const ctx = await gatherContext(context.supabase);
-    const contextBlock = contextToPrompt(ctx);
+    const pseudonymized = pseudonymizeClientIds(block, labelMap);
+    const contextBlock = buildMetricsContextBlock(JSON.stringify(pseudonymized));
 
-    const systemMessages: AuraMessage[] = [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "system", content: `CONTEXTO OPERACIONAL (dados reais do negócio agora):\n${contextBlock}` },
-    ];
-
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: "google/gemini-3.6-flash",
-        messages: [...systemMessages, ...data.messages],
-        temperature: 0.6,
-      }),
+    const result = await generate({
+      task: "chat",
+      system: `${AURA_SYSTEM_PROMPT}\n\n${contextBlock}`,
+      messages: data.messages,
     });
 
-    if (res.status === 429) throw new Error("Limite de requisições atingido. Tente novamente em alguns instantes.");
-    if (res.status === 402) throw new Error("Créditos de IA esgotados. Adicione créditos nas configurações da Lovable.");
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Falha na Aura IA (${res.status}): ${text.slice(0, 200)}`);
-    }
-
-    const json = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const reply = json.choices?.[0]?.message?.content?.trim();
-    if (!reply) throw new Error("Resposta vazia da Aura IA.");
-    return { reply };
+    return { reply: restoreClientNames(result.text, labelMap, names) };
   });
 
 // ---- Executive Council ----
@@ -283,62 +271,53 @@ export const askCouncil = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => CouncilInput.parse(input))
   .handler(async ({ data, context }): Promise<CouncilVerdict> => {
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("LOVABLE_API_KEY não configurado.");
+    await requireAuraAccess(context);
+    const now = new Date();
+    const block = await loadMetricsBlock(context.supabase, now);
+    const { labelMap, names } = await buildLabelsAndNames(context.supabase, block);
 
-    const ctx = await gatherContext(context.supabase);
-    const contextBlock = contextToPrompt(ctx);
+    const pseudonymized = pseudonymizeClientIds(block, labelMap);
+    const contextBlock = buildMetricsContextBlock(JSON.stringify(pseudonymized));
 
-    const system = `Você é o Conselho Executivo da AURA IA. Reúna 4 perspectivas especializadas para responder à pergunta estratégica da profissional da beleza.
-Sempre use os dados reais do CONTEXTO OPERACIONAL. Se algum dado faltar, diga "dado indisponível" na análise correspondente.
-Retorne SOMENTE um JSON válido (sem markdown, sem crases) no formato:
-{
-  "perspectives": [
-    { "role": "Diretora Financeira", "tag": "Lucro, fluxo de caixa e metas", "tone": "green", "analysis": "..." },
-    { "role": "Gestora Operacional", "tag": "Agenda, capacidade e eficiência", "tone": "blue", "analysis": "..." },
-    { "role": "Especialista em Marketing", "tag": "Campanhas e fidelização", "tone": "purple", "analysis": "..." },
-    { "role": "Analista de Estoque", "tag": "Consumo e reposição", "tone": "amber", "analysis": "..." }
-  ],
-  "recommendation": "Parágrafo consolidado de 2 a 4 frases, direto ao ponto.",
-  "impact": "Estimativa do impacto (ex.: +R$ 4.200/mês em 8 semanas)",
-  "status": "recomendado" | "atencao" | "nao_recomendado"
-}
-Cada análise deve ter no máximo 2 frases.`;
-
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: "google/gemini-3.6-flash",
-        messages: [
-          { role: "system", content: system },
-          { role: "system", content: `CONTEXTO OPERACIONAL:\n${contextBlock}` },
-          { role: "user", content: data.question },
-        ],
-        temperature: 0.5,
-        response_format: { type: "json_object" },
-      }),
+    const result = await generate({
+      task: "council",
+      system: `${AURA_COUNCIL_SYSTEM_PROMPT}\n\n${contextBlock}`,
+      messages: [{ role: "user", content: data.question }],
+      json: true,
     });
 
-    if (res.status === 429) throw new Error("Limite de requisições atingido.");
-    if (res.status === 402) throw new Error("Créditos de IA esgotados.");
-    if (!res.ok) throw new Error(`Falha no Conselho (${res.status}).`);
-
-    const json = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const raw = json.choices?.[0]?.message?.content ?? "{}";
     let parsed: Partial<CouncilVerdict> = {};
     try {
-      const stripped = raw.replace(/^```(?:json)?/i, "").replace(/```$/,"").trim();
+      const stripped = result.text
+        .replace(/^```(?:json)?/i, "")
+        .replace(/```$/, "")
+        .trim();
       parsed = JSON.parse(stripped);
     } catch {
       parsed = {};
     }
 
+    const recommendation = restoreClientNames(
+      parsed.recommendation ??
+        "A Aura não conseguiu consolidar uma recomendação com os dados atuais.",
+      labelMap,
+      names,
+    );
+    const whatToMeasure = restoreClientNames(
+      parsed.whatToMeasure ?? "Dado não disponível.",
+      labelMap,
+      names,
+    );
+    const perspectives = (parsed.perspectives ?? []).slice(0, 6).map((p) => ({
+      ...p,
+      analysis: restoreClientNames(p.analysis ?? "", labelMap, names),
+    }));
+
     return {
       question: data.question,
-      perspectives: (parsed.perspectives ?? []).slice(0, 6),
-      recommendation: parsed.recommendation ?? "A Aura não conseguiu consolidar uma recomendação com os dados atuais.",
-      impact: parsed.impact ?? "Impacto não estimado.",
+      perspectives,
+      recommendation,
+      whatToMeasure,
       status: parsed.status ?? "atencao",
     };
   });
