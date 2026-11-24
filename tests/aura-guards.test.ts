@@ -197,6 +197,75 @@ test("GUARDA: regra 9 deixa explícito que a sugestão final é UMA pergunta OU 
   assert.match(src, /UMA pergunta OU UMA recomendação prática — nunca as duas juntas/);
 });
 
+// FASE IA-3C — etiqueta de versão do Laboratório (LAB_BUILD_TAG): prova visível de qual publicação
+// está de fato no ar (tela vs. servidor), depois do caso em que o commit IA-3 estava mergeado mas o
+// texto copiado de uma rodada real não trazia as linhas novas daquela fase.
+test("GUARDA: LAB_BUILD_TAG é uma constante exportada e não-vazia", async () => {
+  const { LAB_BUILD_TAG } = await import("../src/lib/aura-ai/laboratory/build-tag.ts");
+  assert.equal(typeof LAB_BUILD_TAG, "string");
+  assert.ok(LAB_BUILD_TAG.length > 0);
+});
+
+test("GUARDA: a tela do Laboratório importa LAB_BUILD_TAG e renderiza o aviso de divergência tela/servidor", () => {
+  const src = readFileSync(
+    new URL("../src/routes/_authenticated/aura-ia.laboratorio.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    src,
+    /import\s*\{\s*LAB_BUILD_TAG\s*\}\s*from\s*"@\/lib\/aura-ai\/laboratory\/build-tag"/,
+  );
+  assert.match(src, /Versão da tela:/);
+  assert.match(src, /Versão do servidor:/);
+  assert.match(
+    src,
+    /Atenção: a tela e o servidor estão em versões diferentes — publique de novo e recarregue/,
+  );
+});
+
+test("GUARDA: getLabStatus e runLabQuestion devolvem serverBuildTag em TODO caminho de retorno (fonte)", () => {
+  const src = readFileSync(
+    new URL("../src/lib/aura-ai/laboratory/laboratory.functions.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(src, /import\s*\{\s*LAB_BUILD_TAG\s*\}\s*from\s*"\.\/build-tag"/);
+
+  const start = src.indexOf("export const getLabStatus");
+  const nextExport1 = src.indexOf("export const", start + 1);
+  const getLabStatusBody = src.slice(start, nextExport1 > -1 ? nextExport1 : undefined);
+  const returnsInGetLabStatus = getLabStatusBody.match(/return\s*\{[\s\S]*?\};/g) ?? [];
+  assert.ok(returnsInGetLabStatus.length >= 2, "getLabStatus deveria ter pelo menos 2 retornos");
+  for (const ret of returnsInGetLabStatus) {
+    assert.match(ret, /serverBuildTag:\s*LAB_BUILD_TAG/);
+  }
+
+  const start2 = src.indexOf("export const runLabQuestion");
+  const nextExport2 = src.indexOf("export const", start2 + 1);
+  const runLabQuestionBody = src.slice(start2, nextExport2 > -1 ? nextExport2 : undefined);
+  const returnsInRunLabQuestion = runLabQuestionBody.match(/return\s*\{[\s\S]*?\};/g) ?? [];
+  assert.ok(
+    returnsInRunLabQuestion.length >= 5,
+    "runLabQuestion deveria ter pelo menos 5 retornos (um por ramo)",
+  );
+  for (const ret of returnsInRunLabQuestion) {
+    assert.match(ret, /serverBuildTag:\s*LAB_BUILD_TAG/);
+  }
+});
+
+// FASE IA-3C (item 4) — a linha do provedor no texto "Copiar" tem que trazer tela= e servidor=,
+// usando o serverBuildTag devolvido por runLabQuestion (não o de getLabStatus).
+test("GUARDA: resultToText (texto 'Copiar') inclui tela= e servidor= na linha do provedor", () => {
+  const src = readFileSync(
+    new URL("../src/routes/_authenticated/aura-ia.laboratorio.tsx", import.meta.url),
+    "utf8",
+  );
+  const start = src.indexOf("function resultToText");
+  const nextFn = src.indexOf("function ", start + 1);
+  const body = src.slice(start, nextFn > -1 ? nextFn : undefined);
+  assert.match(body, /tela=\$\{LAB_BUILD_TAG\}/);
+  assert.match(body, /servidor=\$\{serverBuildTag/);
+});
+
 test("GUARDA: AURA_WEEKLY_REPORT_LENGTH_RULE proíbe saudação E pergunta final, exige terminar em recomendações", () => {
   const src = readFileSync(new URL("../src/lib/aura-ai/system-prompt.ts", import.meta.url), "utf8");
   const start = src.indexOf("export const AURA_WEEKLY_REPORT_LENGTH_RULE");

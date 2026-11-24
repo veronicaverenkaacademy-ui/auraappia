@@ -42,6 +42,7 @@ import { defaultModelFor, validateModelForProvider } from "@/lib/aura-ai/model-s
 import { checkLabAccess } from "./access";
 import type { AuraAiAdapter, GenerateDiagnostics } from "@/lib/aura-ai/types";
 import { parseLabChatMaxTokensOverride } from "./lab-max-tokens";
+import { LAB_BUILD_TAG } from "./build-tag";
 
 export type LabProviderId = "anthropic" | "google";
 export { parseLabChatMaxTokensOverride } from "./lab-max-tokens";
@@ -159,6 +160,11 @@ export interface LabStatusResult {
   enabled: boolean;
   disabledReason?: string;
   providers: Record<LabProviderId, boolean>;
+  /** FASE IA-3C — etiqueta de versão LIDA DO BUNDLE DO SERVIDOR (ver build-tag.ts), pra a tela poder
+   * comparar contra a mesma constante importada no cliente e provar se os dois lados estão na mesma
+   * publicação. Sempre presente, mesmo quando o Laboratório está desabilitado — não expõe nada
+   * sensível, é só a etiqueta literal de versão. */
+  serverBuildTag: string;
 }
 
 export const getLabStatus = createServerFn({ method: "GET" })
@@ -171,6 +177,7 @@ export const getLabStatus = createServerFn({ method: "GET" })
         enabled: false,
         disabledReason: access.disabledReason,
         providers: { anthropic: false, google: false },
+        serverBuildTag: LAB_BUILD_TAG,
       };
     }
     return {
@@ -179,6 +186,7 @@ export const getLabStatus = createServerFn({ method: "GET" })
         anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
         google: Boolean(process.env.GEMINI_API_KEY),
       },
+      serverBuildTag: LAB_BUILD_TAG,
     };
   });
 
@@ -199,6 +207,12 @@ export interface RunLabQuestionResult {
    * (mesma seed+"now" aproximado); incluído aqui pra a tela poder colar no texto do "Copiar" (item
    * E.2) sem precisar de uma chamada extra. */
   gabaritoText?: string;
+  /** FASE IA-3C — mesma etiqueta de LabStatusResult.serverBuildTag, mas devolvida aqui pra provar que
+   * foi ESSA chamada específica (a que gerou a resposta) que rodou nessa versão do servidor — não só
+   * "o servidor estava nessa versão quando a tela carregou" (getLabStatus roda uma vez só, no mount).
+   * Sempre presente, em todo retorno (mesmo nos de erro/não-configurado), pelo mesmo motivo de
+   * LabStatusResult.serverBuildTag. */
+  serverBuildTag: string;
 }
 
 export const runLabQuestion = createServerFn({ method: "POST" })
@@ -208,7 +222,12 @@ export const runLabQuestion = createServerFn({ method: "POST" })
     await requireAuraAdmin(context.supabase, context.userId);
     const access = checkLabAccess(process.env.AURA_LAB_ALLOWED_EMAILS, emailFromContext(context));
     if (!access.enabled) {
-      return { enabled: false, disabledReason: access.disabledReason, configured: false };
+      return {
+        enabled: false,
+        disabledReason: access.disabledReason,
+        configured: false,
+        serverBuildTag: LAB_BUILD_TAG,
+      };
     }
 
     const question = LAB_ALL_ITEMS.find((q) => q.id === data.questionId);
@@ -218,7 +237,7 @@ export const runLabQuestion = createServerFn({ method: "POST" })
 
     const apiKey =
       data.providerId === "anthropic" ? process.env.ANTHROPIC_API_KEY : process.env.GEMINI_API_KEY;
-    if (!apiKey) return { enabled: true, configured: false };
+    if (!apiKey) return { enabled: true, configured: false, serverBuildTag: LAB_BUILD_TAG };
 
     const model = pickLabModel(data.providerId, task);
     if (!model) {
@@ -230,6 +249,7 @@ export const runLabQuestion = createServerFn({ method: "POST" })
           question,
           `Nenhum modelo configurado para ${data.providerId} nesta tarefa (defina ${envName}).`,
         ),
+        serverBuildTag: LAB_BUILD_TAG,
       };
     }
     try {
@@ -243,6 +263,7 @@ export const runLabQuestion = createServerFn({ method: "POST" })
           question,
           e instanceof Error ? e.message : "Modelo inválido para este provedor.",
         ),
+        serverBuildTag: LAB_BUILD_TAG,
       };
     }
 
@@ -288,7 +309,14 @@ export const runLabQuestion = createServerFn({ method: "POST" })
       data.providerId,
     );
 
-    return { enabled: true, configured: true, model, result, gabaritoText: gabarito.text };
+    return {
+      enabled: true,
+      configured: true,
+      model,
+      result,
+      gabaritoText: gabarito.text,
+      serverBuildTag: LAB_BUILD_TAG,
+    };
   });
 
 // ---- listLabAvailableModels: "Ver modelos disponíveis" (item 7) ----
