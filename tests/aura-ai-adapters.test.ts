@@ -297,6 +297,81 @@ test("custo estimado: calculado a partir do usage e da tabela de preços", () =>
   assert.ok(cost! > 0);
 });
 
+// FASE IA-3 (item 5.a) — diagnóstico PASSIVO (ver GenerateDiagnostics em types.ts): captura tipos de
+// bloco, stop_reason, usage cru e comprimento (nunca o texto) de cada bloco — mesmo quando há um
+// bloco "thinking" antes do "text" (hipótese de P1: tokens_out muito maior que o texto visível).
+test("anthropic: diagnostics captura blockTypes/stopReason/usageRaw/blockChars quando há bloco 'thinking'", async () => {
+  const fakeFetch = async () =>
+    jsonResponse(200, {
+      content: [
+        { type: "thinking", thinking: "raciocínio interno bem mais longo que a resposta final" },
+        { type: "text", text: "Resposta curta." },
+      ],
+      usage: { input_tokens: 50, output_tokens: 400, cache_read_input_tokens: 0 },
+      stop_reason: "max_tokens",
+    });
+  const adapter = createAnthropicAdapter("fake-key", fakeFetch);
+  const result = await adapter.generate(BASE_PARAMS, "claude-haiku-5-5");
+  assert.ok(result.diagnostics);
+  assert.deepEqual(result.diagnostics!.blockTypes, ["thinking", "text"]);
+  assert.equal(result.diagnostics!.stopReason, "max_tokens");
+  assert.deepEqual(result.diagnostics!.blockChars, [
+    "raciocínio interno bem mais longo que a resposta final".length,
+    "Resposta curta.".length,
+  ]);
+  // usageRaw preserva TODOS os campos crus do provedor, mesmo os que GenerateUsage não modela.
+  assert.equal((result.diagnostics!.usageRaw as Record<string, number>).cache_read_input_tokens, 0);
+  // nunca expõe o TEXTO do bloco "thinking" em lugar nenhum do resultado — só o comprimento.
+  assert.doesNotMatch(JSON.stringify(result), /raciocínio interno/);
+});
+
+test("anthropic: diagnostics presente mesmo sem bloco 'thinking' (só blockTypes=['text'])", async () => {
+  const fakeFetch = async () =>
+    jsonResponse(200, {
+      content: [{ type: "text", text: "ok" }],
+      usage: {},
+      stop_reason: "end_turn",
+    });
+  const adapter = createAnthropicAdapter("fake-key", fakeFetch);
+  const result = await adapter.generate(BASE_PARAMS, "claude-haiku-5-5");
+  assert.deepEqual(result.diagnostics?.blockTypes, ["text"]);
+});
+
+test("google: diagnostics fica ausente (adaptador não preenche — Laboratório mostra 'n/d')", async () => {
+  const fakeFetch = async () =>
+    jsonResponse(200, {
+      candidates: [{ content: { parts: [{ text: "ok" }] } }],
+      usageMetadata: {},
+    });
+  const adapter = createGoogleAdapter("fake-key", fakeFetch);
+  const result = await adapter.generate(BASE_PARAMS, "gemini-3.6-flash");
+  assert.equal(result.diagnostics, undefined);
+});
+
+// FASE IA-3 (item 1.f / 5.b) — maxTokensOverride é um 3º parâmetro OPCIONAL só pro Laboratório; sem
+// ele (como em toda chamada de produção via generate.server.ts), o comportamento de sempre continua.
+test("anthropic: maxTokensOverride (3º parâmetro) sobrescreve o max_tokens enviado no corpo", async () => {
+  let capturedBody: Record<string, unknown> = {};
+  const fakeFetch = async (_url: string, init: RequestInit) => {
+    capturedBody = JSON.parse(init.body as string);
+    return jsonResponse(200, { content: [{ type: "text", text: "ok" }], usage: {} });
+  };
+  const adapter = createAnthropicAdapter("fake-key", fakeFetch, 900);
+  await adapter.generate({ ...BASE_PARAMS, task: "chat" }, "claude-haiku-5-5");
+  assert.equal(capturedBody.max_tokens, 900);
+});
+
+test("anthropic: sem maxTokensOverride, continua no default de sempre (1500 chat / 2048 relatório)", async () => {
+  let capturedBody: Record<string, unknown> = {};
+  const fakeFetch = async (_url: string, init: RequestInit) => {
+    capturedBody = JSON.parse(init.body as string);
+    return jsonResponse(200, { content: [{ type: "text", text: "ok" }], usage: {} });
+  };
+  const adapter = createAnthropicAdapter("fake-key", fakeFetch);
+  await adapter.generate({ ...BASE_PARAMS, task: "chat" }, "claude-haiku-5-5");
+  assert.equal(capturedBody.max_tokens, 1500);
+});
+
 test("custo estimado: modelo sem preço cadastrado devolve null, nunca inventa um número", () => {
   const cost = estimateCostUSD(
     { inputTokens: 100, outputTokens: 100 },

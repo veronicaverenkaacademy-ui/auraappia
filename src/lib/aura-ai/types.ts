@@ -25,6 +25,29 @@ export interface GenerateUsage {
   reasoningOutputTokens?: number;
 }
 
+// FASE IA-3 (item 1) — diagnóstico PASSIVO (nunca muda a chamada) do que o provedor devolveu, pra
+// investigar tokens_out muito maiores que o texto visível (hipótese: blocos "thinking" descartados
+// silenciosamente). blockChars NUNCA guarda o texto em si de um bloco — só o comprimento (ver cada
+// adaptador); usageRaw é o objeto "usage" cru do provedor, sem filtrar campos (pode ter chaves que o
+// tipo GenerateUsage ainda não modela). Campo aditivo e opcional — adaptadores que não o preenchem
+// (google/lovable, por ora) simplesmente o omitem, sem quebrar o contrato.
+/** JSON genérico — usado só pra usageRaw abaixo. "unknown" não serve aqui: GenerateDiagnostics
+ * atravessa a fronteira servidor/cliente de uma server function do TanStack Start, que exige que o
+ * TIPO prove estaticamente que é serializável (ver ValidateSerializableMapped em
+ * @tanstack/router-core) — "unknown" nunca prova isso, mesmo que o valor real seja sempre JSON. */
+export type JsonValue =
+  string | number | boolean | null | undefined | JsonValue[] | { [key: string]: JsonValue };
+
+export interface GenerateDiagnostics {
+  /** Tipos de bloco em "content", na ordem em que vieram (ex.: ["thinking", "text"]). */
+  blockTypes: string[];
+  stopReason?: string;
+  /** Objeto "usage" exatamente como o provedor devolveu (sem filtrar/tipar campos) — ver JsonValue. */
+  usageRaw: JsonValue;
+  /** Comprimento em caracteres de cada bloco (mesmo índice de blockTypes) — nunca o texto em si. */
+  blockChars: number[];
+}
+
 export interface GenerateResult {
   text: string;
   usage: GenerateUsage;
@@ -35,6 +58,8 @@ export interface GenerateResult {
    * Anthropic, finishReason "MAX_TOKENS" no Google) — nunca silenciado, o Laboratório mostra isso
    * como "resposta cortada". */
   truncated: boolean;
+  /** Ver GenerateDiagnostics — ausente para adaptadores que não o preenchem. */
+  diagnostics?: GenerateDiagnostics;
 }
 
 export interface AuraAiAdapter {

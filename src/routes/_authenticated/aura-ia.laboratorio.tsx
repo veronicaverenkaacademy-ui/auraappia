@@ -18,6 +18,7 @@ import {
   type RunLabQuestionResult,
   type ListLabModelsResult,
   type LabProviderId,
+  type LabQuestionResult,
 } from "@/lib/aura-ai/laboratory/laboratory.functions";
 import { LAB_ALL_ITEMS, LAB_WEEKLY_REPORT_ID } from "@/lib/aura-ai/laboratory/questions";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,43 @@ function modelForTask(
   return undefined;
 }
 
+/** FASE IA-3 (item 1.d) — tamanho APROXIMADO de raciocínio quando há bloco "thinking" no diagnóstico
+ * (ver GenerateDiagnostics em types.ts) mas o provedor não devolve uma contagem exata de tokens de
+ * raciocínio (caso do Anthropic hoje — reasoningTokens só existe pro Google). Nunca apresentado como
+ * contagem exata: a conversão char->token (÷3.5) é só uma estimativa grosseira. Devolve null quando
+ * não há nenhum bloco "thinking" no diagnóstico (nada pra aproximar). */
+function approxThinkingTokens(diag: RunLabQuestionResult["result"]): number | null {
+  const diagnostics = diag?.diagnostics;
+  if (!diagnostics) return null;
+  let chars = 0;
+  let found = false;
+  diagnostics.blockTypes.forEach((type, i) => {
+    if (type === "thinking") {
+      found = true;
+      chars += diagnostics.blockChars[i] ?? 0;
+    }
+  });
+  if (!found) return null;
+  return Math.round(chars / 3.5);
+}
+
+/** FASE IA-3 (item 1.c) — linha de diagnóstico pro texto "Copiar": nunca contém o texto de nenhum
+ * bloco (só tipos/tamanhos/usage cru, nada que exponha o conteúdo de um bloco "thinking"). "diag:
+ * n/d" quando o adaptador não preenche diagnostics (google/lovable hoje). */
+function diagnosticsLine(r: LabQuestionResult): string {
+  const d = r.diagnostics;
+  if (!d) return "diag: n/d";
+  return `diag: blocos=[${d.blockTypes.join(",")}] stop=${d.stopReason ?? "?"} chars=[${d.blockChars.join(",")}] usage=${JSON.stringify(d.usageRaw)}`;
+}
+
+/** FASE IA-3 (item 4) — surfaça no texto copiado o resultado da verificação automática que já roda
+ * internamente (checkCitedNumbers contra gabarito.structured) mas, até aqui, só aparecia quando dava
+ * problema — agora mostra também o lado positivo ("conferem"), nunca só o negativo. */
+function verificationLine(r: LabQuestionResult): string {
+  if (r.unmatchedNumbers.length === 0) return `✅ ${r.citedNumbersTotal} número(s) conferem`;
+  return `❌ não encontrados no gabarito: ${r.unmatchedNumbers.join(", ")}`;
+}
+
 function resultToText(
   provider: LabProviderId,
   runs: Record<string, ItemRun>,
@@ -73,11 +111,18 @@ function resultToText(
     if (!r) continue;
     lines.push(`\n--- ${r.question} ---`);
     lines.push(r.error ? `[erro] ${r.error}` : r.answerText);
+    const approxThinking = approxThinkingTokens(r);
+    const raciocinio =
+      r.reasoningTokens > 0
+        ? `raciocínio=${r.reasoningTokens}`
+        : approxThinking !== null
+          ? `raciocínio≈${approxThinking} (aprox.)`
+          : `raciocínio=${r.reasoningTokens}`;
     lines.push(
-      `latência=${r.latencyMs}ms tokens_in=${r.inputTokens} tokens_out=${r.outputTokens} raciocínio=${r.reasoningTokens} custo=${r.costUSD ?? "?"}${r.truncated ? " [CORTADA]" : ""}`,
+      `latência=${r.latencyMs}ms tokens_in=${r.inputTokens} tokens_out=${r.outputTokens} ${raciocinio} custo=${r.costUSD ?? "?"}${r.truncated ? " [CORTADA]" : ""}`,
     );
-    if (r.unmatchedNumbers.length > 0)
-      lines.push(`⚠️ números não encontrados no gabarito: ${r.unmatchedNumbers.join(", ")}`);
+    lines.push(diagnosticsLine(r));
+    lines.push(verificationLine(r));
     if (r.isTrap) {
       lines.push(
         r.refusedTrapCorrectly

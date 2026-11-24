@@ -15,6 +15,7 @@ import { generateFakeStudio, FAKE_STUDIO_SEED } from "../src/lib/aura-ai/laborat
 import { buildMetricsBlock } from "../src/lib/aura-metrics/engine.ts";
 import { buildClientLabelMap } from "../src/lib/aura-ai/pseudonymize.ts";
 import { buildGabarito } from "../src/lib/aura-ai/laboratory/gabarito.ts";
+import { parseLabChatMaxTokensOverride } from "../src/lib/aura-ai/laboratory/lab-max-tokens.ts";
 
 test("extractNumbersFromText: lê inteiros, decimais pt-BR e percentuais", () => {
   const nums = extractNumbersFromText(
@@ -404,6 +405,31 @@ test("buildGabarito: frase com vários números plausíveis de um relatório sem
     );
   }
   assert.equal(unmatchedNumbers.length, 0);
+});
+
+// FASE IA-3 (item 1.f / 5.b) — AURA_LAB_CHAT_MAX_TOKENS: valor válido é aceito, inválido/fora de
+// faixa é ignorado (cai no default normal do adaptador) — nunca lança erro.
+test("parseLabChatMaxTokensOverride: valor válido dentro de [256, 4000] é aceito", () => {
+  assert.equal(parseLabChatMaxTokensOverride("900"), 900);
+  assert.equal(parseLabChatMaxTokensOverride("256"), 256);
+  assert.equal(parseLabChatMaxTokensOverride("4000"), 4000);
+});
+
+test("parseLabChatMaxTokensOverride: ausente/vazio devolve undefined (sem override)", () => {
+  assert.equal(parseLabChatMaxTokensOverride(undefined), undefined);
+  assert.equal(parseLabChatMaxTokensOverride(""), undefined);
+});
+
+test("parseLabChatMaxTokensOverride: valor não-numérico ou não-inteiro é ignorado", () => {
+  assert.equal(parseLabChatMaxTokensOverride("abc"), undefined);
+  assert.equal(parseLabChatMaxTokensOverride("900.5"), undefined);
+});
+
+test("parseLabChatMaxTokensOverride: fora da faixa [256, 4000] é ignorado", () => {
+  assert.equal(parseLabChatMaxTokensOverride("255"), undefined);
+  assert.equal(parseLabChatMaxTokensOverride("4001"), undefined);
+  assert.equal(parseLabChatMaxTokensOverride("-100"), undefined);
+  assert.equal(parseLabChatMaxTokensOverride("0"), undefined);
 });
 
 test("buildGabarito: despesa sem lançamento aparece como 'sem lançamentos', nunca 'R$ 0' (item C)", () => {
