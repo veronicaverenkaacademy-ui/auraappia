@@ -153,6 +153,40 @@ test("revenueComparison: compara mês atual com mês anterior ATÉ O MESMO DIA",
   assert.equal(cmp.previousMonthRevenueToSameDay, 50);
 });
 
+// FASE IA-2 (item C) — contagem de lançamentos por bucket, pra distinguir "sem lançamentos" de
+// "lançamentos que somam zero" (sem mudar a soma: mesma regra de sempre).
+test("revenueComparison: TxCount vem a 0 quando não há nenhum lançamento no período (sem dado != zero)", () => {
+  const now = d(2026, 11, 10);
+  const cmp = revenueComparison([], now);
+  assert.equal(cmp.currentMonthRevenue, 0);
+  assert.equal(cmp.currentMonthRevenueTxCount, 0);
+  assert.equal(cmp.previousMonthExpenseToSameDayTxCount, 0);
+  assert.equal(cmp.previousMonthExpenseFullTxCount, 0);
+});
+
+test("revenueComparison: TxCount reflete a contagem real quando há lançamentos (mesmo somando a valor != 0)", () => {
+  const now = d(2026, 11, 10);
+  const transactions = [
+    { id: "1", kind: "expense" as const, amount: 300, status: "paid", paidAt: d(2026, 11, 5) },
+    { id: "2", kind: "expense" as const, amount: 200, status: "paid", paidAt: d(2026, 11, 8) },
+  ];
+  const cmp = revenueComparison(transactions, now);
+  assert.equal(cmp.currentMonthExpense, 500);
+  assert.equal(cmp.currentMonthExpenseTxCount, 2);
+});
+
+test("revenueComparison: mês anterior COMPLETO inclui lançamentos depois do 'mesmo dia' (diferente de previousMonth*ToSameDay)", () => {
+  const now = d(2026, 11, 10); // "mesmo dia" do mês anterior = 10/10
+  const transactions = [
+    { id: "1", kind: "income" as const, amount: 50, status: "paid", paidAt: d(2026, 10, 5) },
+    { id: "2", kind: "income" as const, amount: 999, status: "paid", paidAt: d(2026, 10, 20) }, // depois do dia 10
+  ];
+  const cmp = revenueComparison(transactions, now);
+  assert.equal(cmp.previousMonthRevenueToSameDay, 50); // exclui o de 20/10
+  assert.equal(cmp.previousMonthRevenueFull, 50 + 999); // mês completo inclui os dois
+  assert.equal(cmp.previousMonthRevenueFullTxCount, 2);
+});
+
 test("newClientsInMonth: exclui clientes anonimizadas e as de fora do mês", () => {
   const now = d(2026, 11, 23);
   const clients: ClientForMetrics[] = [

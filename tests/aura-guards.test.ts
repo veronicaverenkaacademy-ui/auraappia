@@ -138,3 +138,37 @@ test("GUARDA: os erros devolvidos pelos adaptadores nunca incluem o texto 'apiKe
     }
   }
 });
+
+// FASE IA-2 (item A.3) — chatWithAura precisa embutir o aviso de resposta cortada no próprio texto
+// devolvido (sem depender de nenhuma UI fora do escopo desta fase) quando result.truncated.
+test("GUARDA: chatWithAura embute o aviso de 'resposta cortada' no texto quando result.truncated", () => {
+  const src = readFileSync(new URL("../src/lib/aura.functions.ts", import.meta.url), "utf8");
+  const start = src.indexOf("export const chatWithAura");
+  const nextExport = src.indexOf("export const", start + 1);
+  const body = src.slice(start, nextExport > -1 ? nextExport : undefined);
+  assert.match(body, /result\.truncated/);
+  assert.match(src, /Resposta cortada/);
+});
+
+// FASE IA-2 (itens D/E) — o Laboratório precisa usar os detectores por armadilha (não o
+// detectedRefusal genérico direto) e o GABARITO (não o bloco bruto) como base da verificação.
+test("GUARDA: laboratory.functions.ts usa checkTrapHandling (não detectedRefusal direto) e buildGabarito", () => {
+  const src = readFileSync(
+    new URL("../src/lib/aura-ai/laboratory/laboratory.functions.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(src, /checkTrapHandling\(/);
+  assert.match(src, /buildGabarito\(/);
+  assert.match(src, /buildAllowedNumbers\(gabarito\.structured\)/);
+  assert.doesNotMatch(src, /\bdetectedRefusal\(/);
+});
+
+// FASE IA-2 (item A.1) — a regra de tamanho do relatório semanal só deve ser aplicada quando a
+// tarefa é "weekly_report", nunca trocando o limite padrão do chat.
+test("GUARDA: a regra de tamanho do relatório semanal só é usada para task 'weekly_report'", () => {
+  const src = readFileSync(
+    new URL("../src/lib/aura-ai/laboratory/laboratory.functions.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(src, /task === "weekly_report"[\s\S]{0,80}AURA_WEEKLY_REPORT_LENGTH_RULE/);
+});

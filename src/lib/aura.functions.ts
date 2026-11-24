@@ -242,6 +242,13 @@ const ChatInput = z.object({
     .max(30),
 });
 
+// FASE IA-2 (item A.3) — quando o provedor cortar a resposta por limite de tokens
+// (result.truncated), o aviso vai AQUI, embutido no próprio texto devolvido — nunca escondido em
+// silêncio. Feito no servidor (não na tela de chat, fora do escopo autorizado desta fase) para
+// funcionar com qualquer UI que já leia o campo "reply".
+const TRUNCATED_WARNING =
+  "\n\n⚠️ Resposta cortada — peça \"continue\" ou pergunte de forma mais específica.";
+
 export const chatWithAura = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => ChatInput.parse(input))
@@ -260,7 +267,8 @@ export const chatWithAura = createServerFn({ method: "POST" })
       messages: data.messages,
     });
 
-    return { reply: restoreClientNames(result.text, labelMap, names) };
+    const reply = restoreClientNames(result.text, labelMap, names);
+    return { reply: result.truncated ? `${reply}${TRUNCATED_WARNING}` : reply };
   });
 
 // ---- Executive Council ----
