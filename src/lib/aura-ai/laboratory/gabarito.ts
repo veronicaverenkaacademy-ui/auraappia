@@ -61,6 +61,10 @@ export function buildGabarito(
   // mostrando só o top 5 (mais legível), mas o total completo agora também é reportado.
   const vanishingAll = block.vanishingClients.value ?? [];
   const vanishingTop5 = vanishingAll.slice(0, 5);
+  // FASE IA-5 (item 1) — fonte única: o total vem do MESMO campo novo e aditivo do motor
+  // (vanishingClientsTotal) que agora também vai no bloco enviado à IA, em vez de recalcular
+  // vanishingAll.length aqui (ambos dão o mesmo número — a mudança é só "de onde" ele vem).
+  const vanishingClientsTotal = block.vanishingClientsTotal.value ?? vanishingAll.length;
   const stopped = block.stoppedBookingThisMonth.value;
   const lowStock = block.lowStock.value ?? [];
   const last7 = block.last7DaysRevenue.value;
@@ -136,8 +140,8 @@ export function buildGabarito(
       ? vanishingTop5.map((v) => vanishingClientLine(v, labelMap)).join("\n")
       : "  (nenhuma)",
   );
-  lines.push(`\n-- Total de clientes sumindo (vanishing_clients) --`);
-  lines.push(`${vanishingAll.length}`);
+  lines.push(`\n-- Total de clientes sumindo (vanishing_clients_total) --`);
+  lines.push(`${vanishingClientsTotal}`);
 
   lines.push("\n-- Receita dos últimos 7 dias (last_7_days_revenue) --");
   lines.push(block.last7DaysRevenue.state === "ok" ? brl(last7 ?? 0) : "(sem dados)");
@@ -163,19 +167,19 @@ export function buildGabarito(
   lines.push(operationsResolvedTotal !== null ? `${operationsResolvedTotal}` : "(sem dados)");
 
   lines.push(
-    `\n-- Ranking de serviços — mês atual ${stateLabel(block.serviceBreakdownCurrentMonth.state)} --`,
+    `\n-- Ranking de serviços — mês atual ${stateLabel(block.serviceBreakdownCurrentMonth.state)} (total de serviços distintos: ${block.serviceBreakdownCurrentMonthTotal.value ?? "—"}) --`,
   );
   lines.push(serviceBreakdownLines(block.serviceBreakdownCurrentMonth.value));
   lines.push(
-    `\n-- Ranking de serviços — mês anterior ${stateLabel(block.serviceBreakdownPreviousMonth.state)} --`,
+    `\n-- Ranking de serviços — mês anterior ${stateLabel(block.serviceBreakdownPreviousMonth.state)} (total de serviços distintos: ${block.serviceBreakdownPreviousMonthTotal.value ?? "—"}) --`,
   );
   lines.push(serviceBreakdownLines(block.serviceBreakdownPreviousMonth.value));
   lines.push(
-    `\n-- Ranking de serviços — últimos 90 dias ${stateLabel(block.serviceBreakdownLast90Days.state)} --`,
+    `\n-- Ranking de serviços — últimos 90 dias ${stateLabel(block.serviceBreakdownLast90Days.state)} (total de serviços distintos: ${block.serviceBreakdownLast90DaysTotal.value ?? "—"}) --`,
   );
   lines.push(serviceBreakdownLines(block.serviceBreakdownLast90Days.value));
 
-  lines.push("\n-- Estoque baixo (low_stock) --");
+  lines.push(`\n-- Estoque baixo (low_stock) — total: ${block.lowStockTotal.value ?? "—"} --`);
   lines.push(
     lowStock.length > 0
       ? lowStock.map((p) => `  - ${p.name}: ${p.stock}/${p.minStock} ${p.unit}`).join("\n")
@@ -195,15 +199,19 @@ export function buildGabarito(
       // FASE IA-2B (falha 2) — lista COMPLETA (não só o top 5) entra na verificação automática,
       // senão a IA citar uma cliente sumindo fora do top 5 vira falso "possível invenção".
       vanishingClients: vanishingAll,
-      vanishingClientsTotal: vanishingAll.length,
+      vanishingClientsTotal,
       last7DaysRevenue: last7,
       todayAppointments: todayAppts,
       todayRevenueForecast: todayForecast,
       occupancyToday: occupancy,
       serviceBreakdownCurrentMonth: block.serviceBreakdownCurrentMonth.value,
+      serviceBreakdownCurrentMonthTotal: block.serviceBreakdownCurrentMonthTotal.value,
       serviceBreakdownPreviousMonth: block.serviceBreakdownPreviousMonth.value,
+      serviceBreakdownPreviousMonthTotal: block.serviceBreakdownPreviousMonthTotal.value,
       serviceBreakdownLast90Days: block.serviceBreakdownLast90Days.value,
+      serviceBreakdownLast90DaysTotal: block.serviceBreakdownLast90DaysTotal.value,
       lowStock,
+      lowStockTotal: block.lowStockTotal.value,
     },
   };
 }

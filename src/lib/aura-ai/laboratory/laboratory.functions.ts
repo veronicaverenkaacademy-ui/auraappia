@@ -29,6 +29,11 @@ import {
   buildMetricsContextBlock,
 } from "@/lib/aura-ai/system-prompt";
 import { buildAllowedNumbers, checkCitedNumbers, checkTrapHandling } from "./verifier";
+import {
+  checkStatements,
+  type StatementGabarito,
+  type StatementCheckResult,
+} from "./statement-checks";
 import { buildGabarito } from "./gabarito";
 import { estimateCostUSD } from "@/lib/aura-ai/pricing";
 import { createAnthropicAdapter } from "@/lib/aura-ai/adapters/anthropic.server";
@@ -42,7 +47,10 @@ import { defaultModelFor, validateModelForProvider } from "@/lib/aura-ai/model-s
 import { checkLabAccess } from "./access";
 import type { AuraAiAdapter, GenerateDiagnostics } from "@/lib/aura-ai/types";
 import { parseLabChatMaxTokensOverride } from "./lab-max-tokens";
-import { parseLabAnthropicThinkingMode } from "./lab-thinking-mode";
+import {
+  parseLabAnthropicThinkingMode,
+  parseLabAnthropicThinkingModeForTask,
+} from "./lab-thinking-mode";
 import { LAB_BUILD_TAG } from "./build-tag";
 
 export type LabProviderId = "anthropic" | "google";
@@ -65,6 +73,11 @@ export interface LabQuestionResult {
    * "quantos conferem" (FASE IA-3 item 4), sem mudar checkCitedNumbers/verifier.ts. */
   citedNumbersTotal: number;
   unmatchedNumbers: number[];
+  /** FASE IA-5 (item 2) — conferência por AFIRMAÇÃO (não por conjunto): pega fatos específicos que o
+   * texto realmente afirmou (ex.: "total de clientes sumindo") e compara com o gabarito — pega o erro
+   * que checkCitedNumbers não pega quando o número errado também é válido no bloco por coincidência
+   * (ver statement-checks.ts). */
+  statementCheck: StatementCheckResult;
   /** Ver GenerateDiagnostics em types.ts — ausente quando o adaptador não o preenche (google/lovable
    * hoje). FASE IA-3 item 1: só diagnóstico passivo, nunca muda a chamada. */
   diagnostics?: GenerateDiagnostics;
@@ -109,6 +122,7 @@ function emptyResult(question: LabQuestion, error: string): LabQuestionResult {
     truncated: false,
     citedNumbersTotal: 0,
     unmatchedNumbers: [],
+    statementCheck: { checked: 0, mismatches: [] },
     error,
   };
 }
@@ -120,6 +134,7 @@ async function runOneLabQuestion(
   question: LabQuestion,
   system: string,
   allowedNumbers: ReturnType<typeof buildAllowedNumbers>,
+  statementGabarito: StatementGabarito,
   labelMap: Map<string, string>,
   names: Map<string, string>,
   provider: LabProviderId,
@@ -130,6 +145,10 @@ async function runOneLabQuestion(
       model,
     );
     const { citedNumbers, unmatchedNumbers } = checkCitedNumbers(result.text, allowedNumbers);
+    // FASE IA-5 (item 2) — roda no texto CRU (antes de restoreClientNames/normalizePtBrNumbers), mesmo
+    // ponto em que checkCitedNumbers já rodava — nenhum dos dois pós-processadores muda dígitos de
+    // número de um jeito que afete a extração aqui.
+    const statementCheck = checkStatements(result.text, statementGabarito);
     const trapCheck = question.isTrap ? checkTrapHandling(question.id, result.text) : null;
     return {
       questionId: question.id,
@@ -146,6 +165,7 @@ async function runOneLabQuestion(
       truncated: result.truncated,
       citedNumbersTotal: citedNumbers.length,
       unmatchedNumbers,
+      statementCheck,
       diagnostics: result.diagnostics,
       refusedTrapCorrectly: trapCheck?.handledCorrectly,
       trapFailureReason: trapCheck?.failureReason,
@@ -214,10 +234,18 @@ export interface RunLabQuestionResult {
    * Sempre presente, em todo retorno (mesmo nos de erro/não-configurado), pelo mesmo motivo de
    * LabStatusResult.serverBuildTag. */
   serverBuildTag: string;
-  /** FASE IA-4 (item 3) — modo de raciocínio adaptativo usado NESTA chamada ("default"/"disabled"/
-   * "low" pro Anthropic, lido de AURA_LAB_ANTHROPIC_THINKING; "n/a" pro Google, que não tem esse
-   * controle). Sempre presente — mesmo motivo de serverBuildTag: a dona precisa ver, pra cada
-   * resposta, qual modo realmente gerou aquilo, não só o que está configurado "agora". */
+  /** FASE IA-4 (item 3) / FASE IA-5 (item 3) — modo de raciocínio adaptativo usado NESTA chamada
+   * ("default"/"disabled"/"low" pro Anthropic; "n/a" pro Google, que não tem esse controle). Sempre
+   * presente — mesmo motivo de serverBuildTag: a dona precisa ver, pra cada resposta, qual modo
+   * realmente gerou aquilo, não só o que está configurado "agora".
+   *
+   * PRECEDÊNCIA (ver parseLabAnthropicThinkingModeForTask em lab-thinking-mode.ts): 1) a variável
+   * específica da TAREFA desta chamada — AURA_LAB_ANTHROPIC_CHAT_THINKING pra "chat",
+   * AURA_LAB_ANTHROPIC_REPORT_THINKING pra "weekly_report"; 2) se a específica não estiver definida,
+   * cai pra AURA_LAB_ANTHROPIC_THINKING (a variável "base", de antes desta fase — mantida pra não
+   * quebrar quem já a configurou); 3) "default" se nenhuma existir. Antes de `task` ser conhecido (só
+   * no branch de acesso desabilitado, abaixo) usa-se uma versão só com a base (sem a parte por
+   * tarefa, que ainda não dá pra saber) — ver `earlyThinkingMode`. */
   thinkingMode: string;
 }
 
@@ -229,8 +257,11 @@ export const runLabQuestion = createServerFn({ method: "POST" })
     // FASE IA-4 (item 3) — calculado já aqui (antes de qualquer retorno), independente de task — o
     // controle de raciocínio se aplica a toda chamada Anthropic do Laboratório, não só ao chat (ver
     // lab-thinking-mode.ts pra exatamente o que cada modo envia). "n/a" pro Google, que não tem esse
-    // controle. Sempre presente em TODO retorno abaixo, pelo mesmo motivo de serverBuildTag.
-    const thinkingMode =
+    // controle. FASE IA-5 (item 3) — este valor "early" só considera a variável BASE
+    // (AURA_LAB_ANTHROPIC_THINKING), porque `task` (necessário pra decidir entre as variáveis novas
+    // por tarefa) só é conhecido depois de resolver `question` — usado SÓ no branch de acesso
+    // desabilitado abaixo, o único retorno possível antes disso.
+    const earlyThinkingMode =
       data.providerId === "anthropic"
         ? parseLabAnthropicThinkingMode(process.env.AURA_LAB_ANTHROPIC_THINKING)
         : "n/a";
@@ -241,7 +272,7 @@ export const runLabQuestion = createServerFn({ method: "POST" })
         disabledReason: access.disabledReason,
         configured: false,
         serverBuildTag: LAB_BUILD_TAG,
-        thinkingMode,
+        thinkingMode: earlyThinkingMode,
       };
     }
 
@@ -249,6 +280,18 @@ export const runLabQuestion = createServerFn({ method: "POST" })
     if (!question) throw new Error("Pergunta desconhecida.");
     const task: "chat" | "weekly_report" =
       question.id === LAB_WEEKLY_REPORT_ID ? "weekly_report" : "chat";
+    // FASE IA-5 (item 3) — agora com `task` conhecido, a precedência completa (variável por tarefa ->
+    // variável base -> "default") entra em vigor pra todo retorno a partir daqui (ver doc comment de
+    // RunLabQuestionResult.thinkingMode e parseLabAnthropicThinkingModeForTask).
+    const thinkingMode =
+      data.providerId === "anthropic"
+        ? parseLabAnthropicThinkingModeForTask(
+            task,
+            process.env.AURA_LAB_ANTHROPIC_CHAT_THINKING,
+            process.env.AURA_LAB_ANTHROPIC_REPORT_THINKING,
+            process.env.AURA_LAB_ANTHROPIC_THINKING,
+          )
+        : "n/a";
 
     const apiKey =
       data.providerId === "anthropic" ? process.env.ANTHROPIC_API_KEY : process.env.GEMINI_API_KEY;
@@ -299,6 +342,15 @@ export const runLabQuestion = createServerFn({ method: "POST" })
     // percentuais de participação etc. — e podia mascarar uma invenção real por coincidência).
     const gabarito = buildGabarito(block, labelMap);
     const allowedNumbers = buildAllowedNumbers(gabarito.structured);
+    // FASE IA-5 (item 2) — gabarito por AFIRMAÇÃO, direto do bloco (nunca do texto da IA); .value já
+    // vem null quando o estado não é "ok" (ver types.ts), então não precisa checar state aqui.
+    const statementGabarito: StatementGabarito = {
+      vanishingClientsTotal: block.vanishingClientsTotal.value,
+      stoppedBookingCurrentMonth: block.stoppedBookingThisMonth.value?.currentMonthCount ?? null,
+      stoppedBookingPreviousMonth: block.stoppedBookingThisMonth.value?.previousMonthCount ?? null,
+      opsCompletedCurrentMonth: block.opsCurrentMonth.value?.completed ?? null,
+      currentMonthRevenue: block.revenue.value?.currentMonthRevenue ?? null,
+    };
     // FASE IA-2 (item A.1) — o relatório semanal precisa de mais espaço que o chat padrão; a regra
     // extra só entra quando a tarefa é "weekly_report" (ver AURA_WEEKLY_REPORT_LENGTH_RULE).
     const system =
@@ -331,6 +383,7 @@ export const runLabQuestion = createServerFn({ method: "POST" })
       question,
       system,
       allowedNumbers,
+      statementGabarito,
       labelMap,
       names,
       data.providerId,

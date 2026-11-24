@@ -35,6 +35,26 @@ import { newClientsInMonth, lowStockList, type LowStockItem } from "./clients-st
 
 export const MIN_HISTORY_DAYS = 30;
 
+// FASE IA-5 (item 1) — rodada 5 do Laboratório: a IA escreveu "17 clientes sumindo" errado (disse 16)
+// porque CONTOU os itens da lista vanishing_clients em vez de receber um total já pronto — a
+// verificação por CONJUNTO de números não pegou o erro porque 16 também é um valor válido no bloco
+// (intervaloHabitualDias de outro cliente). Correção: para TODA lista que a IA poderia ser tentada a
+// contar (vanishing_clients, low_stock, os 3 rankings de serviço), o motor agora também expõe o TOTAL
+// pronto, como uma métrica Metric<number> NOVA e ADITIVA ao lado da lista (nunca susbtitui/renomeia a
+// lista existente — só soma um campo novo ao bloco) — mesmo state (ok/insufficient_data/
+// not_configured) da lista correspondente, nunca "0" fingido quando a lista está com dados
+// insuficientes. Ver regra correspondente em system-prompt.ts ("nunca conte itens de lista").
+function listTotalMetric<T>(
+  base: Metric<T[]>,
+  id: string,
+  label: string,
+  definition: string,
+): Metric<number> {
+  if (base.state === "not_configured") return notConfiguredMetric<number>(id, label, definition);
+  if (base.state !== "ok" || !base.value) return insufficientMetric<number>(id, label, definition);
+  return okMetric(id, label, definition, base.value.length);
+}
+
 export interface AuraMetricsInput {
   appointments: AppointmentForMetrics[];
   clients: ClientForMetrics[];
@@ -48,16 +68,24 @@ export interface AuraMetricsBlock {
   greeting: string;
   generatedAt: string; // ISO, só para depuração/exibição — nunca usado como "agora" em cálculo
   vanishingClients: Metric<VanishingClient[]>;
+  /** FASE IA-5 (item 1) — total pronto da lista acima; use este número, nunca conte vanishingClients. */
+  vanishingClientsTotal: Metric<number>;
   stoppedBookingThisMonth: Metric<StoppedBookingThisMonth>;
   serviceBreakdownCurrentMonth: Metric<ServiceBreakdownRow[]>;
+  /** FASE IA-5 (item 1) — total pronto; use este número, nunca conte serviceBreakdownCurrentMonth. */
+  serviceBreakdownCurrentMonthTotal: Metric<number>;
   serviceBreakdownPreviousMonth: Metric<ServiceBreakdownRow[]>;
+  serviceBreakdownPreviousMonthTotal: Metric<number>;
   serviceBreakdownLast90Days: Metric<ServiceBreakdownRow[]>;
+  serviceBreakdownLast90DaysTotal: Metric<number>;
   ticketCurrentMonth: Metric<TicketAverages>;
   ticketPreviousMonth: Metric<TicketAverages>;
   opsCurrentMonth: Metric<OpsRates>;
   revenue: Metric<RevenueComparison>;
   newClientsThisMonth: Metric<number>;
   lowStock: Metric<LowStockItem[]>;
+  /** FASE IA-5 (item 1) — total pronto; use este número, nunca conte lowStock. */
+  lowStockTotal: Metric<number>;
   occupancyToday: Metric<OccupancyResult>;
   todayAppointments: Metric<number>;
   todayRevenueForecast: Metric<number>;
@@ -265,16 +293,46 @@ export function buildMetricsBlock(input: AuraMetricsInput): AuraMetricsBlock {
     greeting: greetingBR(now, AURA_TZ),
     generatedAt: now.toISOString(),
     vanishingClients: vanishing,
+    vanishingClientsTotal: listTotalMetric(
+      vanishing,
+      "vanishing_clients_total",
+      "Total de clientes sumindo",
+      "Quantidade TOTAL de clientes sumindo (mesma lista de vanishing_clients) — use este número pronto, nunca conte os itens da lista.",
+    ),
     stoppedBookingThisMonth: stoppedBooking,
     serviceBreakdownCurrentMonth: svcCurrent,
+    serviceBreakdownCurrentMonthTotal: listTotalMetric(
+      svcCurrent,
+      "service_breakdown_current_month_total",
+      "Total de serviços distintos vendidos — mês atual",
+      "Quantidade TOTAL de serviços distintos na lista de service_breakdown_current_month — use este número pronto, nunca conte os itens da lista.",
+    ),
     serviceBreakdownPreviousMonth: svcPrev,
+    serviceBreakdownPreviousMonthTotal: listTotalMetric(
+      svcPrev,
+      "service_breakdown_previous_month_total",
+      "Total de serviços distintos vendidos — mês anterior",
+      "Quantidade TOTAL de serviços distintos na lista de service_breakdown_previous_month — use este número pronto, nunca conte os itens da lista.",
+    ),
     serviceBreakdownLast90Days: svc90,
+    serviceBreakdownLast90DaysTotal: listTotalMetric(
+      svc90,
+      "service_breakdown_last_90_days_total",
+      "Total de serviços distintos vendidos — últimos 90 dias",
+      "Quantidade TOTAL de serviços distintos na lista de service_breakdown_last_90_days — use este número pronto, nunca conte os itens da lista.",
+    ),
     ticketCurrentMonth: ticketCurrent,
     ticketPreviousMonth: ticketPrev,
     opsCurrentMonth: ops,
     revenue,
     newClientsThisMonth: newClients,
     lowStock,
+    lowStockTotal: listTotalMetric(
+      lowStock,
+      "low_stock_total",
+      "Total de produtos abaixo do estoque mínimo",
+      "Quantidade TOTAL de produtos na lista de low_stock — use este número pronto, nunca conte os itens da lista.",
+    ),
     occupancyToday: occupancy,
     todayAppointments: todayCount,
     todayRevenueForecast: todayForecast,

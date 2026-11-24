@@ -149,10 +149,17 @@ export function createAnthropicAdapter(
           if ((e.status === 404 || e.status === 400) && looksLikeModelNotFound(e.body)) {
             throw new AuraAiError(`Modelo não encontrado: ${model}`);
           }
-          // FASE IA-4 (item 3) — só entra aqui quando o PRÓPRIO Laboratório pediu um modo de
-          // raciocínio não-"default" (nunca em produção, que nunca passa thinkingMode) — mensagem
-          // clara em vez do erro genérico, pra dona saber que foi o modo escolhido, não uma falha
-          // aleatória (ex.: Sonnet 5.5 documentadamente rejeita "disabled" — ver lab-thinking-mode.ts).
+          // FASE IA-4 (item 3) / FASE IA-5 (item 3) — só entra aqui quando QUEM CHAMOU pediu um modo
+          // de raciocínio não-"default" — o Laboratório (AURA_LAB_ANTHROPIC_*) OU, desde a FASE IA-5,
+          // também a produção (AURA_AI_CHAT_THINKING/AURA_AI_REPORT_THINKING, via generate.server.ts)
+          // — mensagem clara em vez do erro genérico, pra saber que foi o modo escolhido, não uma
+          // falha aleatória (ex.: Sonnet 5.5 documentadamente rejeita "disabled" — ver
+          // lab-thinking-mode.ts/thinking-mode.ts). A mensagem NÃO cita mais o nome de uma variável de
+          // ambiente específica (antes citava só AURA_LAB_ANTHROPIC_THINKING) porque agora mais de uma
+          // variável pode ter causado isso — quem trata esse erro em produção
+          // (thinking-retry.server.ts) nunca repassa esta mensagem pra fora de qualquer forma, e o
+          // Laboratório continua mostrando esta mensagem como erro claro da pergunta (comportamento
+          // inalterado).
           if (
             e.status === 400 &&
             thinkingMode &&
@@ -160,7 +167,7 @@ export function createAnthropicAdapter(
             looksLikeThinkingParamRejected(e.body)
           ) {
             throw new AuraAiError(
-              `O modelo "${model}" recusou o modo de raciocínio "${thinkingMode}" (AURA_LAB_ANTHROPIC_THINKING) nesta chamada — experimente "default".`,
+              `O modelo "${model}" recusou o modo de raciocínio "${thinkingMode}" nesta chamada — experimente "default".`,
             );
           }
           throw new AuraAiError(); // nunca repassa status/corpo crus

@@ -25,10 +25,34 @@
 //     Effort (platform.claude.com/docs/en/build-with-claude/effort) nesta sessão pra confirmar o
 //     comportamento detalhado de cada nível; só o nome/local do parâmetro e o valor "low" foram lidos
 //     verbatim.
-export type AnthropicLabThinkingMode = "default" | "disabled" | "low";
+//
+// FASE IA-5 (item 3) — o tipo/parser em si foi movido pra ../thinking-mode.ts (fonte única,
+// compartilhada com a camada de PRODUÇÃO — ver generate.server.ts); este arquivo delega pra lá e só
+// acrescenta o que é específico do Laboratório: a PRECEDÊNCIA entre a variável nova por tarefa
+// (AURA_LAB_ANTHROPIC_CHAT_THINKING / AURA_LAB_ANTHROPIC_REPORT_THINKING) e a variável antiga/geral
+// (AURA_LAB_ANTHROPIC_THINKING, mantida pra não quebrar quem já a configurou). Import relativo (não
+// "@/...") de propósito — mantém este arquivo importável direto em teste sem aliases.
+import { parseAnthropicThinkingMode, type AnthropicThinkingMode } from "../thinking-mode.ts";
+
+export type AnthropicLabThinkingMode = AnthropicThinkingMode;
 
 export function parseLabAnthropicThinkingMode(raw: string | undefined): AnthropicLabThinkingMode {
-  if (raw === "disabled") return "disabled";
-  if (raw === "low") return "low";
-  return "default";
+  return parseAnthropicThinkingMode(raw);
+}
+
+/** FASE IA-5 (item 3) — precedência pro Laboratório, por tarefa: 1) a variável específica da tarefa
+ * (CHAT ou REPORT); 2) se ausente/inválida E a variável específica não foi sequer definida, cai pra
+ * AURA_LAB_ANTHROPIC_THINKING (a variável "base", de antes desta fase); 3) "default" se nenhuma das
+ * duas existir. Importante: uma variável específica DEFINIDA mas com valor inválido NÃO cai pra base
+ * — vira "default" diretamente (mesmo comportamento de "valor inválido" de sempre), pra não misturar
+ * "esqueci de configurar" com "configurei errado". */
+export function parseLabAnthropicThinkingModeForTask(
+  task: "chat" | "weekly_report",
+  envChat: string | undefined,
+  envReport: string | undefined,
+  envBase: string | undefined,
+): AnthropicLabThinkingMode {
+  const specific = task === "weekly_report" ? envReport : envChat;
+  if (specific !== undefined) return parseAnthropicThinkingMode(specific);
+  return parseAnthropicThinkingMode(envBase);
 }

@@ -239,6 +239,23 @@ test("buildGabarito: texto cobre as seções pedidas (receita/despesa, ops, tick
   assert.match(text, /Estoque baixo/);
 });
 
+// FASE IA-5 (item 1) — o gabarito precisa trazer o TOTAL pronto (vanishing_clients_total), nunca só a
+// lista top-5, pra verificação de afirmação (statement-checks.ts) poder comparar contra um valor
+// exato em vez da IA (ou o teste) ter que contar a lista.
+test("buildGabarito: traz vanishingClientsTotal no texto E no structured, vindo do campo aditivo do motor (não recalculado)", () => {
+  const now = new Date("2026-11-23T12:00:00Z");
+  const data = generateFakeStudio(now);
+  const block = buildMetricsBlock({ ...data, now });
+  const labelMap = buildClientLabelMap((block.vanishingClients.value ?? []).map((c) => c.clientId));
+  const { text, structured } = buildGabarito(block, labelMap);
+
+  assert.match(text, /vanishing_clients_total/);
+  assert.equal(
+    (structured as { vanishingClientsTotal: number | null }).vanishingClientsTotal,
+    block.vanishingClientsTotal.value,
+  );
+});
+
 test("buildGabarito: usa o rótulo 'Cliente N' (mesmo que a IA vê), nunca o clientId interno", () => {
   const now = new Date("2026-11-23T12:00:00Z");
   const data = generateFakeStudio(now);

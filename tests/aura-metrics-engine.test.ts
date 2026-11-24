@@ -236,6 +236,73 @@ test("buildMetricsBlock: histórico com menos de 30 dias marca 'deixaram de agen
   assert.equal(block.stoppedBookingThisMonth.state, "insufficient_data");
 });
 
+// FASE IA-5 (item 1) — rodada 5 do Laboratório flagrou a IA CONTANDO os itens de uma lista
+// (vanishing_clients) pra chegar num total, e errando (16 em vez de 17) porque 16 também existia
+// de coincidência no bloco (intervaloHabitualDias de outra cliente). A correção é estrutural: o
+// motor agora entrega o total PRONTO ao lado de cada lista — a IA nunca precisa (nem deveria)
+// contar. Os totais espelham o MESMO MetricState da lista correspondente (nunca um "0"/total
+// fingido quando a lista está insufficient_data/not_configured).
+test("buildMetricsBlock: vanishingClientsTotal espelha o tamanho de vanishingClients.value (total pronto, nunca pra IA contar)", () => {
+  const now = d(2026, 11, 23);
+  const appointments = [
+    appt({ clientId: "c1", startsAt: d(2026, 9, 1) }),
+    appt({ clientId: "c1", startsAt: d(2026, 9, 16) }), // intervalo 15 -> sumindo em 23/11
+    appt({ clientId: "c2", startsAt: d(2026, 9, 1) }),
+    appt({ clientId: "c2", startsAt: d(2026, 9, 16) }),
+  ];
+  const clients: ClientForMetrics[] = [
+    { id: "c1", createdAt: d(2026, 1, 1), anonymized: false },
+    { id: "c2", createdAt: d(2026, 1, 1), anonymized: false },
+  ];
+  const block = buildMetricsBlock({
+    appointments,
+    clients,
+    transactions: [],
+    products: [],
+    businessHours: null,
+    now,
+  });
+  assert.equal(block.vanishingClients.state, "ok");
+  assert.equal(block.vanishingClients.value!.length, 2);
+  assert.equal(block.vanishingClientsTotal.state, "ok");
+  assert.equal(block.vanishingClientsTotal.value, 2);
+});
+
+test("buildMetricsBlock: lowStockTotal espelha lowStock.value.length", () => {
+  const now = d(2026, 11, 23);
+  const products = [
+    { id: "p1", name: "Cola", stock: 2, minStock: 5, unit: "un" },
+    { id: "p2", name: "Fita", stock: 5, minStock: 5, unit: "un" }, // no mínimo -> conta como baixo
+    { id: "p3", name: "Removedor", stock: 20, minStock: 5, unit: "un" }, // acima do mínimo -> não conta
+  ];
+  const block = buildMetricsBlock({
+    appointments: [],
+    clients: [],
+    transactions: [],
+    products,
+    businessHours: null,
+    now,
+  });
+  assert.equal(block.lowStock.value!.length, 2);
+  assert.equal(block.lowStockTotal.state, "ok");
+  assert.equal(block.lowStockTotal.value, 2);
+});
+
+test("buildMetricsBlock: vanishingClientsTotal é insufficient_data (nunca 0 fingido) quando a lista base também é", () => {
+  const now = d(2026, 11, 23);
+  const block = buildMetricsBlock({
+    appointments: [],
+    clients: [],
+    transactions: [],
+    products: [],
+    businessHours: null,
+    now,
+  });
+  assert.equal(block.vanishingClients.state, "insufficient_data");
+  assert.equal(block.vanishingClientsTotal.state, "insufficient_data");
+  assert.equal(block.vanishingClientsTotal.value, null);
+});
+
 test("buildMetricsBlock: cada métrica tem id e definition não vazios", () => {
   const now = d(2026, 11, 23);
   const block = buildMetricsBlock({
