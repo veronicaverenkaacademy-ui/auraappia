@@ -28,6 +28,7 @@ import {
   buildMetricsContextBlock,
 } from "@/lib/aura-ai/system-prompt";
 import { normalizePtBrNumbers } from "@/lib/aura-ai/normalize-pt-br";
+import { sanitizeInternalFieldNames } from "@/lib/aura-ai/sanitize-internal-field-names";
 
 // ---- Types shared with the client ----
 
@@ -248,7 +249,7 @@ const ChatInput = z.object({
 // silêncio. Feito no servidor (não na tela de chat, fora do escopo autorizado desta fase) para
 // funcionar com qualquer UI que já leia o campo "reply".
 const TRUNCATED_WARNING =
-  "\n\n⚠️ Resposta cortada — peça \"continue\" ou pergunte de forma mais específica.";
+  '\n\n⚠️ Resposta cortada — peça "continue" ou pergunte de forma mais específica.';
 
 export const chatWithAura = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -268,9 +269,13 @@ export const chatWithAura = createServerFn({ method: "POST" })
       messages: data.messages,
     });
 
-    // FASE IA-3 (item 3) — rede de segurança determinística de formatação pt-BR, aplicada DEPOIS da
-    // substituição de rótulos (nunca antes — restoreClientNames não deveria interagir com números).
-    const reply = normalizePtBrNumbers(restoreClientNames(result.text, labelMap, names));
+    // FASE IA-3 (item 3) / FASE IA-6 (item 2) — ordem fixa das 3 redes de segurança determinísticas:
+    // restoreClientNames (rótulo -> nome real) -> sanitizeInternalFieldNames (remove vazamento de
+    // campo interno/comentário pra si mesma) -> normalizePtBrNumbers (formatação pt-BR), sempre nessa
+    // ordem — cada uma espera o texto já tratado pela anterior.
+    const reply = normalizePtBrNumbers(
+      sanitizeInternalFieldNames(restoreClientNames(result.text, labelMap, names)),
+    );
     return { reply: result.truncated ? `${reply}${TRUNCATED_WARNING}` : reply };
   });
 
@@ -308,20 +313,24 @@ export const askCouncil = createServerFn({ method: "POST" })
       parsed = {};
     }
 
-    const recommendation = restoreClientNames(
-      parsed.recommendation ??
-        "A Aura não conseguiu consolidar uma recomendação com os dados atuais.",
-      labelMap,
-      names,
+    // FASE IA-6 (item 2) — mesma rede de segurança determinística do chat (ver chatWithAura acima):
+    // restoreClientNames -> sanitizeInternalFieldNames, sempre nessa ordem. O Conselho nunca aplicou
+    // normalizePtBrNumbers (não fazia parte do escopo da FASE IA-3), então essa terceira etapa
+    // continua de fora aqui — não é uma mudança desta fase.
+    const recommendation = sanitizeInternalFieldNames(
+      restoreClientNames(
+        parsed.recommendation ??
+          "A Aura não conseguiu consolidar uma recomendação com os dados atuais.",
+        labelMap,
+        names,
+      ),
     );
-    const whatToMeasure = restoreClientNames(
-      parsed.whatToMeasure ?? "Dado não disponível.",
-      labelMap,
-      names,
+    const whatToMeasure = sanitizeInternalFieldNames(
+      restoreClientNames(parsed.whatToMeasure ?? "Dado não disponível.", labelMap, names),
     );
     const perspectives = (parsed.perspectives ?? []).slice(0, 6).map((p) => ({
       ...p,
-      analysis: restoreClientNames(p.analysis ?? "", labelMap, names),
+      analysis: sanitizeInternalFieldNames(restoreClientNames(p.analysis ?? "", labelMap, names)),
     }));
 
     return {
