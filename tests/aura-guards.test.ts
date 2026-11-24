@@ -206,6 +206,14 @@ test("GUARDA: LAB_BUILD_TAG é uma constante exportada e não-vazia", async () =
   assert.ok(LAB_BUILD_TAG.length > 0);
 });
 
+// FASE IA-4 (item 5.e) — esta fase tocou o Laboratório (laboratory.functions.ts, a tela,
+// lab-thinking-mode.ts) — a etiqueta precisa ter avançado pra "IA-4" (atualização à mão, ver
+// comentário em build-tag.ts).
+test("GUARDA: LAB_BUILD_TAG está em 'IA-4' nesta fase", async () => {
+  const { LAB_BUILD_TAG } = await import("../src/lib/aura-ai/laboratory/build-tag.ts");
+  assert.equal(LAB_BUILD_TAG, "IA-4");
+});
+
 test("GUARDA: a tela do Laboratório importa LAB_BUILD_TAG e renderiza o aviso de divergência tela/servidor", () => {
   const src = readFileSync(
     new URL("../src/routes/_authenticated/aura-ia.laboratorio.tsx", import.meta.url),
@@ -264,6 +272,32 @@ test("GUARDA: resultToText (texto 'Copiar') inclui tela= e servidor= na linha do
   const body = src.slice(start, nextFn > -1 ? nextFn : undefined);
   assert.match(body, /tela=\$\{LAB_BUILD_TAG\}/);
   assert.match(body, /servidor=\$\{serverBuildTag/);
+});
+
+// FASE IA-4 (item 5.d) — guardas estáticas da regra 18 (estratégia/ação): título dos dois blocos, até
+// 3 ações, exemplo de mensagem, nunca prometer resultado, nunca "PARAR"/opt-out numa mensagem de
+// exemplo — sem IA de verdade pra testar aqui, a garantia é sobre o TEXTO que vai pro provedor.
+test("GUARDA: system-prompt contém a regra 18 (estratégia/ação) com os dois títulos de bloco e até 3 ações com exemplo de mensagem", () => {
+  const src = readFileSync(new URL("../src/lib/aura-ai/system-prompt.ts", import.meta.url), "utf8");
+  assert.match(src, /18\.\s*Quando a pergunta pedir uma ESTRATÉGIA ou AÇÃO/);
+  assert.match(src, /"O que mostram seus dados"/);
+  assert.match(src, /"Ideias gerais \(não vêm dos seus números\)"/);
+  assert.match(src, /até 3 ações práticas/);
+  assert.match(src, /exemplo de mensagem pronta para enviar à cliente/);
+  assert.match(src, /NUNCA prometa um resultado/);
+  assert.match(src, /NUNCA mencionam "PARAR" ou qualquer linguagem de opt-out/);
+  // as 17 regras anteriores continuam presentes, sem renumerar.
+  for (let n = 1; n <= 17; n++) {
+    assert.match(src, new RegExp(`${n}\\.\\s`), `regra ${n} anterior deveria continuar presente`);
+  }
+});
+
+test("GUARDA: regra 9 permite até ~250 palavras pra perguntas de estratégia/ação (regra 18), mantendo ~150 pro resto", () => {
+  const src = readFileSync(new URL("../src/lib/aura-ai/system-prompt.ts", import.meta.url), "utf8");
+  assert.match(
+    src,
+    /até ~150 palavras \(até ~250 palavras quando for uma pergunta de ESTRATÉGIA\/AÇÃO/,
+  );
 });
 
 test("GUARDA: AURA_WEEKLY_REPORT_LENGTH_RULE proíbe saudação E pergunta final, exige terminar em recomendações", () => {

@@ -53,9 +53,16 @@ export function getModelPrice(provider: string, model: string): ModelPrice | nul
   return PRICE_TABLE[`${provider}:${model}`] ?? null;
 }
 
-/** `reasoningOutputTokens` (tokens de "pensamento" do Google Gemini) soma ao custo de SAÍDA — os
- * provedores cobram esses tokens como tokens de saída normais; o Laboratório mostra essa parcela
- * separadamente na tela, mas o custo total já a inclui aqui. */
+/** `reasoningOutputTokens` (tokens de "pensamento") tem semântica DIFERENTE por provedor — por isso
+ * o jeito de somar ao custo de saída não pode ser igual pros dois:
+ * - Google: `candidatesTokenCount` (outputTokens) EXCLUI os tokens de pensamento
+ *   (`thoughtsTokenCount`) — por isso soma os dois pra chegar no total de output cobrado.
+ * - Anthropic (FASE IA-4, item 2): `output_tokens` JÁ INCLUI os tokens de "thinking" —
+ *   confirmado em platform.claude.com/docs/en/build-with-claude/thinking: "billed as output
+ *   tokens... count toward max_tokens". `reasoningOutputTokens`, quando preenchido pelo adaptador
+ *   (ver anthropic.server.ts), é só a QUEBRA de quanto desse output_tokens foi raciocínio — somar de
+ *   novo dobraria o custo de raciocínio. Por isso só o Google soma; qualquer outro provedor usa
+ *   outputTokens puro (mesmo comportamento de antes pra quem não preenche reasoningOutputTokens). */
 export function estimateCostUSD(
   usage: { inputTokens: number; outputTokens: number; reasoningOutputTokens?: number },
   provider: string,
@@ -63,7 +70,10 @@ export function estimateCostUSD(
 ): number | null {
   const price = getModelPrice(provider, model);
   if (!price) return null;
-  const outputTokens = usage.outputTokens + (usage.reasoningOutputTokens ?? 0);
+  const outputTokens =
+    provider === "google"
+      ? usage.outputTokens + (usage.reasoningOutputTokens ?? 0)
+      : usage.outputTokens;
   return (
     (usage.inputTokens / 1_000_000) * price.inputPerMillionUSD +
     (outputTokens / 1_000_000) * price.outputPerMillionUSD

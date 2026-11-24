@@ -16,6 +16,7 @@ import { buildMetricsBlock } from "../src/lib/aura-metrics/engine.ts";
 import { buildClientLabelMap } from "../src/lib/aura-ai/pseudonymize.ts";
 import { buildGabarito } from "../src/lib/aura-ai/laboratory/gabarito.ts";
 import { parseLabChatMaxTokensOverride } from "../src/lib/aura-ai/laboratory/lab-max-tokens.ts";
+import { parseLabAnthropicThinkingMode } from "../src/lib/aura-ai/laboratory/lab-thinking-mode.ts";
 
 test("extractNumbersFromText: lê inteiros, decimais pt-BR e percentuais", () => {
   const nums = extractNumbersFromText(
@@ -405,6 +406,20 @@ test("buildGabarito: frase com vários números plausíveis de um relatório sem
     );
   }
   assert.equal(unmatchedNumbers.length, 0);
+});
+
+// FASE IA-4 (item 3 / 5.c) — AURA_LAB_ANTHROPIC_THINKING: só "disabled"/"low" valem algo além do
+// default; qualquer outra coisa (ausente, vazio, erro de digitação) cai em "default" — nunca lança.
+test("parseLabAnthropicThinkingMode: 'disabled' e 'low' são reconhecidos", () => {
+  assert.equal(parseLabAnthropicThinkingMode("disabled"), "disabled");
+  assert.equal(parseLabAnthropicThinkingMode("low"), "low");
+});
+
+test("parseLabAnthropicThinkingMode: ausente/vazio/inválido caem em 'default'", () => {
+  assert.equal(parseLabAnthropicThinkingMode(undefined), "default");
+  assert.equal(parseLabAnthropicThinkingMode(""), "default");
+  assert.equal(parseLabAnthropicThinkingMode("desligado"), "default");
+  assert.equal(parseLabAnthropicThinkingMode("DISABLED"), "default"); // case-sensitive de propósito
 });
 
 // FASE IA-3 (item 1.f / 5.b) — AURA_LAB_CHAT_MAX_TOKENS: valor válido é aceito, inválido/fora de
