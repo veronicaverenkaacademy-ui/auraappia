@@ -24,6 +24,10 @@ import {
 } from "@/lib/aura-ai/pseudonymize";
 import { normalizePtBrNumbers } from "@/lib/aura-ai/normalize-pt-br";
 import {
+  sanitizeInternalFieldNames,
+  detectLeakedInternalFieldNames,
+} from "@/lib/aura-ai/sanitize-internal-field-names";
+import {
   AURA_SYSTEM_PROMPT,
   AURA_WEEKLY_REPORT_LENGTH_RULE,
   buildMetricsContextBlock,
@@ -73,6 +77,15 @@ export interface LabQuestionResult {
    * "quantos conferem" (FASE IA-3 item 4), sem mudar checkCitedNumbers/verifier.ts. */
   citedNumbersTotal: number;
   unmatchedNumbers: number[];
+  /** FASE IA-6 (item 4) — medido no texto BRUTO (já com restoreClientNames, ANTES do sanitizador) —
+   * nomes de campo interno (ex.: "diasDesdeUltimoAtendimento") que o modelo escreveu antes de qualquer
+   * filtro. answerText (abaixo) já está sanitizado — isto é só o diagnóstico do que o modelo fez
+   * sozinho, pra medir a taxa real de vazamento por rodada. */
+  leakedFieldNames: string[];
+  /** FASE IA-6 (item 4) — trechos "Cliente(s) N" que sobraram no texto bruto DEPOIS de
+   * restoreClientNames já ter rodado (regex /Clientes?\s+\d+/) — ou um número que restoreClientNames
+   * não conseguiu resolver (sem nome cadastrado), ou uma forma que a regex de restore não reconheceu. */
+  leakedLabelFragments: string[];
   /** FASE IA-5 (item 2) — conferência por AFIRMAÇÃO (não por conjunto): pega fatos específicos que o
    * texto realmente afirmou (ex.: "total de clientes sumindo") e compara com o gabarito — pega o erro
    * que checkCitedNumbers não pega quando o número errado também é válido no bloco por coincidência
@@ -122,6 +135,8 @@ function emptyResult(question: LabQuestion, error: string): LabQuestionResult {
     truncated: false,
     citedNumbersTotal: 0,
     unmatchedNumbers: [],
+    leakedFieldNames: [],
+    leakedLabelFragments: [],
     statementCheck: { checked: 0, mismatches: [] },
     error,
   };
@@ -150,13 +165,22 @@ async function runOneLabQuestion(
     // número de um jeito que afete a extração aqui.
     const statementCheck = checkStatements(result.text, statementGabarito);
     const trapCheck = question.isTrap ? checkTrapHandling(question.id, result.text) : null;
+    // FASE IA-6 (item 4) — medido ANTES do sanitizador, sobre o texto já com restoreClientNames (que é
+    // exatamente o que o modelo escreveu, só com os rótulos já virados nome — o ponto certo pra medir
+    // "o que o modelo fez sozinho", já que restoreClientNames em si nunca vaza nada novo).
+    const afterRestore = restoreClientNames(result.text, labelMap, names);
+    const leakedFieldNames = detectLeakedInternalFieldNames(afterRestore);
+    const leakedLabelFragments = afterRestore.match(/Clientes?\s+\d+/g) ?? [];
     return {
       questionId: question.id,
       question: question.question,
       isTrap: question.isTrap,
-      // FASE IA-3 (item 3) — mesma rede de segurança de formatação pt-BR do chat de produção (ver
-      // src/lib/aura.functions.ts), aplicada aqui antes de exibir/copiar no Laboratório.
-      answerText: normalizePtBrNumbers(restoreClientNames(result.text, labelMap, names)),
+      // FASE IA-3 (item 3) / FASE IA-6 (item 2) — mesma rede de segurança de produção (ver
+      // src/lib/aura.functions.ts): restoreClientNames -> sanitizeInternalFieldNames ->
+      // normalizePtBrNumbers, sempre nessa ordem, aplicada aqui antes de exibir/copiar no Laboratório.
+      // O texto JÁ SANITIZADO é o que aparece pra dona; leakedFieldNames/leakedLabelFragments acima
+      // (medidos no afterRestore, antes do sanitizador) são só o diagnóstico do Laboratório.
+      answerText: normalizePtBrNumbers(sanitizeInternalFieldNames(afterRestore)),
       latencyMs: result.latencyMs,
       inputTokens: result.usage.inputTokens,
       outputTokens: result.usage.outputTokens,
@@ -165,6 +189,8 @@ async function runOneLabQuestion(
       truncated: result.truncated,
       citedNumbersTotal: citedNumbers.length,
       unmatchedNumbers,
+      leakedFieldNames,
+      leakedLabelFragments,
       statementCheck,
       diagnostics: result.diagnostics,
       refusedTrapCorrectly: trapCheck?.handledCorrectly,

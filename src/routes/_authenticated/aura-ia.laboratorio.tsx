@@ -146,6 +146,33 @@ function statementsLine(r: LabQuestionResult): string {
     .join("\n");
 }
 
+/** FASE IA-6 (item 4) — medido no texto BRUTO (ver laboratory.functions.ts: leakedFieldNames/
+ * leakedLabelFragments vêm do texto já com restoreClientNames, ANTES do sanitizador) — mostra o que o
+ * MODELO escreveu sozinho, antes de qualquer filtro. O texto exibido/copiado (answerText, acima) já
+ * está sanitizado — isto é só o diagnóstico de vazamento bruto da rodada, nunca o texto final. */
+function leakLines(r: LabQuestionResult): string[] {
+  const lines: string[] = [];
+  for (const name of r.leakedFieldNames) {
+    lines.push(`⚠️ vazou nome de campo interno: ${name}`);
+  }
+  for (const fragment of r.leakedLabelFragments) {
+    lines.push(`⚠️ vazou rótulo interno: ${fragment}`);
+  }
+  return lines;
+}
+
+/** FASE IA-6 (item 4) — contador total de vazamentos brutos da rodada (soma de todas as perguntas já
+ * respondidas daquele provedor), pro cabeçalho do "Copiar". */
+function totalLeaksForProvider(provider: LabProviderId, runs: Record<string, ItemRun>): number {
+  let total = 0;
+  for (const item of LAB_ALL_ITEMS) {
+    const r = runs[keyFor(provider, item.id)]?.data?.result;
+    if (!r) continue;
+    total += r.leakedFieldNames.length + r.leakedLabelFragments.length;
+  }
+  return total;
+}
+
 function resultToText(
   provider: LabProviderId,
   runs: Record<string, ItemRun>,
@@ -159,14 +186,20 @@ function resultToText(
   // (singular) deixou de bastar; mostra os dois separados.
   const chatThinkingMode = thinkingModeForTask(provider, "chat", runs);
   const reportThinkingMode = thinkingModeForTask(provider, "weekly_report", runs);
+  // FASE IA-6 (item 4) — contador total de vazamentos BRUTOS da rodada (nome de campo interno +
+  // rótulo interno remanescente, medidos ANTES do sanitizador — ver leakLines/leakedFieldNames).
+  const totalLeaks = totalLeaksForProvider(provider, runs);
   const lines: string[] = [
     // FASE IA-3C — "tela=" vem da constante importada AQUI mesmo (bundle do cliente); "servidor="
     // vem do serverBuildTag devolvido pela PRIMEIRA chamada de runLabQuestion que respondeu (prova
     // que foi essa versão do servidor que gerou as respostas abaixo — não a de getLabStatus, que só
     // roda uma vez no carregamento da tela). FASE IA-4 (item 3) / FASE IA-5 (item 3) —
     // "raciocinio_modo_chat="/"raciocinio_modo_relatorio=" são os valores que realmente rodaram
-    // nessa chamada, cada tarefa com sua própria precedência ("n/a" pro Google).
-    `=== ${PROVIDER_LABEL[provider].toUpperCase()} (chat: ${chatModel ?? "sem modelo"} · relatório: ${reportModel ?? "sem modelo"}) tela=${LAB_BUILD_TAG} servidor=${serverBuildTag ?? "n/d"} raciocinio_modo_chat=${chatThinkingMode ?? "n/d"} raciocinio_modo_relatorio=${reportThinkingMode ?? "n/d"} ===`,
+    // nessa chamada, cada tarefa com sua própria precedência ("n/a" pro Google). FASE IA-6 (item 4) —
+    // "vazamentos_brutos=" é o total da rodada (campo interno + rótulo interno), medido ANTES do
+    // sanitizador — 0 é o esperado; > 0 mostra quantas vezes o modelo escreveu algo que não deveria,
+    // mesmo já tendo sido limpo no texto exibido abaixo.
+    `=== ${PROVIDER_LABEL[provider].toUpperCase()} (chat: ${chatModel ?? "sem modelo"} · relatório: ${reportModel ?? "sem modelo"}) tela=${LAB_BUILD_TAG} servidor=${serverBuildTag ?? "n/d"} raciocinio_modo_chat=${chatThinkingMode ?? "n/d"} raciocinio_modo_relatorio=${reportThinkingMode ?? "n/d"} vazamentos_brutos=${totalLeaks} ===`,
   ];
   for (const item of LAB_ALL_ITEMS) {
     const run = runs[keyFor(provider, item.id)];
@@ -189,6 +222,7 @@ function resultToText(
     lines.push(diagnosticsLine(r));
     lines.push(verificationLine(r));
     lines.push(statementsLine(r));
+    lines.push(...leakLines(r));
     if (r.isTrap) {
       lines.push(
         r.refusedTrapCorrectly
@@ -532,6 +566,16 @@ function QuestionResultView({
                     <div key={m.label}>
                       ❌ {m.label}: IA disse {m.said}, gabarito {m.expected}
                     </div>
+                  ))}
+                </div>
+              )}
+              {(r.leakedFieldNames.length > 0 || r.leakedLabelFragments.length > 0) && (
+                <div className="text-[11px] text-destructive mt-1">
+                  {r.leakedFieldNames.map((name) => (
+                    <div key={`field-${name}`}>⚠️ vazou nome de campo interno: {name}</div>
+                  ))}
+                  {r.leakedLabelFragments.map((fragment, i) => (
+                    <div key={`label-${i}`}>⚠️ vazou rótulo interno: {fragment}</div>
                   ))}
                 </div>
               )}

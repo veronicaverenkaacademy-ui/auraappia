@@ -118,6 +118,61 @@ test("restoreClientNames: nome real com caracteres especiais ($, parênteses) n�
   assert.equal(result, "Maria $$ (VIP) e João & Cia são antigas.");
 });
 
+// FASE IA-6 (item 1) — rodada 6: "Comece pelas recorrentes com mais atraso (Clientes 16, 5 e 11)"
+// vazou o rótulo pseudonimizado porque a regex antiga só reconhecia "Cliente N" isolado — nunca a
+// forma agregada. As 4 variações abaixo são as citadas no pedido da fase (3 reais + o caso real
+// completo com 16 clientes pra bater o mapa de ids 1..16).
+function labelAndNamesFor16() {
+  const ids = Array.from({ length: 16 }, (_, i) => `c${String(i + 1).padStart(2, "0")}`);
+  const map = buildClientLabelMap(ids);
+  const names = new Map(ids.map((id, i) => [id, `Nome${i + 1}`]));
+  return { map, names };
+}
+
+test("restoreClientNames: caso real da rodada 6 — 'Clientes 16, 5 e 11' (3 números) vira 'Nome16, Nome5 e Nome11'", () => {
+  const { map, names } = labelAndNamesFor16();
+  const result = restoreClientNames(
+    "Comece pelas recorrentes com mais atraso (Clientes 16, 5 e 11).",
+    map,
+    names,
+  );
+  assert.equal(result, "Comece pelas recorrentes com mais atraso (Nome16, Nome5 e Nome11).");
+});
+
+test("restoreClientNames: forma agregada com 2 números — 'Clientes 16 e 5'", () => {
+  const { map, names } = labelAndNamesFor16();
+  const result = restoreClientNames("Fale com Clientes 16 e 5 hoje.", map, names);
+  assert.equal(result, "Fale com Nome16 e Nome5 hoje.");
+});
+
+test("restoreClientNames: prefixo singular 'Cliente' (não 'Clientes') com lista de números também é reconhecido", () => {
+  const { map, names } = labelAndNamesFor16();
+  const result = restoreClientNames("Priorize Cliente 16, 5 e 11 esta semana.", map, names);
+  assert.equal(result, "Priorize Nome16, Nome5 e Nome11 esta semana.");
+});
+
+test("restoreClientNames: forma agregada com 4 números — 'Clientes 16, 5, 11 e 3'", () => {
+  const { map, names } = labelAndNamesFor16();
+  const result = restoreClientNames("Clientes 16, 5, 11 e 3 estão sumindo.", map, names);
+  assert.equal(result, "Nome16, Nome5, Nome11 e Nome3 estão sumindo.");
+});
+
+test("restoreClientNames: número desconhecido dentro de uma lista agregada mantém só o rótulo original daquele número", () => {
+  const { map, names } = labelAndNamesFor16();
+  const result = restoreClientNames("Clientes 16, 99 e 5 precisam de atenção.", map, names);
+  assert.equal(result, "Nome16, Cliente 99 e Nome5 precisam de atenção.");
+});
+
+test("restoreClientNames: falso positivo 'a cada 16 dias' NUNCA é tocado (sem 'Cliente'/'Clientes' antes do número)", () => {
+  const { map, names } = labelAndNamesFor16();
+  const result = restoreClientNames(
+    "Ela costuma voltar a cada 16 dias, então 151 dias é bem acima do normal.",
+    map,
+    names,
+  );
+  assert.equal(result, "Ela costuma voltar a cada 16 dias, então 151 dias é bem acima do normal.");
+});
+
 test("requireAuraAdmin: deixa passar quando is_admin devolve true", async () => {
   const fakeDb = { rpc: async () => ({ data: true, error: null }) };
   await assert.doesNotReject(() => requireAuraAdmin(fakeDb, "user-1"));

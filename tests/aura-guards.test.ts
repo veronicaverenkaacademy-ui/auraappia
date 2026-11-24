@@ -206,12 +206,12 @@ test("GUARDA: LAB_BUILD_TAG é uma constante exportada e não-vazia", async () =
   assert.ok(LAB_BUILD_TAG.length > 0);
 });
 
-// FASE IA-5 (item 5) — esta fase tocou o Laboratório de novo (laboratory.functions.ts, a tela,
-// lab-thinking-mode.ts, statement-checks.ts) — a etiqueta precisa ter avançado pra "IA-5"
-// (atualização à mão, ver comentário em build-tag.ts).
-test("GUARDA: LAB_BUILD_TAG está em 'IA-5' nesta fase", async () => {
+// FASE IA-6 (item 6) — esta fase tocou o Laboratório de novo (laboratory.functions.ts, a tela,
+// statement-checks.ts) — a etiqueta precisa ter avançado pra "IA-6" (atualização à mão, ver
+// comentário em build-tag.ts).
+test("GUARDA: LAB_BUILD_TAG está em 'IA-6' nesta fase", async () => {
   const { LAB_BUILD_TAG } = await import("../src/lib/aura-ai/laboratory/build-tag.ts");
-  assert.equal(LAB_BUILD_TAG, "IA-5");
+  assert.equal(LAB_BUILD_TAG, "IA-6");
 });
 
 test("GUARDA: a tela do Laboratório importa LAB_BUILD_TAG e renderiza o aviso de divergência tela/servidor", () => {
@@ -344,4 +344,61 @@ test("GUARDA: regra 19 (nunca contar lista pra total) e regra 20 (proibido ligar
   for (let n = 1; n <= 18; n++) {
     assert.match(src, new RegExp(`${n}\\.\\s`), `regra ${n} anterior deveria continuar presente`);
   }
+});
+
+// FASE IA-6 (item 3/6e) — rodada 6: regra 10 antiga mandava "citar diasDesdeUltimoAtendimento junto
+// do intervaloHabitualDias", contradizendo a regra 15 (que proíbe exatamente isso) — raiz do
+// vazamento real. Regras 10/15 reescritas (mesmo número) pra descrever os 4 campos em PALAVRAS,
+// mantendo o nome literal só como referência de onde achar o dado no JSON. Regras 21 (rótulo
+// completo e separado) e 22 (nunca camelCase/comentário entre parênteses) são novas.
+// Usa import dinâmico (não readFileSync) porque o texto final das regras 10/15 é montado por
+// INTERPOLAÇÃO (${FIELD_...}, ver import de sanitize-internal-field-names.ts no topo do arquivo) —
+// o texto-FONTE (.ts) nunca contém o nome literal nesses pontos, só o resultado avaliado em runtime.
+test("GUARDA: regras 10/15 reescritas descrevem os 4 campos em palavras e nunca instruem a IA a escrever o nome literal na resposta", async () => {
+  const { AURA_SYSTEM_PROMPT } = await import("../src/lib/aura-ai/system-prompt.ts");
+  assert.match(AURA_SYSTEM_PROMPT, /10\.\s*Ao falar de "clientes sumindo"/);
+  assert.match(AURA_SYSTEM_PROMPT, /"dias sem atendimento"/);
+  assert.match(AURA_SYSTEM_PROMPT, /"intervalo habitual"/);
+  assert.match(AURA_SYSTEM_PROMPT, /"prazo de alerta"/);
+  assert.match(AURA_SYSTEM_PROMPT, /"dias além do prazo"/);
+  assert.match(AURA_SYSTEM_PROMPT, /no JSON: diasDesdeUltimoAtendimento/);
+  assert.match(AURA_SYSTEM_PROMPT, /no JSON: intervaloHabitualDias/);
+  assert.match(AURA_SYSTEM_PROMPT, /no JSON: prazoDeAlertaDias/);
+  assert.match(AURA_SYSTEM_PROMPT, /no JSON: diasAlemDoPrazo/);
+  assert.match(AURA_SYSTEM_PROMPT, /são internos e NUNCA aparecem no texto que a dona lê/);
+  assert.match(
+    AURA_SYSTEM_PROMPT,
+    /15\.\s*Ao citar uma métrica entre parênteses \(regra 6\), escreva SOMENTE o "id"/,
+  );
+  assert.match(AURA_SYSTEM_PROMPT, /Estes nomes são internos e NUNCA aparecem no texto/);
+  // regra 15 reescrita cita os 4 nomes (interpolados) pra manter a lista única — confirma que os
+  // valores interpolados realmente batem com os literais, nunca ficam como "undefined"/vazio.
+  assert.match(
+    AURA_SYSTEM_PROMPT,
+    /os 4 citados na regra 10 — diasDesdeUltimoAtendimento, intervaloHabitualDias, prazoDeAlertaDias, diasAlemDoPrazo/,
+  );
+  // a regra 10 antiga mandava "cite diasDesdeUltimoAtendimento junto do intervaloHabitualDias" — essa
+  // instrução contraditória não pode mais existir em nenhuma regra.
+  assert.doesNotMatch(AURA_SYSTEM_PROMPT, /cite diasDesdeUltimoAtendimento junto/);
+});
+
+test("GUARDA: regra 21 (rótulo completo e separado) e regra 22 (nunca camelCase/comentário entre parênteses) estão presentes, sem renumerar as 20 anteriores", () => {
+  const src = readFileSync(new URL("../src/lib/aura-ai/system-prompt.ts", import.meta.url), "utf8");
+  assert.match(src, /21\.\s*Ao citar várias clientes sumindo juntas/);
+  assert.match(src, /NUNCA abrevie numa lista de números só/);
+  assert.match(src, /"Clientes 16, 5 e 11"/);
+  assert.match(src, /22\.\s*NUNCA escreva uma palavra em camelCase/);
+  assert.match(src, /comentário\/instrução pra você mesma entre parênteses/);
+  for (let n = 1; n <= 20; n++) {
+    assert.match(src, new RegExp(`${n}\\.\\s`), `regra ${n} anterior deveria continuar presente`);
+  }
+});
+
+test("GUARDA: os nomes literais citados nas regras 10/15 do system-prompt vêm do MESMO lugar que sanitize-internal-field-names.ts (nunca redigitados)", () => {
+  const src = readFileSync(new URL("../src/lib/aura-ai/system-prompt.ts", import.meta.url), "utf8");
+  assert.match(
+    src,
+    /import\s*\{\s*INTERNAL_FIELD_PLAIN_TEXT\s*\}\s*from\s*"\.\/sanitize-internal-field-names\.ts"/,
+  );
+  assert.match(src, /Object\.keys\(INTERNAL_FIELD_PLAIN_TEXT\)/);
 });
