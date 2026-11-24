@@ -56,9 +56,20 @@ export function buildGabarito(
   const ticketCur = block.ticketCurrentMonth.value;
   const ticketPrev = block.ticketPreviousMonth.value;
   const ops = block.opsCurrentMonth.value;
-  const vanishing = (block.vanishingClients.value ?? []).slice(0, 5);
+  // FASE IA-2B (falha 2) — a lista COMPLETA entra em allowedNumbers (não só o top 5), senão a IA
+  // citar uma cliente sumindo fora do top 5 vira falso "possível invenção". O texto continua
+  // mostrando só o top 5 (mais legível), mas o total completo agora também é reportado.
+  const vanishingAll = block.vanishingClients.value ?? [];
+  const vanishingTop5 = vanishingAll.slice(0, 5);
   const stopped = block.stoppedBookingThisMonth.value;
   const lowStock = block.lowStock.value ?? [];
+  const last7 = block.last7DaysRevenue.value;
+  const todayAppts = block.todayAppointments.value;
+  const todayForecast = block.todayRevenueForecast.value;
+  const occupancy = block.occupancyToday.value;
+  // completed+cancelled+noShow já é exatamente `ops.resolved` (ver ops.ts) — recalculado aqui como
+  // campo próprio só pra deixar explícito e nomeado como pedido (operationsResolvedTotal).
+  const operationsResolvedTotal = ops ? ops.completed + ops.cancelled + ops.noShow : null;
 
   const lines: string[] = [];
   lines.push("=== GABARITO (valores corretos, calculados direto pelo motor — não pela IA) ===");
@@ -121,10 +132,35 @@ export function buildGabarito(
     `\n-- Top 5 clientes sumindo (vanishing_clients) ${stateLabel(block.vanishingClients.state)} --`,
   );
   lines.push(
-    vanishing.length > 0
-      ? vanishing.map((v) => vanishingClientLine(v, labelMap)).join("\n")
+    vanishingTop5.length > 0
+      ? vanishingTop5.map((v) => vanishingClientLine(v, labelMap)).join("\n")
       : "  (nenhuma)",
   );
+  lines.push(`\n-- Total de clientes sumindo (vanishing_clients) --`);
+  lines.push(`${vanishingAll.length}`);
+
+  lines.push("\n-- Receita dos últimos 7 dias (last_7_days_revenue) --");
+  lines.push(block.last7DaysRevenue.state === "ok" ? brl(last7 ?? 0) : "(sem dados)");
+
+  lines.push(
+    "\n-- Agenda de hoje (today_appointments / today_revenue_forecast / occupancy_today) --",
+  );
+  lines.push(
+    `Atendimentos hoje: ${block.todayAppointments.state === "ok" ? todayAppts : "(sem dados)"}`,
+  );
+  lines.push(
+    `Receita prevista hoje: ${block.todayRevenueForecast.state === "ok" ? brl(todayForecast ?? 0) : "(sem dados)"}`,
+  );
+  lines.push(
+    occupancy
+      ? `Ocupação: ${occupancy.occupancyPct.toFixed(1)}% (${occupancy.bookedMinutes} min reservados de ${occupancy.availableMinutes} disponíveis)`
+      : "Ocupação: não configurado",
+  );
+
+  lines.push(
+    "\n-- Total de atendimentos resolvidos (ops_current_month: realizados+cancelados+faltas) --",
+  );
+  lines.push(operationsResolvedTotal !== null ? `${operationsResolvedTotal}` : "(sem dados)");
 
   lines.push(
     `\n-- Ranking de serviços — mês atual ${stateLabel(block.serviceBreakdownCurrentMonth.state)} --`,
@@ -151,11 +187,19 @@ export function buildGabarito(
     structured: {
       revenue: rev,
       ops,
+      operationsResolvedTotal,
       ticketCurrentMonth: ticketCur,
       ticketPreviousMonth: ticketPrev,
       newClientsThisMonth: block.newClientsThisMonth.value,
       stoppedBookingThisMonth: stopped,
-      vanishingClientsTop5: vanishing,
+      // FASE IA-2B (falha 2) — lista COMPLETA (não só o top 5) entra na verificação automática,
+      // senão a IA citar uma cliente sumindo fora do top 5 vira falso "possível invenção".
+      vanishingClients: vanishingAll,
+      vanishingClientsTotal: vanishingAll.length,
+      last7DaysRevenue: last7,
+      todayAppointments: todayAppts,
+      todayRevenueForecast: todayForecast,
+      occupancyToday: occupancy,
       serviceBreakdownCurrentMonth: block.serviceBreakdownCurrentMonth.value,
       serviceBreakdownPreviousMonth: block.serviceBreakdownPreviousMonth.value,
       serviceBreakdownLast90Days: block.serviceBreakdownLast90Days.value,
