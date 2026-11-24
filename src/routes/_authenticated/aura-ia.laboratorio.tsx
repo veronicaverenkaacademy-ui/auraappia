@@ -21,6 +21,7 @@ import {
   type LabQuestionResult,
 } from "@/lib/aura-ai/laboratory/laboratory.functions";
 import { LAB_ALL_ITEMS, LAB_WEEKLY_REPORT_ID } from "@/lib/aura-ai/laboratory/questions";
+import { LAB_BUILD_TAG } from "@/lib/aura-ai/laboratory/build-tag";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -99,11 +100,16 @@ function resultToText(
   provider: LabProviderId,
   runs: Record<string, ItemRun>,
   gabaritoText: string | undefined,
+  serverBuildTag: string | undefined,
 ): string {
   const chatModel = modelForTask(provider, "chat", runs);
   const reportModel = modelForTask(provider, "weekly_report", runs);
   const lines: string[] = [
-    `=== ${PROVIDER_LABEL[provider].toUpperCase()} (chat: ${chatModel ?? "sem modelo"} · relatório: ${reportModel ?? "sem modelo"}) ===`,
+    // FASE IA-3C — "tela=" vem da constante importada AQUI mesmo (bundle do cliente); "servidor="
+    // vem do serverBuildTag devolvido pela PRIMEIRA chamada de runLabQuestion que respondeu (prova
+    // que foi essa versão do servidor que gerou as respostas abaixo — não a de getLabStatus, que só
+    // roda uma vez no carregamento da tela).
+    `=== ${PROVIDER_LABEL[provider].toUpperCase()} (chat: ${chatModel ?? "sem modelo"} · relatório: ${reportModel ?? "sem modelo"}) tela=${LAB_BUILD_TAG} servidor=${serverBuildTag ?? "n/d"} ===`,
   ];
   for (const item of LAB_ALL_ITEMS) {
     const run = runs[keyFor(provider, item.id)];
@@ -165,6 +171,9 @@ function Laboratorio() {
           enabled: false,
           disabledReason: "Falha ao verificar acesso ao Laboratório.",
           providers: { anthropic: false, google: false },
+          // Falha de rede antes de sequer chamar o servidor — não há como saber a versão dele; "n/d"
+          // é honesto (nunca inventa um valor igual ao da tela só pra silenciar o aviso).
+          serverBuildTag: "n/d",
         }),
       )
       .finally(() => setStatusLoading(false));
@@ -213,7 +222,12 @@ function Laboratorio() {
     const gabaritoText = LAB_ALL_ITEMS.map(
       (item) => runs[keyFor(provider, item.id)]?.data?.gabaritoText,
     ).find(Boolean);
-    const text = resultToText(provider, runs, gabaritoText);
+    // FASE IA-3C (item 4) — serverBuildTag da PRIMEIRA resposta (de runLabQuestion, não de
+    // getLabStatus) — é ele que prova a versão real que gerou as respostas copiadas.
+    const serverBuildTag = LAB_ALL_ITEMS.map(
+      (item) => runs[keyFor(provider, item.id)]?.data?.serverBuildTag,
+    ).find(Boolean);
+    const text = resultToText(provider, runs, gabaritoText, serverBuildTag);
     navigator.clipboard.writeText(text).then(
       () => toast.success("Copiado."),
       () => toast.error("Não foi possível copiar."),
@@ -238,6 +252,13 @@ function Laboratorio() {
     );
   }
 
+  // FASE IA-3C — "tela" vem da constante importada direto neste arquivo (o bundle do CLIENTE);
+  // "servidor" vem de getLabStatus (lido do bundle do SERVIDOR, uma vez, no carregamento da tela).
+  // Prova visível de qual publicação está de fato no ar nos dois lados — motivo: no IA-3, o commit
+  // estava mergeado mas o texto copiado de uma rodada real não trazia as linhas novas daquela fase.
+  const serverBuildTag = status?.serverBuildTag;
+  const buildTagMismatch = Boolean(serverBuildTag) && serverBuildTag !== LAB_BUILD_TAG;
+
   return (
     <div className="mx-auto max-w-5xl px-4 md:px-8 py-6 md:py-10 space-y-6">
       <div>
@@ -245,6 +266,14 @@ function Laboratorio() {
         <p className="text-sm text-muted-foreground mt-1">
           Dados inteiramente falsos (estúdio sintético). Nunca usa o banco real.
         </p>
+        <p className="text-xs text-muted-foreground mt-1">
+          Versão da tela: {LAB_BUILD_TAG} · Versão do servidor: {serverBuildTag ?? "n/d"}
+        </p>
+        {buildTagMismatch && (
+          <p className="text-xs font-semibold text-destructive mt-1">
+            Atenção: a tela e o servidor estão em versões diferentes — publique de novo e recarregue
+          </p>
+        )}
       </div>
 
       <Button onClick={runAll} disabled={running}>
