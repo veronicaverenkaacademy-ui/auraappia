@@ -172,3 +172,37 @@ test("GUARDA: a regra de tamanho do relatório semanal só é usada para task 'w
   );
   assert.match(src, /task === "weekly_report"[\s\S]{0,80}AURA_WEEKLY_REPORT_LENGTH_RULE/);
 });
+
+// FASE IA-3 (item 5.d) — guardas estáticas: o texto-fonte do system-prompt precisa conter as novas
+// regras 13-17 (sem renumerar as 12 originais) e a regra do relatório semanal precisa proibir
+// explicitamente uma pergunta final — não há IA de verdade pra testar aqui, então a garantia é sobre
+// o TEXTO que vai ser enviado ao provedor.
+test("GUARDA: system-prompt contém as regras 13-17 da FASE IA-3 (causa, corte mês-a-mês, só id de métrica, sem saudação, formato pt-BR)", () => {
+  const src = readFileSync(new URL("../src/lib/aura-ai/system-prompt.ts", import.meta.url), "utf8");
+  assert.match(src, /13\.\s*NUNCA explique a CAUSA/);
+  assert.match(src, /14\.\s*Ao comparar o mês atual com o mês anterior/);
+  assert.match(src, /mês anterior inteiro/);
+  assert.match(src, /15\.\s*Ao citar uma métrica entre parênteses/);
+  assert.match(src, /diasDesdeUltimoAtendimento/); // regra 15 cita os nomes de campo PROIBIDOS, não só a regra 10
+  assert.match(src, /16\.\s*Nunca abra a resposta com uma saudação/);
+  assert.match(src, /17\.\s*Formate todo número no padrão pt-BR/);
+  // as 12 regras originais continuam presentes, sem renumerar.
+  for (let n = 1; n <= 12; n++) {
+    assert.match(src, new RegExp(`${n}\\.\\s`), `regra ${n} original deveria continuar presente`);
+  }
+});
+
+test("GUARDA: regra 9 deixa explícito que a sugestão final é UMA pergunta OU UMA recomendação, nunca as duas", () => {
+  const src = readFileSync(new URL("../src/lib/aura-ai/system-prompt.ts", import.meta.url), "utf8");
+  assert.match(src, /UMA pergunta OU UMA recomendação prática — nunca as duas juntas/);
+});
+
+test("GUARDA: AURA_WEEKLY_REPORT_LENGTH_RULE proíbe saudação E pergunta final, exige terminar em recomendações", () => {
+  const src = readFileSync(new URL("../src/lib/aura-ai/system-prompt.ts", import.meta.url), "utf8");
+  const start = src.indexOf("export const AURA_WEEKLY_REPORT_LENGTH_RULE");
+  const nextExport = src.indexOf("export const", start + 1);
+  const body = src.slice(start, nextExport > -1 ? nextExport : undefined);
+  assert.match(body, /NUNCA abra com uma saudação/);
+  assert.match(body, /NUNCA termine com uma pergunta/);
+  assert.match(body, /TERMINA nas próprias recomendações/);
+});

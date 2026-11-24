@@ -27,6 +27,7 @@ import {
   AURA_COUNCIL_SYSTEM_PROMPT,
   buildMetricsContextBlock,
 } from "@/lib/aura-ai/system-prompt";
+import { normalizePtBrNumbers } from "@/lib/aura-ai/normalize-pt-br";
 
 // ---- Types shared with the client ----
 
@@ -267,7 +268,9 @@ export const chatWithAura = createServerFn({ method: "POST" })
       messages: data.messages,
     });
 
-    const reply = restoreClientNames(result.text, labelMap, names);
+    // FASE IA-3 (item 3) — rede de segurança determinística de formatação pt-BR, aplicada DEPOIS da
+    // substituição de rótulos (nunca antes — restoreClientNames não deveria interagir com números).
+    const reply = normalizePtBrNumbers(restoreClientNames(result.text, labelMap, names));
     return { reply: result.truncated ? `${reply}${TRUNCATED_WARNING}` : reply };
   });
 

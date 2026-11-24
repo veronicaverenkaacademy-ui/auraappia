@@ -22,6 +22,7 @@ import {
   pseudonymizeClientIds,
   restoreClientNames,
 } from "@/lib/aura-ai/pseudonymize";
+import { normalizePtBrNumbers } from "@/lib/aura-ai/normalize-pt-br";
 import {
   AURA_SYSTEM_PROMPT,
   AURA_WEEKLY_REPORT_LENGTH_RULE,
@@ -39,9 +40,11 @@ import {
 } from "./list-models.server";
 import { defaultModelFor, validateModelForProvider } from "@/lib/aura-ai/model-select";
 import { checkLabAccess } from "./access";
-import type { AuraAiAdapter } from "@/lib/aura-ai/types";
+import type { AuraAiAdapter, GenerateDiagnostics } from "@/lib/aura-ai/types";
+import { parseLabChatMaxTokensOverride } from "./lab-max-tokens";
 
 export type LabProviderId = "anthropic" | "google";
+export { parseLabChatMaxTokensOverride } from "./lab-max-tokens";
 
 export interface LabQuestionResult {
   questionId: string;
@@ -56,7 +59,13 @@ export interface LabQuestionResult {
   costUSD: number | null;
   /** true quando o provedor cortou a resposta por limite de tokens. */
   truncated: boolean;
+  /** Total de números citados pela resposta (extractNumbersFromText) — junto com unmatchedNumbers dá
+   * "quantos conferem" (FASE IA-3 item 4), sem mudar checkCitedNumbers/verifier.ts. */
+  citedNumbersTotal: number;
   unmatchedNumbers: number[];
+  /** Ver GenerateDiagnostics em types.ts — ausente quando o adaptador não o preenche (google/lovable
+   * hoje). FASE IA-3 item 1: só diagnóstico passivo, nunca muda a chamada. */
+  diagnostics?: GenerateDiagnostics;
   refusedTrapCorrectly?: boolean;
   /** Preenchido só quando refusedTrapCorrectly é false — qual sinal disparou a falha (ver
    * checkTrapHandling em verifier.ts). */
@@ -96,6 +105,7 @@ function emptyResult(question: LabQuestion, error: string): LabQuestionResult {
     reasoningTokens: 0,
     costUSD: null,
     truncated: false,
+    citedNumbersTotal: 0,
     unmatchedNumbers: [],
     error,
   };
@@ -117,20 +127,24 @@ async function runOneLabQuestion(
       { task, system, messages: [{ role: "user", content: question.question }] },
       model,
     );
-    const { unmatchedNumbers } = checkCitedNumbers(result.text, allowedNumbers);
+    const { citedNumbers, unmatchedNumbers } = checkCitedNumbers(result.text, allowedNumbers);
     const trapCheck = question.isTrap ? checkTrapHandling(question.id, result.text) : null;
     return {
       questionId: question.id,
       question: question.question,
       isTrap: question.isTrap,
-      answerText: restoreClientNames(result.text, labelMap, names),
+      // FASE IA-3 (item 3) — mesma rede de segurança de formatação pt-BR do chat de produção (ver
+      // src/lib/aura.functions.ts), aplicada aqui antes de exibir/copiar no Laboratório.
+      answerText: normalizePtBrNumbers(restoreClientNames(result.text, labelMap, names)),
       latencyMs: result.latencyMs,
       inputTokens: result.usage.inputTokens,
       outputTokens: result.usage.outputTokens,
       reasoningTokens: result.usage.reasoningOutputTokens ?? 0,
       costUSD: estimateCostUSD(result.usage, provider, model),
       truncated: result.truncated,
+      citedNumbersTotal: citedNumbers.length,
       unmatchedNumbers,
+      diagnostics: result.diagnostics,
       refusedTrapCorrectly: trapCheck?.handledCorrectly,
       trapFailureReason: trapCheck?.failureReason,
     };
@@ -252,9 +266,15 @@ export const runLabQuestion = createServerFn({ method: "POST" })
         ? `${AURA_SYSTEM_PROMPT}\n\n${AURA_WEEKLY_REPORT_LENGTH_RULE}\n\n${contextBlockText}`
         : `${AURA_SYSTEM_PROMPT}\n\n${contextBlockText}`;
 
+    // FASE IA-3 (item 1.f) — override só pra tarefa "chat" (nunca "weekly_report"), lido SÓ aqui, no
+    // caminho do Laboratório — generate.server.ts (produção) nunca vê essa variável.
+    const labMaxTokensOverride =
+      task === "chat"
+        ? parseLabChatMaxTokensOverride(process.env.AURA_LAB_CHAT_MAX_TOKENS)
+        : undefined;
     const adapter =
       data.providerId === "anthropic"
-        ? createAnthropicAdapter(apiKey)
+        ? createAnthropicAdapter(apiKey, undefined, labMaxTokensOverride)
         : createGoogleAdapter(apiKey);
     const result = await runOneLabQuestion(
       adapter,
