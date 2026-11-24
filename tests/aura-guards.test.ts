@@ -206,12 +206,12 @@ test("GUARDA: LAB_BUILD_TAG é uma constante exportada e não-vazia", async () =
   assert.ok(LAB_BUILD_TAG.length > 0);
 });
 
-// FASE IA-4 (item 5.e) — esta fase tocou o Laboratório (laboratory.functions.ts, a tela,
-// lab-thinking-mode.ts) — a etiqueta precisa ter avançado pra "IA-4" (atualização à mão, ver
-// comentário em build-tag.ts).
-test("GUARDA: LAB_BUILD_TAG está em 'IA-4' nesta fase", async () => {
+// FASE IA-5 (item 5) — esta fase tocou o Laboratório de novo (laboratory.functions.ts, a tela,
+// lab-thinking-mode.ts, statement-checks.ts) — a etiqueta precisa ter avançado pra "IA-5"
+// (atualização à mão, ver comentário em build-tag.ts).
+test("GUARDA: LAB_BUILD_TAG está em 'IA-5' nesta fase", async () => {
   const { LAB_BUILD_TAG } = await import("../src/lib/aura-ai/laboratory/build-tag.ts");
-  assert.equal(LAB_BUILD_TAG, "IA-4");
+  assert.equal(LAB_BUILD_TAG, "IA-5");
 });
 
 test("GUARDA: a tela do Laboratório importa LAB_BUILD_TAG e renderiza o aviso de divergência tela/servidor", () => {
@@ -308,4 +308,40 @@ test("GUARDA: AURA_WEEKLY_REPORT_LENGTH_RULE proíbe saudação E pergunta final
   assert.match(body, /NUNCA abra com uma saudação/);
   assert.match(body, /NUNCA termine com uma pergunta/);
   assert.match(body, /TERMINA nas próprias recomendações/);
+});
+
+// FASE IA-5 (item 4/6e) — regra 18 refinada: cada ação agora tem TRÊS partes (prioridade/momento/
+// mensagem), pode usar conhecimento geral do negócio, mas continua proibindo inventar desconto/
+// valor/prazo/promoção/resultado e PARAR/telefone. Regra 20 (nova): toda recomendação/ação precisa
+// derivar de métrica citada na mesma resposta — proibido ligar métricas sem relação calculada.
+test("GUARDA: regra 18 refinada (FASE IA-5) exige TRÊS partes por ação (prioridade/momento/mensagem) e continua proibindo inventar resultado/desconto/PARAR/telefone", () => {
+  const src = readFileSync(new URL("../src/lib/aura-ai/system-prompt.ts", import.meta.url), "utf8");
+  assert.match(src, /TRÊS partes: prioridade \(QUEM/);
+  assert.match(src, /momento \(QUANDO/);
+  assert.match(src, /exemplo de mensagem pronta para enviar à cliente/);
+  assert.match(src, /NUNCA prometa um resultado/);
+  assert.match(src, /SEM inventar desconto, valor, prazo ou promoção/);
+  assert.match(src, /NUNCA mencionam "PARAR" ou qualquer linguagem de opt-out/);
+  assert.match(src, /SEM pedir ou mostrar telefone/);
+  // pode usar conhecimento geral do negócio (manutenção de cílios, recorrência, agenda de hoje).
+  assert.match(src, /conhecimento geral de negócio de estética\/cílios/);
+  assert.match(src, /today_appointments\/occupancy_today/);
+});
+
+test("GUARDA: regra 19 (nunca contar lista pra total) e regra 20 (proibido ligar métricas sem relação) estão presentes, sem renumerar as 18 anteriores", () => {
+  const src = readFileSync(new URL("../src/lib/aura-ai/system-prompt.ts", import.meta.url), "utf8");
+  assert.match(src, /19\.\s*NUNCA conte os itens de uma lista pra chegar num total/);
+  assert.match(src, /use SEMPRE o total já calculado que vier pronto no bloco de métricas/);
+  assert.match(src, /diga "pelo menos N"/);
+  assert.match(
+    src,
+    /20\.\s*Toda recomendação \(regra 7\) ou ação do bloco "Ideias gerais" \(regra 18\)/,
+  );
+  assert.match(
+    src,
+    /PROIBIDO ligar duas métricas que não têm relação calculada entre elas no bloco/,
+  );
+  for (let n = 1; n <= 18; n++) {
+    assert.match(src, new RegExp(`${n}\\.\\s`), `regra ${n} anterior deveria continuar presente`);
+  }
 });

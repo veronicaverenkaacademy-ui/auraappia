@@ -11,6 +11,8 @@ import { createAnthropicAdapter } from "./adapters/anthropic.server.ts";
 import { createGoogleAdapter } from "./adapters/google.server.ts";
 import { createLovableAdapter } from "./adapters/lovable.server.ts";
 import { defaultModelFor, validateModelForProvider, type AuraAiModelTask } from "./model-select.ts";
+import { parseAnthropicThinkingMode, type AnthropicThinkingMode } from "./thinking-mode.ts";
+import { wrapWithThinkingFallback } from "./thinking-retry.server.ts";
 
 const DEFAULT_PROVIDER = "lovable";
 
@@ -31,12 +33,34 @@ function envProviderModel(task: AuraAiTask): { provider: string; model: string }
   return { provider, model };
 }
 
-export function resolveAdapter(provider: string): AuraAiAdapter {
+// FASE IA-5 (item 3) — AURA_AI_CHAT_THINKING pras tarefas "chat"/"council"/"alert", AURA_AI_REPORT_
+// THINKING só pra "weekly_report" — mesmo split binário que envProviderModel já usa pra provider/
+// model acima (isReport = task === "weekly_report"). Ausente/inválida -> "default" (nada extra
+// enviado, comportamento de sempre — nenhum efeito a menos que a dona configure uma das duas).
+function thinkingModeEnvFor(task: AuraAiTask): AnthropicThinkingMode {
+  const raw =
+    task === "weekly_report"
+      ? process.env.AURA_AI_REPORT_THINKING
+      : process.env.AURA_AI_CHAT_THINKING;
+  return parseAnthropicThinkingMode(raw);
+}
+
+// FASE IA-1B (item 3) — "task" é OPCIONAL e só usado pro provedor Anthropic (item 3 da FASE IA-5,
+// abaixo) decidir o modo de raciocínio; chamadas existentes sem o 2º argumento (ex.:
+// tests/aura-ai-model-select.test.ts: resolveAdapter("lovable")) continuam funcionando sem mudança —
+// task ausente nunca envia nenhum parâmetro de raciocínio (mesmo comportamento de antes desta fase).
+export function resolveAdapter(provider: string, task?: AuraAiTask): AuraAiAdapter {
   if (provider === "anthropic") {
     const key = process.env.ANTHROPIC_API_KEY;
     if (!key)
       throw new AuraAiError("Provedor Anthropic selecionado, mas a chave não está configurada.");
-    return createAnthropicAdapter(key);
+    const thinkingMode = task ? thinkingModeEnvFor(task) : "default";
+    const primary = createAnthropicAdapter(key, undefined, undefined, thinkingMode);
+    // FASE IA-5 (item 3) — só vale a pena envolver com a retentativa quando thinkingMode pode de fato
+    // ser recusado (!= "default"); em "default" o wrapper seria um passo extra sem nenhum efeito.
+    if (thinkingMode === "default") return primary;
+    const fallback = createAnthropicAdapter(key);
+    return wrapWithThinkingFallback(primary, fallback);
   }
   if (provider === "google") {
     const key = process.env.GEMINI_API_KEY;
@@ -52,6 +76,6 @@ export function resolveAdapter(provider: string): AuraAiAdapter {
 
 export async function generate(params: GenerateParams): Promise<GenerateResult> {
   const { provider, model } = envProviderModel(params.task);
-  const adapter = resolveAdapter(provider);
+  const adapter = resolveAdapter(provider, params.task);
   return adapter.generate(params, model);
 }

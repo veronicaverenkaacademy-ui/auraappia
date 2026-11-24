@@ -59,14 +59,22 @@ function modelForTask(
   return undefined;
 }
 
-/** FASE IA-4 (item 3) — modo de raciocínio REALMENTE usado, da PRIMEIRA resposta disponível daquele
- * provedor (qualquer pergunta — não depende de task, diferente de modelForTask) — "n/a" pro Google. */
-function thinkingModeForProvider(
+/** FASE IA-4 (item 3) / FASE IA-5 (item 3) — modo de raciocínio REALMENTE usado, da PRIMEIRA resposta
+ * disponível DAQUELA TAREFA especificamente (chat ou relatório semanal — mesmo split de
+ * modelForTask), já que desde a FASE IA-5 cada tarefa pode ter um modo configurado diferente
+ * (AURA_LAB_ANTHROPIC_CHAT_THINKING vs. AURA_LAB_ANTHROPIC_REPORT_THINKING) — um único valor "do
+ * provedor" não bastaria mais. "n/a" pro Google. */
+function thinkingModeForTask(
   provider: LabProviderId,
+  task: "chat" | "weekly_report",
   runs: Record<string, ItemRun>,
 ): string | undefined {
-  for (const item of LAB_ALL_ITEMS) {
-    const mode = runs[keyFor(provider, item.id)]?.data?.thinkingMode;
+  const ids =
+    task === "weekly_report"
+      ? [LAB_WEEKLY_REPORT_ID]
+      : LAB_ALL_ITEMS.filter((i) => i.id !== LAB_WEEKLY_REPORT_ID).map((i) => i.id);
+  for (const id of ids) {
+    const mode = runs[keyFor(provider, id)]?.data?.thinkingMode;
     if (mode) return mode;
   }
   return undefined;
@@ -124,22 +132,41 @@ function verificationLine(r: LabQuestionResult): string {
   return `❌ não encontrados no gabarito: ${r.unmatchedNumbers.join(", ")}`;
 }
 
+/** FASE IA-5 (item 2) — conferência por AFIRMAÇÃO (ver statement-checks.ts): pega fatos específicos
+ * que o texto realmente afirmou e compara com o gabarito — pega o erro que verificationLine (conjunto
+ * de números) não pega quando o número errado também é válido no bloco por coincidência. "n/d" nunca
+ * aparece aqui: se nada foi afirmado, checked=0 e a linha simplesmente diz "0 conferidas". */
+function statementsLine(r: LabQuestionResult): string {
+  const { statementCheck } = r;
+  if (statementCheck.mismatches.length === 0) {
+    return `afirmações: ✅ ${statementCheck.checked} conferida(s)`;
+  }
+  return statementCheck.mismatches
+    .map((m) => `afirmações: ❌ ${m.label}: IA disse ${m.said}, gabarito ${m.expected}`)
+    .join("\n");
+}
+
 function resultToText(
   provider: LabProviderId,
   runs: Record<string, ItemRun>,
   gabaritoText: string | undefined,
   serverBuildTag: string | undefined,
-  thinkingMode: string | undefined,
 ): string {
   const chatModel = modelForTask(provider, "chat", runs);
   const reportModel = modelForTask(provider, "weekly_report", runs);
+  // FASE IA-5 (item 3) — desde esta fase, chat e relatório podem ter um modo de raciocínio diferente
+  // (AURA_LAB_ANTHROPIC_CHAT_THINKING vs. AURA_LAB_ANTHROPIC_REPORT_THINKING) — "raciocinio_modo="
+  // (singular) deixou de bastar; mostra os dois separados.
+  const chatThinkingMode = thinkingModeForTask(provider, "chat", runs);
+  const reportThinkingMode = thinkingModeForTask(provider, "weekly_report", runs);
   const lines: string[] = [
     // FASE IA-3C — "tela=" vem da constante importada AQUI mesmo (bundle do cliente); "servidor="
     // vem do serverBuildTag devolvido pela PRIMEIRA chamada de runLabQuestion que respondeu (prova
     // que foi essa versão do servidor que gerou as respostas abaixo — não a de getLabStatus, que só
-    // roda uma vez no carregamento da tela). FASE IA-4 (item 3) — "raciocinio_modo=" é o valor de
-    // AURA_LAB_ANTHROPIC_THINKING que realmente rodou nessa chamada ("n/a" pro Google).
-    `=== ${PROVIDER_LABEL[provider].toUpperCase()} (chat: ${chatModel ?? "sem modelo"} · relatório: ${reportModel ?? "sem modelo"}) tela=${LAB_BUILD_TAG} servidor=${serverBuildTag ?? "n/d"} raciocinio_modo=${thinkingMode ?? "n/d"} ===`,
+    // roda uma vez no carregamento da tela). FASE IA-4 (item 3) / FASE IA-5 (item 3) —
+    // "raciocinio_modo_chat="/"raciocinio_modo_relatorio=" são os valores que realmente rodaram
+    // nessa chamada, cada tarefa com sua própria precedência ("n/a" pro Google).
+    `=== ${PROVIDER_LABEL[provider].toUpperCase()} (chat: ${chatModel ?? "sem modelo"} · relatório: ${reportModel ?? "sem modelo"}) tela=${LAB_BUILD_TAG} servidor=${serverBuildTag ?? "n/d"} raciocinio_modo_chat=${chatThinkingMode ?? "n/d"} raciocinio_modo_relatorio=${reportThinkingMode ?? "n/d"} ===`,
   ];
   for (const item of LAB_ALL_ITEMS) {
     const run = runs[keyFor(provider, item.id)];
@@ -161,6 +188,7 @@ function resultToText(
     if (visible !== null) lines.push(`texto visível≈${visible} tokens`);
     lines.push(diagnosticsLine(r));
     lines.push(verificationLine(r));
+    lines.push(statementsLine(r));
     if (r.isTrap) {
       lines.push(
         r.refusedTrapCorrectly
@@ -259,12 +287,7 @@ function Laboratorio() {
     const serverBuildTag = LAB_ALL_ITEMS.map(
       (item) => runs[keyFor(provider, item.id)]?.data?.serverBuildTag,
     ).find(Boolean);
-    // FASE IA-4 (item 3) — mesmo raciocínio: o modo de raciocínio REALMENTE usado na rodada, não o
-    // que está configurado "agora" no ambiente (podem ter mudado entre uma rodada e outra).
-    const thinkingMode = LAB_ALL_ITEMS.map(
-      (item) => runs[keyFor(provider, item.id)]?.data?.thinkingMode,
-    ).find(Boolean);
-    const text = resultToText(provider, runs, gabaritoText, serverBuildTag, thinkingMode);
+    const text = resultToText(provider, runs, gabaritoText, serverBuildTag);
     navigator.clipboard.writeText(text).then(
       () => toast.success("Copiado."),
       () => toast.error("Não foi possível copiar."),
@@ -359,7 +382,9 @@ function ColumnView({
   const doneCount = itemRuns.filter(({ run }) => run?.status === "done").length;
   const chatModel = modelForTask(provider, "chat", runs);
   const reportModel = modelForTask(provider, "weekly_report", runs);
-  const thinkingMode = thinkingModeForProvider(provider, runs);
+  // FASE IA-5 (item 3) — chat e relatório mostrados separados (ver thinkingModeForTask).
+  const chatThinkingMode = thinkingModeForTask(provider, "chat", runs);
+  const reportThinkingMode = thinkingModeForTask(provider, "weekly_report", runs);
 
   const totals = itemRuns.reduce(
     (acc, { run }) => {
@@ -390,8 +415,9 @@ function ColumnView({
         <div>
           <h2 className="font-semibold">{PROVIDER_LABEL[provider]}</h2>
           <p className="text-xs text-muted-foreground">
-            chat: {chatModel ?? "—"} · relatório: {reportModel ?? "—"} · raciocínio:{" "}
-            {thinkingMode ?? "—"} · {doneCount}/{LAB_ALL_ITEMS.length}
+            chat: {chatModel ?? "—"} (raciocínio: {chatThinkingMode ?? "—"}) · relatório:{" "}
+            {reportModel ?? "—"} (raciocínio: {reportThinkingMode ?? "—"}) · {doneCount}/
+            {LAB_ALL_ITEMS.length}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={onCopy}>
@@ -498,6 +524,15 @@ function QuestionResultView({
               {r.unmatchedNumbers.length > 0 && (
                 <div className="text-[11px] text-destructive mt-1">
                   ⚠️ possível número inventado: {r.unmatchedNumbers.join(", ")}
+                </div>
+              )}
+              {r.statementCheck.mismatches.length > 0 && (
+                <div className="text-[11px] text-destructive mt-1">
+                  {r.statementCheck.mismatches.map((m) => (
+                    <div key={m.label}>
+                      ❌ {m.label}: IA disse {m.said}, gabarito {m.expected}
+                    </div>
+                  ))}
                 </div>
               )}
               {r.isTrap && (
