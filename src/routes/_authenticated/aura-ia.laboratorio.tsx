@@ -59,6 +59,19 @@ function modelForTask(
   return undefined;
 }
 
+/** FASE IA-4 (item 3) — modo de raciocínio REALMENTE usado, da PRIMEIRA resposta disponível daquele
+ * provedor (qualquer pergunta — não depende de task, diferente de modelForTask) — "n/a" pro Google. */
+function thinkingModeForProvider(
+  provider: LabProviderId,
+  runs: Record<string, ItemRun>,
+): string | undefined {
+  for (const item of LAB_ALL_ITEMS) {
+    const mode = runs[keyFor(provider, item.id)]?.data?.thinkingMode;
+    if (mode) return mode;
+  }
+  return undefined;
+}
+
 /** FASE IA-3 (item 1.d) — tamanho APROXIMADO de raciocínio quando há bloco "thinking" no diagnóstico
  * (ver GenerateDiagnostics em types.ts) mas o provedor não devolve uma contagem exata de tokens de
  * raciocínio (caso do Anthropic hoje — reasoningTokens só existe pro Google). Nunca apresentado como
@@ -88,6 +101,21 @@ function diagnosticsLine(r: LabQuestionResult): string {
   return `diag: blocos=[${d.blockTypes.join(",")}] stop=${d.stopReason ?? "?"} chars=[${d.blockChars.join(",")}] usage=${JSON.stringify(d.usageRaw)}`;
 }
 
+/** FASE IA-4 (item 2) — "texto visível ≈ X tokens" = tokens_out MENOS o thinking_tokens exato que o
+ * próprio provedor devolveu (usage.output_tokens_details.thinking_tokens, cru em diagnostics.usageRaw
+ * — ver anthropic.server.ts). Devolve null (linha omitida) quando esse campo não existe: nem toda
+ * resposta tem usage_details, e esse cálculo só é honesto quando a contagem vem exata do provedor —
+ * nunca derivado da aproximação por caracteres (que já tem seu próprio rótulo "aprox." separado). */
+function visibleTextTokens(r: LabQuestionResult): number | null {
+  const usageRaw = r.diagnostics?.usageRaw;
+  if (!usageRaw || typeof usageRaw !== "object" || Array.isArray(usageRaw)) return null;
+  const details = (usageRaw as Record<string, unknown>).output_tokens_details;
+  if (!details || typeof details !== "object" || Array.isArray(details)) return null;
+  const thinkingTokens = (details as Record<string, unknown>).thinking_tokens;
+  if (typeof thinkingTokens !== "number") return null;
+  return r.outputTokens - thinkingTokens;
+}
+
 /** FASE IA-3 (item 4) — surfaça no texto copiado o resultado da verificação automática que já roda
  * internamente (checkCitedNumbers contra gabarito.structured) mas, até aqui, só aparecia quando dava
  * problema — agora mostra também o lado positivo ("conferem"), nunca só o negativo. */
@@ -101,6 +129,7 @@ function resultToText(
   runs: Record<string, ItemRun>,
   gabaritoText: string | undefined,
   serverBuildTag: string | undefined,
+  thinkingMode: string | undefined,
 ): string {
   const chatModel = modelForTask(provider, "chat", runs);
   const reportModel = modelForTask(provider, "weekly_report", runs);
@@ -108,8 +137,9 @@ function resultToText(
     // FASE IA-3C — "tela=" vem da constante importada AQUI mesmo (bundle do cliente); "servidor="
     // vem do serverBuildTag devolvido pela PRIMEIRA chamada de runLabQuestion que respondeu (prova
     // que foi essa versão do servidor que gerou as respostas abaixo — não a de getLabStatus, que só
-    // roda uma vez no carregamento da tela).
-    `=== ${PROVIDER_LABEL[provider].toUpperCase()} (chat: ${chatModel ?? "sem modelo"} · relatório: ${reportModel ?? "sem modelo"}) tela=${LAB_BUILD_TAG} servidor=${serverBuildTag ?? "n/d"} ===`,
+    // roda uma vez no carregamento da tela). FASE IA-4 (item 3) — "raciocinio_modo=" é o valor de
+    // AURA_LAB_ANTHROPIC_THINKING que realmente rodou nessa chamada ("n/a" pro Google).
+    `=== ${PROVIDER_LABEL[provider].toUpperCase()} (chat: ${chatModel ?? "sem modelo"} · relatório: ${reportModel ?? "sem modelo"}) tela=${LAB_BUILD_TAG} servidor=${serverBuildTag ?? "n/d"} raciocinio_modo=${thinkingMode ?? "n/d"} ===`,
   ];
   for (const item of LAB_ALL_ITEMS) {
     const run = runs[keyFor(provider, item.id)];
@@ -127,6 +157,8 @@ function resultToText(
     lines.push(
       `latência=${r.latencyMs}ms tokens_in=${r.inputTokens} tokens_out=${r.outputTokens} ${raciocinio} custo=${r.costUSD ?? "?"}${r.truncated ? " [CORTADA]" : ""}`,
     );
+    const visible = visibleTextTokens(r);
+    if (visible !== null) lines.push(`texto visível≈${visible} tokens`);
     lines.push(diagnosticsLine(r));
     lines.push(verificationLine(r));
     if (r.isTrap) {
@@ -227,7 +259,12 @@ function Laboratorio() {
     const serverBuildTag = LAB_ALL_ITEMS.map(
       (item) => runs[keyFor(provider, item.id)]?.data?.serverBuildTag,
     ).find(Boolean);
-    const text = resultToText(provider, runs, gabaritoText, serverBuildTag);
+    // FASE IA-4 (item 3) — mesmo raciocínio: o modo de raciocínio REALMENTE usado na rodada, não o
+    // que está configurado "agora" no ambiente (podem ter mudado entre uma rodada e outra).
+    const thinkingMode = LAB_ALL_ITEMS.map(
+      (item) => runs[keyFor(provider, item.id)]?.data?.thinkingMode,
+    ).find(Boolean);
+    const text = resultToText(provider, runs, gabaritoText, serverBuildTag, thinkingMode);
     navigator.clipboard.writeText(text).then(
       () => toast.success("Copiado."),
       () => toast.error("Não foi possível copiar."),
@@ -322,6 +359,7 @@ function ColumnView({
   const doneCount = itemRuns.filter(({ run }) => run?.status === "done").length;
   const chatModel = modelForTask(provider, "chat", runs);
   const reportModel = modelForTask(provider, "weekly_report", runs);
+  const thinkingMode = thinkingModeForProvider(provider, runs);
 
   const totals = itemRuns.reduce(
     (acc, { run }) => {
@@ -352,8 +390,8 @@ function ColumnView({
         <div>
           <h2 className="font-semibold">{PROVIDER_LABEL[provider]}</h2>
           <p className="text-xs text-muted-foreground">
-            chat: {chatModel ?? "—"} · relatório: {reportModel ?? "—"} · {doneCount}/
-            {LAB_ALL_ITEMS.length}
+            chat: {chatModel ?? "—"} · relatório: {reportModel ?? "—"} · raciocínio:{" "}
+            {thinkingMode ?? "—"} · {doneCount}/{LAB_ALL_ITEMS.length}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={onCopy}>

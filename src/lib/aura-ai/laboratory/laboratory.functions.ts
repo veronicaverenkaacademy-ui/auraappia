@@ -42,6 +42,7 @@ import { defaultModelFor, validateModelForProvider } from "@/lib/aura-ai/model-s
 import { checkLabAccess } from "./access";
 import type { AuraAiAdapter, GenerateDiagnostics } from "@/lib/aura-ai/types";
 import { parseLabChatMaxTokensOverride } from "./lab-max-tokens";
+import { parseLabAnthropicThinkingMode } from "./lab-thinking-mode";
 import { LAB_BUILD_TAG } from "./build-tag";
 
 export type LabProviderId = "anthropic" | "google";
@@ -213,6 +214,11 @@ export interface RunLabQuestionResult {
    * Sempre presente, em todo retorno (mesmo nos de erro/não-configurado), pelo mesmo motivo de
    * LabStatusResult.serverBuildTag. */
   serverBuildTag: string;
+  /** FASE IA-4 (item 3) — modo de raciocínio adaptativo usado NESTA chamada ("default"/"disabled"/
+   * "low" pro Anthropic, lido de AURA_LAB_ANTHROPIC_THINKING; "n/a" pro Google, que não tem esse
+   * controle). Sempre presente — mesmo motivo de serverBuildTag: a dona precisa ver, pra cada
+   * resposta, qual modo realmente gerou aquilo, não só o que está configurado "agora". */
+  thinkingMode: string;
 }
 
 export const runLabQuestion = createServerFn({ method: "POST" })
@@ -220,6 +226,14 @@ export const runLabQuestion = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => RunLabQuestionInput.parse(input))
   .handler(async ({ data, context }): Promise<RunLabQuestionResult> => {
     await requireAuraAdmin(context.supabase, context.userId);
+    // FASE IA-4 (item 3) — calculado já aqui (antes de qualquer retorno), independente de task — o
+    // controle de raciocínio se aplica a toda chamada Anthropic do Laboratório, não só ao chat (ver
+    // lab-thinking-mode.ts pra exatamente o que cada modo envia). "n/a" pro Google, que não tem esse
+    // controle. Sempre presente em TODO retorno abaixo, pelo mesmo motivo de serverBuildTag.
+    const thinkingMode =
+      data.providerId === "anthropic"
+        ? parseLabAnthropicThinkingMode(process.env.AURA_LAB_ANTHROPIC_THINKING)
+        : "n/a";
     const access = checkLabAccess(process.env.AURA_LAB_ALLOWED_EMAILS, emailFromContext(context));
     if (!access.enabled) {
       return {
@@ -227,6 +241,7 @@ export const runLabQuestion = createServerFn({ method: "POST" })
         disabledReason: access.disabledReason,
         configured: false,
         serverBuildTag: LAB_BUILD_TAG,
+        thinkingMode,
       };
     }
 
@@ -237,7 +252,9 @@ export const runLabQuestion = createServerFn({ method: "POST" })
 
     const apiKey =
       data.providerId === "anthropic" ? process.env.ANTHROPIC_API_KEY : process.env.GEMINI_API_KEY;
-    if (!apiKey) return { enabled: true, configured: false, serverBuildTag: LAB_BUILD_TAG };
+    if (!apiKey) {
+      return { enabled: true, configured: false, serverBuildTag: LAB_BUILD_TAG, thinkingMode };
+    }
 
     const model = pickLabModel(data.providerId, task);
     if (!model) {
@@ -250,6 +267,7 @@ export const runLabQuestion = createServerFn({ method: "POST" })
           `Nenhum modelo configurado para ${data.providerId} nesta tarefa (defina ${envName}).`,
         ),
         serverBuildTag: LAB_BUILD_TAG,
+        thinkingMode,
       };
     }
     try {
@@ -264,6 +282,7 @@ export const runLabQuestion = createServerFn({ method: "POST" })
           e instanceof Error ? e.message : "Modelo inválido para este provedor.",
         ),
         serverBuildTag: LAB_BUILD_TAG,
+        thinkingMode,
       };
     }
 
@@ -293,9 +312,17 @@ export const runLabQuestion = createServerFn({ method: "POST" })
       task === "chat"
         ? parseLabChatMaxTokensOverride(process.env.AURA_LAB_CHAT_MAX_TOKENS)
         : undefined;
+    // FASE IA-4 (item 3) — thinkingMode (calculado no topo do handler) só é passado pro adaptador
+    // quando o provedor é "anthropic" — pro Google ele vale "n/a" e o parâmetro nem existe nesse
+    // adaptador.
     const adapter =
       data.providerId === "anthropic"
-        ? createAnthropicAdapter(apiKey, undefined, labMaxTokensOverride)
+        ? createAnthropicAdapter(
+            apiKey,
+            undefined,
+            labMaxTokensOverride,
+            thinkingMode as "default" | "disabled" | "low",
+          )
         : createGoogleAdapter(apiKey);
     const result = await runOneLabQuestion(
       adapter,
@@ -316,6 +343,7 @@ export const runLabQuestion = createServerFn({ method: "POST" })
       result,
       gabaritoText: gabarito.text,
       serverBuildTag: LAB_BUILD_TAG,
+      thinkingMode,
     };
   });
 

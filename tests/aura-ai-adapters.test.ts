@@ -224,10 +224,11 @@ test("anthropic: stop_reason max_tokens marca truncated:true; caso normal fica t
   assert.equal(result2.truncated, false);
 });
 
-// FASE IA-1B (item 5), ajustado na FASE IA-2 (item A.2) — max_tokens varia por tarefa: 1500 pra
-// chat (subiu de 1024 depois da primeira rodada do Laboratório mostrar respostas cortadas), 2048 pro
-// relatório semanal (inalterado).
-test("anthropic: max_tokens enviado no corpo varia por tarefa (chat=1500, weekly_report=2048)", async () => {
+// FASE IA-1B (item 5), ajustado na FASE IA-2 (item A.2, 1500/2048) e na FASE IA-4 (item 1) — rodada 4
+// do Laboratório confirmou que o raciocínio oculto consome 60-80% de output_tokens e CONTA no
+// max_tokens: 3 das 10 respostas (1511/1885/1801 tokens) teriam sido cortadas com os limites antigos.
+// Os dois sobem para 4000 (chat e relatório semanal).
+test("anthropic: max_tokens enviado no corpo é 4000 pras duas tarefas (chat e weekly_report)", async () => {
   let capturedBody: Record<string, unknown> = {};
   const fakeFetch = async (_url: string, init: RequestInit) => {
     capturedBody = JSON.parse(init.body as string);
@@ -235,9 +236,9 @@ test("anthropic: max_tokens enviado no corpo varia por tarefa (chat=1500, weekly
   };
   const adapter = createAnthropicAdapter("fake-key", fakeFetch);
   await adapter.generate({ ...BASE_PARAMS, task: "chat" }, "claude-haiku-5-5");
-  assert.equal(capturedBody.max_tokens, 1500);
+  assert.equal(capturedBody.max_tokens, 4000);
   await adapter.generate({ ...BASE_PARAMS, task: "weekly_report" }, "claude-sonnet-5-5");
-  assert.equal(capturedBody.max_tokens, 2048);
+  assert.equal(capturedBody.max_tokens, 4000);
 });
 
 // FASE IA-1B (item 6) — 404/400 que indicam "modelo inexistente" viram uma mensagem específica com o
@@ -361,7 +362,7 @@ test("anthropic: maxTokensOverride (3º parâmetro) sobrescreve o max_tokens env
   assert.equal(capturedBody.max_tokens, 900);
 });
 
-test("anthropic: sem maxTokensOverride, continua no default de sempre (1500 chat / 2048 relatório)", async () => {
+test("anthropic: sem maxTokensOverride, continua no default de sempre (4000)", async () => {
   let capturedBody: Record<string, unknown> = {};
   const fakeFetch = async (_url: string, init: RequestInit) => {
     capturedBody = JSON.parse(init.body as string);
@@ -369,7 +370,140 @@ test("anthropic: sem maxTokensOverride, continua no default de sempre (1500 chat
   };
   const adapter = createAnthropicAdapter("fake-key", fakeFetch);
   await adapter.generate({ ...BASE_PARAMS, task: "chat" }, "claude-haiku-5-5");
-  assert.equal(capturedBody.max_tokens, 1500);
+  assert.equal(capturedBody.max_tokens, 4000);
+});
+
+// FASE IA-4 (item 2 / 5.b) — usage.output_tokens_details.thinking_tokens, quando o provedor devolve,
+// preenche reasoningOutputTokens (mesmo campo que o Google já usa) — o Laboratório passa a mostrar
+// "raciocínio=N" exato em vez da aproximação por caracteres (que dá 0 quando o texto vem omitido).
+test("anthropic: usage.output_tokens_details.thinking_tokens preenche reasoningOutputTokens", async () => {
+  const fakeFetch = async () =>
+    jsonResponse(200, {
+      content: [
+        { type: "thinking", thinking: "" }, // texto omitido (display:"omitted") — chars=0 mesmo assim
+        { type: "text", text: "Resposta." },
+      ],
+      usage: {
+        input_tokens: 50,
+        output_tokens: 1511,
+        output_tokens_details: { thinking_tokens: 1151 },
+      },
+    });
+  const adapter = createAnthropicAdapter("fake-key", fakeFetch);
+  const result = await adapter.generate(BASE_PARAMS, "claude-haiku-5-5");
+  assert.equal(result.usage.reasoningOutputTokens, 1151);
+  assert.equal(result.usage.outputTokens, 1511);
+});
+
+test("anthropic: sem output_tokens_details (ou sem thinking_tokens numérico), reasoningOutputTokens fica undefined (comportamento de sempre)", async () => {
+  const fakeFetch = async () =>
+    jsonResponse(200, {
+      content: [{ type: "text", text: "ok" }],
+      usage: { input_tokens: 10, output_tokens: 20 },
+    });
+  const adapter = createAnthropicAdapter("fake-key", fakeFetch);
+  const result = await adapter.generate(BASE_PARAMS, "claude-haiku-5-5");
+  assert.equal(result.usage.reasoningOutputTokens, undefined);
+});
+
+// FASE IA-4 (item 2 / 5.b) — custo: Anthropic NUNCA soma reasoningOutputTokens de novo a outputTokens
+// (já incluído, ao contrário do Google) — ver comentário em pricing.ts.
+test("custo estimado: Anthropic NÃO dobra o custo do raciocínio (output_tokens já inclui thinking)", () => {
+  const withoutReasoning = estimateCostUSD(
+    { inputTokens: 0, outputTokens: 1511 },
+    "anthropic",
+    "claude-haiku-5-5",
+  );
+  const withReasoning = estimateCostUSD(
+    { inputTokens: 0, outputTokens: 1511, reasoningOutputTokens: 1151 },
+    "anthropic",
+    "claude-haiku-5-5",
+  );
+  assert.equal(withReasoning, withoutReasoning);
+});
+
+test("custo estimado: Google CONTINUA somando reasoningOutputTokens (candidatesTokenCount exclui thinking)", () => {
+  const withoutReasoning = estimateCostUSD(
+    { inputTokens: 0, outputTokens: 100 },
+    "google",
+    "gemini-3.6-flash",
+  );
+  const withReasoning = estimateCostUSD(
+    { inputTokens: 0, outputTokens: 100, reasoningOutputTokens: 50 },
+    "google",
+    "gemini-3.6-flash",
+  );
+  assert.ok(withReasoning! > withoutReasoning!);
+});
+
+// FASE IA-4 (item 3 / 5.c) — thinkingMode (4º parâmetro, só do Laboratório): corpo só inclui o
+// parâmetro extra quando o modo não é "default"; "default" mantém o corpo de sempre.
+test("anthropic: thinkingMode 'disabled' inclui thinking:{type:'disabled'} no corpo; 'default' não inclui nada extra", async () => {
+  let capturedBody: Record<string, unknown> = {};
+  const fakeFetch = async (_url: string, init: RequestInit) => {
+    capturedBody = JSON.parse(init.body as string);
+    return jsonResponse(200, { content: [{ type: "text", text: "ok" }], usage: {} });
+  };
+  const adapterDisabled = createAnthropicAdapter("fake-key", fakeFetch, undefined, "disabled");
+  await adapterDisabled.generate(BASE_PARAMS, "claude-haiku-5-5");
+  assert.deepEqual(capturedBody.thinking, { type: "disabled" });
+  assert.equal(capturedBody.output_config, undefined);
+
+  const adapterDefault = createAnthropicAdapter("fake-key", fakeFetch, undefined, "default");
+  await adapterDefault.generate(BASE_PARAMS, "claude-haiku-5-5");
+  assert.equal(capturedBody.thinking, undefined);
+  assert.equal(capturedBody.output_config, undefined);
+
+  const adapterNoArg = createAnthropicAdapter("fake-key", fakeFetch);
+  await adapterNoArg.generate(BASE_PARAMS, "claude-haiku-5-5");
+  assert.equal(capturedBody.thinking, undefined);
+  assert.equal(capturedBody.output_config, undefined);
+});
+
+test("anthropic: thinkingMode 'low' inclui output_config:{effort:'low'} no corpo", async () => {
+  let capturedBody: Record<string, unknown> = {};
+  const fakeFetch = async (_url: string, init: RequestInit) => {
+    capturedBody = JSON.parse(init.body as string);
+    return jsonResponse(200, { content: [{ type: "text", text: "ok" }], usage: {} });
+  };
+  const adapter = createAnthropicAdapter("fake-key", fakeFetch, undefined, "low");
+  await adapter.generate(BASE_PARAMS, "claude-haiku-5-5");
+  assert.deepEqual(capturedBody.output_config, { effort: "low" });
+  assert.equal(capturedBody.thinking, undefined);
+});
+
+// FASE IA-4 (item 3) — se a API recusar o modo de raciocínio (400 mencionando thinking/effort/
+// output_config), mensagem clara em vez do erro genérico — mas só quando foi o PRÓPRIO Laboratório
+// que pediu um modo não-"default" (produção nunca passa thinkingMode, então nunca cai nesse ramo).
+test("anthropic: 400 mencionando 'thinking' com thinkingMode!=='default' vira mensagem clara (não derruba a chamada com erro genérico)", async () => {
+  const fakeFetch = async () =>
+    jsonResponse(400, {
+      error: { type: "invalid_request_error", message: "thinking.type: disabled is not supported" },
+    });
+  const adapter = createAnthropicAdapter("fake-key", fakeFetch, undefined, "disabled");
+  await assert.rejects(
+    () => adapter.generate(BASE_PARAMS, "claude-sonnet-5-5"),
+    (e) => {
+      assert.ok(e instanceof AuraAiError);
+      assert.match((e as Error).message, /modo de raciocínio "disabled"/);
+      assert.doesNotMatch((e as Error).message, /invalid_request_error/);
+      return true;
+    },
+  );
+});
+
+test("anthropic: 400 genérico com thinkingMode='default' continua com a mensagem genérica de sempre", async () => {
+  const fakeFetch = async () =>
+    jsonResponse(400, { error: { message: "parâmetro inválido qualquer" } });
+  const adapter = createAnthropicAdapter("fake-key", fakeFetch, undefined, "default");
+  await assert.rejects(
+    () => adapter.generate(BASE_PARAMS, "claude-haiku-5-5"),
+    (e) => {
+      assert.ok(e instanceof AuraAiError);
+      assert.doesNotMatch((e as Error).message, /modo de raciocínio/);
+      return true;
+    },
+  );
 });
 
 test("custo estimado: modelo sem preço cadastrado devolve null, nunca inventa um número", () => {
