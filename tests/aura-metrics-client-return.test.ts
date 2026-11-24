@@ -87,7 +87,7 @@ test("vanishingClients: sumindo quando dias desde o último > 1,5x o intervalo t
   const result = vanishingClients(appointments, clients, now);
   assert.equal(result.length, 1);
   assert.equal(result[0].clientId, "c1");
-  assert.ok(result[0].daysOverdue > 0);
+  assert.ok(result[0].diasAlemDoPrazo > 0);
 });
 
 test("vanishingClients: cliente com agendamento futuro NÃO cancelado nunca é 'sumindo'", () => {
@@ -147,7 +147,38 @@ test("vanishingClients: sorted por dias de atraso além do esperado, decrescente
   ];
   const result = vanishingClients(appointments, clients, now);
   assert.equal(result.length, 2);
-  assert.ok(result[0].daysOverdue >= result[1].daysOverdue);
+  assert.ok(result[0].diasAlemDoPrazo >= result[1].diasAlemDoPrazo);
+});
+
+// FASE IA-2 (item B) — nomes de saída honestos: os 4 campos exatos pedidos, sem ambiguidade entre
+// "intervalo habitual" (mediana real) e "prazo de alerta" (o limiar 1,5x, a partir do qual ela conta
+// como sumindo) — a mesma conta nunca deveria devolver diasAlemDoPrazo igual a
+// diasDesdeUltimoAtendimento - intervaloHabitualDias (esse era o bug: confundir os dois).
+test("vanishingClients: os 4 campos de saída (diasDesdeUltimoAtendimento/intervaloHabitualDias/prazoDeAlertaDias/diasAlemDoPrazo) batem com a conta certa, não com o intervalo habitual", () => {
+  const now = d(2026, 11, 23);
+  // última visita 16/set; intervalo típico 15 -> prazo de alerta 22,5; hoje 23/nov = 68 dias depois.
+  const appointments = [
+    appt({ clientId: "c1", startsAt: d(2026, 9, 1) }),
+    appt({ clientId: "c1", startsAt: d(2026, 9, 16) }),
+  ];
+  const clients: ClientForMetrics[] = [{ id: "c1", createdAt: d(2026, 1, 1), anonymized: false }];
+  const [row] = vanishingClients(appointments, clients, now);
+  assert.equal(row.diasDesdeUltimoAtendimento, 68);
+  assert.equal(row.intervaloHabitualDias, 15);
+  assert.equal(row.prazoDeAlertaDias, 22.5);
+  // diasAlemDoPrazo é medido a partir do PRAZO DE ALERTA, não do intervalo habitual — 68 - 22,5, não
+  // 68 - 15 (essa troca era exatamente o bug relatado na FASE IA-2).
+  assert.equal(row.diasAlemDoPrazo, 68 - 22.5);
+  assert.notEqual(row.diasAlemDoPrazo, 68 - 15);
+});
+
+test("vanishingClients: com 1 só visita, intervaloHabitualDias é null e prazoDeAlertaDias é o fixo de 45 dias", () => {
+  const now = d(2026, 11, 23);
+  const appointments = [appt({ clientId: "c1", startsAt: d(2026, 1, 1) })];
+  const clients: ClientForMetrics[] = [{ id: "c1", createdAt: d(2025, 12, 1), anonymized: false }];
+  const [row] = vanishingClients(appointments, clients, now);
+  assert.equal(row.intervaloHabitualDias, null);
+  assert.equal(row.prazoDeAlertaDias, SINGLE_VISIT_VANISHING_DAYS);
 });
 
 test("stoppedBookingThisMonth: conta cliente cuja data esperada de retorno caiu neste mês e não agendou", () => {

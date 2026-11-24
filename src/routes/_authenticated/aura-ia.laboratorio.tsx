@@ -39,13 +39,33 @@ function keyFor(provider: LabProviderId, questionId: string): string {
   return `${provider}:${questionId}`;
 }
 
+/** Modelo usado numa tarefa específica (chat ou relatório semanal) — item F: cada tarefa pode usar
+ * um modelo diferente do mesmo provedor, então um único "model" no cabeçalho não basta mais. */
+function modelForTask(
+  provider: LabProviderId,
+  task: "chat" | "weekly_report",
+  runs: Record<string, ItemRun>,
+): string | undefined {
+  const ids =
+    task === "weekly_report"
+      ? [LAB_WEEKLY_REPORT_ID]
+      : LAB_ALL_ITEMS.filter((i) => i.id !== LAB_WEEKLY_REPORT_ID).map((i) => i.id);
+  for (const id of ids) {
+    const model = runs[keyFor(provider, id)]?.data?.model;
+    if (model) return model;
+  }
+  return undefined;
+}
+
 function resultToText(
   provider: LabProviderId,
-  model: string | undefined,
   runs: Record<string, ItemRun>,
+  gabaritoText: string | undefined,
 ): string {
+  const chatModel = modelForTask(provider, "chat", runs);
+  const reportModel = modelForTask(provider, "weekly_report", runs);
   const lines: string[] = [
-    `=== ${PROVIDER_LABEL[provider].toUpperCase()} (${model ?? "sem modelo"}) ===`,
+    `=== ${PROVIDER_LABEL[provider].toUpperCase()} (chat: ${chatModel ?? "sem modelo"} · relatório: ${reportModel ?? "sem modelo"}) ===`,
   ];
   for (const item of LAB_ALL_ITEMS) {
     const run = runs[keyFor(provider, item.id)];
@@ -57,13 +77,17 @@ function resultToText(
       `latência=${r.latencyMs}ms tokens_in=${r.inputTokens} tokens_out=${r.outputTokens} raciocínio=${r.reasoningTokens} custo=${r.costUSD ?? "?"}${r.truncated ? " [CORTADA]" : ""}`,
     );
     if (r.unmatchedNumbers.length > 0)
-      lines.push(`⚠️ números não encontrados nos dados: ${r.unmatchedNumbers.join(", ")}`);
-    if (r.isTrap)
+      lines.push(`⚠️ números não encontrados no gabarito: ${r.unmatchedNumbers.join(", ")}`);
+    if (r.isTrap) {
       lines.push(
         r.refusedTrapCorrectly
           ? "✅ recusou a armadilha corretamente"
-          : "⚠️ pode ter caído na armadilha",
+          : `⚠️ pode ter caído na armadilha (${r.trapFailureReason ?? "motivo não registrado"})`,
       );
+    }
+  }
+  if (gabaritoText) {
+    lines.push(`\n\n${gabaritoText}`);
   }
   return lines.join("\n");
 }
@@ -141,8 +165,10 @@ function Laboratorio() {
   }
 
   function copyProvider(provider: LabProviderId) {
-    const model = Object.values(runs).find((r) => r.data?.model)?.data?.model;
-    const text = resultToText(provider, model, runs);
+    const gabaritoText = LAB_ALL_ITEMS.map(
+      (item) => runs[keyFor(provider, item.id)]?.data?.gabaritoText,
+    ).find(Boolean);
+    const text = resultToText(provider, runs, gabaritoText);
     navigator.clipboard.writeText(text).then(
       () => toast.success("Copiado."),
       () => toast.error("Não foi possível copiar."),
@@ -220,7 +246,8 @@ function ColumnView({
 }) {
   const itemRuns = LAB_ALL_ITEMS.map((item) => ({ item, run: runs[keyFor(provider, item.id)] }));
   const doneCount = itemRuns.filter(({ run }) => run?.status === "done").length;
-  const model = itemRuns.map(({ run }) => run?.data?.model).find(Boolean);
+  const chatModel = modelForTask(provider, "chat", runs);
+  const reportModel = modelForTask(provider, "weekly_report", runs);
 
   const totals = itemRuns.reduce(
     (acc, { run }) => {
@@ -251,7 +278,8 @@ function ColumnView({
         <div>
           <h2 className="font-semibold">{PROVIDER_LABEL[provider]}</h2>
           <p className="text-xs text-muted-foreground">
-            {model ?? "modelo ainda não usado"} · {doneCount}/{LAB_ALL_ITEMS.length}
+            chat: {chatModel ?? "—"} · relatório: {reportModel ?? "—"} · {doneCount}/
+            {LAB_ALL_ITEMS.length}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={onCopy}>
@@ -366,7 +394,7 @@ function QuestionResultView({
                 >
                   {r.refusedTrapCorrectly
                     ? "✅ recusou a armadilha"
-                    : "⚠️ pode ter caído na armadilha"}
+                    : `⚠️ pode ter caído na armadilha (${r.trapFailureReason ?? "motivo não registrado"})`}
                 </div>
               )}
             </>

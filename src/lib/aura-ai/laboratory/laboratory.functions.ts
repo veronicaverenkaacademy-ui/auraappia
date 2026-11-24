@@ -22,8 +22,13 @@ import {
   pseudonymizeClientIds,
   restoreClientNames,
 } from "@/lib/aura-ai/pseudonymize";
-import { AURA_SYSTEM_PROMPT, buildMetricsContextBlock } from "@/lib/aura-ai/system-prompt";
-import { buildAllowedNumbers, checkCitedNumbers, detectedRefusal } from "./verifier";
+import {
+  AURA_SYSTEM_PROMPT,
+  AURA_WEEKLY_REPORT_LENGTH_RULE,
+  buildMetricsContextBlock,
+} from "@/lib/aura-ai/system-prompt";
+import { buildAllowedNumbers, checkCitedNumbers, checkTrapHandling } from "./verifier";
+import { buildGabarito } from "./gabarito";
 import { estimateCostUSD } from "@/lib/aura-ai/pricing";
 import { createAnthropicAdapter } from "@/lib/aura-ai/adapters/anthropic.server";
 import { createGoogleAdapter } from "@/lib/aura-ai/adapters/google.server";
@@ -53,6 +58,9 @@ export interface LabQuestionResult {
   truncated: boolean;
   unmatchedNumbers: number[];
   refusedTrapCorrectly?: boolean;
+  /** Preenchido só quando refusedTrapCorrectly é false — qual sinal disparou a falha (ver
+   * checkTrapHandling em verifier.ts). */
+  trapFailureReason?: string;
   error?: string;
 }
 
@@ -110,6 +118,7 @@ async function runOneLabQuestion(
       model,
     );
     const { unmatchedNumbers } = checkCitedNumbers(result.text, allowedNumbers);
+    const trapCheck = question.isTrap ? checkTrapHandling(question.id, result.text) : null;
     return {
       questionId: question.id,
       question: question.question,
@@ -122,7 +131,8 @@ async function runOneLabQuestion(
       costUSD: estimateCostUSD(result.usage, provider, model),
       truncated: result.truncated,
       unmatchedNumbers,
-      refusedTrapCorrectly: question.isTrap ? detectedRefusal(result.text) : undefined,
+      refusedTrapCorrectly: trapCheck?.handledCorrectly,
+      trapFailureReason: trapCheck?.failureReason,
     };
   } catch (e) {
     return emptyResult(question, e instanceof Error ? e.message : "Falha desconhecida");
@@ -171,6 +181,10 @@ export interface RunLabQuestionResult {
   configured: boolean;
   model?: string;
   result?: LabQuestionResult;
+  /** GABARITO (valores corretos do motor, nunca da IA) — igual em toda chamada de uma mesma rodada
+   * (mesma seed+"now" aproximado); incluído aqui pra a tela poder colar no texto do "Copiar" (item
+   * E.2) sem precisar de uma chamada extra. */
+  gabaritoText?: string;
 }
 
 export const runLabQuestion = createServerFn({ method: "POST" })
@@ -226,8 +240,17 @@ export const runLabQuestion = createServerFn({ method: "POST" })
     const names = new Map(Array.from(fake.fakeNamesByClientId.entries()));
     const pseudonymized = pseudonymizeClientIds(block, labelMap);
     const contextBlockText = buildMetricsContextBlock(JSON.stringify(pseudonymized));
-    const allowedNumbers = buildAllowedNumbers(pseudonymized);
-    const system = `${AURA_SYSTEM_PROMPT}\n\n${contextBlockText}`;
+    // FASE IA-2 (item E.3) — a verificação automática confere os números citados pela IA contra o
+    // GABARITO (curado, direto do motor), não contra o bloco bruto inteiro (que tem ruído — ids,
+    // percentuais de participação etc. — e podia mascarar uma invenção real por coincidência).
+    const gabarito = buildGabarito(block, labelMap);
+    const allowedNumbers = buildAllowedNumbers(gabarito.structured);
+    // FASE IA-2 (item A.1) — o relatório semanal precisa de mais espaço que o chat padrão; a regra
+    // extra só entra quando a tarefa é "weekly_report" (ver AURA_WEEKLY_REPORT_LENGTH_RULE).
+    const system =
+      task === "weekly_report"
+        ? `${AURA_SYSTEM_PROMPT}\n\n${AURA_WEEKLY_REPORT_LENGTH_RULE}\n\n${contextBlockText}`
+        : `${AURA_SYSTEM_PROMPT}\n\n${contextBlockText}`;
 
     const adapter =
       data.providerId === "anthropic"
@@ -245,7 +268,7 @@ export const runLabQuestion = createServerFn({ method: "POST" })
       data.providerId,
     );
 
-    return { enabled: true, configured: true, model, result };
+    return { enabled: true, configured: true, model, result, gabaritoText: gabarito.text };
   });
 
 // ---- listLabAvailableModels: "Ver modelos disponíveis" (item 7) ----

@@ -61,12 +61,26 @@ export function clientReturnProfile(
   };
 }
 
+// FASE IA-2 (item B) — nomes em português, sem ambiguidade entre "intervalo habitual" (mediana real
+// entre atendimentos) e "prazo de alerta" (o limiar, 1,5x o intervalo — ou 45 dias fixos pra 1 visita
+// — a partir do qual a cliente é considerada "sumindo"). A confusão entre os dois já causou a IA
+// dizer "N dias ALÉM DO INTERVALO HABITUAL" quando N na verdade é medido a partir do PRAZO DE ALERTA
+// (ex.: 151 dias sem voltar, intervalo habitual 16, prazo de alerta 24 -> "127 além do esperado" é
+// 151-24, não 151-16) — ver regra correspondente em system-prompt.ts. Mesma regra de cálculo de
+// sempre; só os nomes dos campos de saída mudaram.
 export interface VanishingClient {
   clientId: string;
-  daysSinceLast: number;
-  thresholdDays: number;
-  daysOverdue: number;
-  typicalIntervalDays: number | null;
+  /** Dias desde o último atendimento REALIZADO (não confundir com o prazo de alerta abaixo). */
+  diasDesdeUltimoAtendimento: number;
+  /** Mediana dos intervalos entre as últimas visitas — null quando ela só tem 1 visita (nesse caso
+   * foi usado o prazo fixo de 45 dias, não uma mediana). */
+  intervaloHabitualDias: number | null;
+  /** A partir de quantos dias sem voltar ela passa a ser considerada "sumindo" (1,5x o intervalo
+   * habitual, ou 45 dias fixos quando intervaloHabitualDias é null). NÃO é o intervalo habitual. */
+  prazoDeAlertaDias: number;
+  /** Quantos dias já passaram do prazoDeAlertaDias (diasDesdeUltimoAtendimento - prazoDeAlertaDias) —
+   * NUNCA descrever isso como "dias além do intervalo habitual". */
+  diasAlemDoPrazo: number;
 }
 
 /** Agrupa atendimentos por cliente e devolve, por cliente, a lista ordenada por data crescente. */
@@ -114,14 +128,14 @@ export function vanishingClients(
     if (daysSinceLast > profile.thresholdDays) {
       result.push({
         clientId,
-        daysSinceLast,
-        thresholdDays: profile.thresholdDays,
-        daysOverdue: daysSinceLast - profile.thresholdDays,
-        typicalIntervalDays: profile.typicalIntervalDays,
+        diasDesdeUltimoAtendimento: daysSinceLast,
+        prazoDeAlertaDias: profile.thresholdDays,
+        diasAlemDoPrazo: daysSinceLast - profile.thresholdDays,
+        intervaloHabitualDias: profile.typicalIntervalDays,
       });
     }
   }
-  return result.sort((a, b) => b.daysOverdue - a.daysOverdue);
+  return result.sort((a, b) => b.diasAlemDoPrazo - a.diasAlemDoPrazo);
 }
 
 /** "Deixaram de agendar este mês/mês anterior" — ver regra exata no relatório. windowEnd é `now` para o

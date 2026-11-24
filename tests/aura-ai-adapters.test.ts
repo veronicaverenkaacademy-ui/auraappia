@@ -224,8 +224,10 @@ test("anthropic: stop_reason max_tokens marca truncated:true; caso normal fica t
   assert.equal(result2.truncated, false);
 });
 
-// FASE IA-1B (item 5) — max_tokens varia por tarefa: 1024 pra chat, 2048 pro relatório semanal.
-test("anthropic: max_tokens enviado no corpo varia por tarefa (chat=1024, weekly_report=2048)", async () => {
+// FASE IA-1B (item 5), ajustado na FASE IA-2 (item A.2) — max_tokens varia por tarefa: 1500 pra
+// chat (subiu de 1024 depois da primeira rodada do Laboratório mostrar respostas cortadas), 2048 pro
+// relatório semanal (inalterado).
+test("anthropic: max_tokens enviado no corpo varia por tarefa (chat=1500, weekly_report=2048)", async () => {
   let capturedBody: Record<string, unknown> = {};
   const fakeFetch = async (_url: string, init: RequestInit) => {
     capturedBody = JSON.parse(init.body as string);
@@ -233,7 +235,7 @@ test("anthropic: max_tokens enviado no corpo varia por tarefa (chat=1024, weekly
   };
   const adapter = createAnthropicAdapter("fake-key", fakeFetch);
   await adapter.generate({ ...BASE_PARAMS, task: "chat" }, "claude-haiku-5-5");
-  assert.equal(capturedBody.max_tokens, 1024);
+  assert.equal(capturedBody.max_tokens, 1500);
   await adapter.generate({ ...BASE_PARAMS, task: "weekly_report" }, "claude-sonnet-5-5");
   assert.equal(capturedBody.max_tokens, 2048);
 });

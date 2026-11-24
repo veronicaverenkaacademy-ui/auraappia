@@ -7,6 +7,8 @@
 // "max_tokens" marca a resposta como cortada. (item 6) — 404/400 que claramente significam "modelo
 // inexistente" viram uma mensagem específica com o ID do modelo (não é segredo); qualquer outro erro
 // continua genérico.
+// FASE IA-2 (item A.2) — chat subiu de 1024 para 1500 (margem para não cortar respostas de perguntas
+// amplas mesmo com o pedido de brevidade do system-prompt) — relatório semanal continua em 2048.
 import type { AuraAiAdapter, AuraAiTask, GenerateParams, GenerateResult } from "../types.ts";
 import { AuraAiError } from "../types.ts";
 import {
@@ -26,7 +28,7 @@ interface AnthropicResponseBody {
 }
 
 function maxTokensForTask(task: AuraAiTask): number {
-  return task === "weekly_report" ? 2048 : 1024;
+  return task === "weekly_report" ? 2048 : 1500;
 }
 
 export function createAnthropicAdapter(
