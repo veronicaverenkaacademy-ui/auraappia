@@ -206,11 +206,12 @@ test("GUARDA: LAB_BUILD_TAG é uma constante exportada e não-vazia", async () =
   assert.ok(LAB_BUILD_TAG.length > 0);
 });
 
-// FASE IA-7 (item 5) — esta fase tocou o Laboratório de novo (verifier.ts, e o item 5 pede a troca) —
-// a etiqueta precisa ter avançado pra "IA-7" (atualização à mão, ver comentário em build-tag.ts).
-test("GUARDA: LAB_BUILD_TAG está em 'IA-7' nesta fase", async () => {
+// FASE IA-9 (item 7) — esta fase tocou o Laboratório de novo (nova seção Conselho, verifier.ts,
+// lab-thinking-mode.ts, questions.ts) — a etiqueta precisa ter avançado pra "IA-9" (atualização à
+// mão, ver comentário em build-tag.ts).
+test("GUARDA: LAB_BUILD_TAG está em 'IA-9' nesta fase", async () => {
   const { LAB_BUILD_TAG } = await import("../src/lib/aura-ai/laboratory/build-tag.ts");
-  assert.equal(LAB_BUILD_TAG, "IA-7");
+  assert.equal(LAB_BUILD_TAG, "IA-9");
 });
 
 test("GUARDA: a tela do Laboratório importa LAB_BUILD_TAG e renderiza o aviso de divergência tela/servidor", () => {
@@ -257,6 +258,62 @@ test("GUARDA: getLabStatus e runLabQuestion devolvem serverBuildTag em TODO cami
   for (const ret of returnsInRunLabQuestion) {
     assert.match(ret, /serverBuildTag:\s*LAB_BUILD_TAG/);
   }
+});
+
+// FASE IA-9 (item 6) — mesma garantia de serverBuildTag em TODO retorno, agora pra
+// runLabCouncilQuestion (nova seção "Conselho" do Laboratório).
+test("GUARDA: runLabCouncilQuestion devolve serverBuildTag em TODO caminho de retorno (fonte)", () => {
+  const src = readFileSync(
+    new URL("../src/lib/aura-ai/laboratory/laboratory.functions.ts", import.meta.url),
+    "utf8",
+  );
+  const start = src.indexOf("export const runLabCouncilQuestion");
+  assert.ok(start > -1, "runLabCouncilQuestion não encontrada");
+  const nextExport = src.indexOf("export const", start + 1);
+  const body = src.slice(start, nextExport > -1 ? nextExport : undefined);
+  const returns = body.match(/return\s*\{[\s\S]*?\};/g) ?? [];
+  assert.ok(returns.length >= 5, "runLabCouncilQuestion deveria ter pelo menos 5 retornos");
+  for (const ret of returns) {
+    assert.match(ret, /serverBuildTag:\s*LAB_BUILD_TAG/);
+  }
+});
+
+// FASE IA-9 (item 6) — a seção Conselho do Laboratório exercita o MESMO caminho de produção
+// (runCouncilCore, nunca lógica duplicada) e nunca toca o texto do AURA_COUNCIL_SYSTEM_PROMPT
+// (condição 7 do merge condicional desta fase: só pode mudar se a investigação provar ambiguidade —
+// não foi o caso).
+test("GUARDA: runLabCouncilQuestion usa runCouncilCore (núcleo compartilhado) e AURA_COUNCIL_SYSTEM_PROMPT sem alterar seu texto", () => {
+  const src = readFileSync(
+    new URL("../src/lib/aura-ai/laboratory/laboratory.functions.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    src,
+    /import\s*\{[\s\S]*?runCouncilCore[\s\S]*?\}\s*from\s*"@\/lib\/aura-ai\/council-core"/,
+  );
+  assert.match(
+    src,
+    /import\s*\{[\s\S]*?AURA_COUNCIL_SYSTEM_PROMPT[\s\S]*?\}\s*from\s*"@\/lib\/aura-ai\/system-prompt"/,
+  );
+  assert.match(src, /`\$\{AURA_COUNCIL_SYSTEM_PROMPT\}\\n\\n\$\{contextBlockText\}`/);
+
+  const start = src.indexOf("export const runLabCouncilQuestion");
+  const nextExport = src.indexOf("export const", start + 1);
+  const body = src.slice(start, nextExport > -1 ? nextExport : undefined);
+  assert.match(body, /runCouncilCore\(/);
+  assert.match(body, /skipStripMetricIds:\s*true/);
+});
+
+// FASE IA-9 (item 5) — as variáveis novas do Conselho no Laboratório (model + thinking) seguem a
+// mesma precedência documentada: específica do Conselho -> o que "chat" já resolveria.
+test("GUARDA: pickLabModel e a resolução de thinkingMode usam as variáveis AURA_LAB_ANTHROPIC_COUNCIL_* com fallback pra chat", () => {
+  const src = readFileSync(
+    new URL("../src/lib/aura-ai/laboratory/laboratory.functions.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(src, /AURA_LAB_ANTHROPIC_COUNCIL_MODEL/);
+  assert.match(src, /AURA_LAB_ANTHROPIC_COUNCIL_THINKING/);
+  assert.match(src, /parseLabAnthropicThinkingModeForTask\(\s*\n?\s*"council"/);
 });
 
 // FASE IA-3C (item 4) — a linha do provedor no texto "Copiar" tem que trazer tela= e servidor=,
@@ -410,27 +467,63 @@ test("GUARDA: regra 6 continua presente e ganhou a nota sobre ids removíveis do
 // FASE IA-7 (item 2) — rodada 7: a dona não deveria ver ids técnicos de métrica
 // ("(vanishing_clients_total)") no app real, mas o Laboratório PRECISA deles intactos pra conferir
 // (checkCitedNumbers/checkStatements/checkTrapHandling). Guarda estática: produção (chatWithAura E
-// askCouncil) chama stripMetricIds; laboratory.functions.ts NUNCA chama.
-test("GUARDA: aura.functions.ts aplica stripMetricIds em chatWithAura E askCouncil; laboratory.functions.ts nunca aplica", () => {
+// askCouncil) aplica stripMetricIds; laboratory.functions.ts NUNCA aplica.
+//
+// FASE IA-9 (item 6) — askCouncil não chama stripMetricIds( diretamente mais: a lógica foi extraída
+// pra council-core.ts (runCouncilCore), compartilhada com o Laboratório, que decide aplicar ou não via
+// o parâmetro explícito skipStripMetricIds (false em produção, true no Laboratório) — guarda ajustada
+// pra checar isso no lugar certo, sem perder a garantia original.
+test("GUARDA: produção aplica stripMetricIds em chatWithAura (direto) e askCouncil (via council-core); laboratory.functions.ts nunca aplica", () => {
   const prodSrc = readFileSync(new URL("../src/lib/aura.functions.ts", import.meta.url), "utf8");
   assert.match(
     prodSrc,
     /import\s*\{\s*stripMetricIds\s*\}\s*from\s*"@\/lib\/aura-ai\/strip-metric-ids"/,
   );
 
-  for (const fn of ["chatWithAura", "askCouncil"]) {
-    const start = prodSrc.indexOf(`export const ${fn}`);
-    assert.ok(start > -1, `${fn} não encontrada`);
-    const nextExport = prodSrc.indexOf("export const", start + 1);
-    const body = prodSrc.slice(start, nextExport > -1 ? nextExport : undefined);
-    assert.match(body, /stripMetricIds\(/, `${fn} deveria aplicar stripMetricIds`);
-  }
+  const chatStart = prodSrc.indexOf("export const chatWithAura");
+  assert.ok(chatStart > -1, "chatWithAura não encontrada");
+  const chatBody = prodSrc.slice(chatStart, prodSrc.indexOf("export const", chatStart + 1));
+  assert.match(chatBody, /stripMetricIds\(/, "chatWithAura deveria aplicar stripMetricIds direto");
+
+  const councilStart = prodSrc.indexOf("export const askCouncil");
+  assert.ok(councilStart > -1, "askCouncil não encontrada");
+  const councilBody = prodSrc.slice(
+    councilStart,
+    prodSrc.indexOf("export const", councilStart + 1),
+  );
+  assert.match(councilBody, /runCouncilCore\(/, "askCouncil deveria usar runCouncilCore");
+  assert.match(
+    councilBody,
+    /skipStripMetricIds:\s*false/,
+    "askCouncil deveria passar skipStripMetricIds: false (aplica o filtro)",
+  );
+
+  const coreSrc = readFileSync(
+    new URL("../src/lib/aura-ai/council-core.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    coreSrc,
+    /skipStripMetricIds\s*\?\s*sanitized\s*:\s*stripMetricIds\(sanitized\)/,
+    "council-core.ts deveria aplicar stripMetricIds condicionalmente ao flag",
+  );
 
   const labSrc = readFileSync(
     new URL("../src/lib/aura-ai/laboratory/laboratory.functions.ts", import.meta.url),
     "utf8",
   );
-  assert.doesNotMatch(labSrc, /stripMetricIds/, "o Laboratório nunca deve aplicar stripMetricIds");
+  assert.doesNotMatch(
+    labSrc,
+    /\bstripMetricIds\(/,
+    "o Laboratório nunca deve chamar stripMetricIds diretamente",
+  );
+  if (/runCouncilCore\(/.test(labSrc)) {
+    assert.match(
+      labSrc,
+      /skipStripMetricIds:\s*true/,
+      "o Laboratório, ao usar runCouncilCore, deve sempre passar skipStripMetricIds: true",
+    );
+  }
 });
 
 test("GUARDA: os nomes literais citados nas regras 10/15 do system-prompt vêm do MESMO lugar que sanitize-internal-field-names.ts (nunca redigitados)", () => {

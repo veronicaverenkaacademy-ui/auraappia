@@ -295,3 +295,33 @@ test("parseLabAnthropicThinkingModeForTask: específica DEFINIDA mas inválida v
     "default",
   );
 });
+
+// FASE IA-9 (item 5) — "council" tenta a variável própria primeiro; ausente, cai EXATAMENTE no que
+// "chat" resolveria (nunca um 3º fallback independente).
+test("parseLabAnthropicThinkingModeForTask: 'council' com AURA_LAB_ANTHROPIC_COUNCIL_THINKING definida usa ela, não a de chat", () => {
+  assert.equal(
+    parseLabAnthropicThinkingModeForTask("council", "low", undefined, undefined, "disabled"),
+    "disabled",
+  );
+});
+
+test("parseLabAnthropicThinkingModeForTask: 'council' SEM a variável própria cai no que 'chat' resolveria (específica de chat)", () => {
+  assert.equal(
+    parseLabAnthropicThinkingModeForTask("council", "low", undefined, undefined, undefined),
+    "low",
+  );
+});
+
+test("parseLabAnthropicThinkingModeForTask: 'council' sem nenhuma específica cai na base (igual chat cairia)", () => {
+  assert.equal(
+    parseLabAnthropicThinkingModeForTask("council", undefined, undefined, "disabled", undefined),
+    "disabled",
+  );
+});
+
+test("parseLabAnthropicThinkingModeForTask: 'council' sem nenhuma variável definida -> 'default'", () => {
+  assert.equal(
+    parseLabAnthropicThinkingModeForTask("council", undefined, undefined, undefined, undefined),
+    "default",
+  );
+});

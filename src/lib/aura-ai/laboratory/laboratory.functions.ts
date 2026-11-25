@@ -16,7 +16,13 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { requireAuraAdmin } from "@/lib/aura-ai/require-admin.server";
 import { buildMetricsBlock } from "@/lib/aura-metrics/engine";
 import { generateFakeStudio } from "./fake-studio";
-import { LAB_ALL_ITEMS, LAB_WEEKLY_REPORT_ID, type LabQuestion } from "./questions";
+import {
+  LAB_ALL_ITEMS,
+  LAB_WEEKLY_REPORT_ID,
+  LAB_COUNCIL_QUESTIONS,
+  type LabQuestion,
+  type LabCouncilQuestion,
+} from "./questions";
 import {
   buildClientLabelMap,
   pseudonymizeClientIds,
@@ -30,9 +36,21 @@ import {
 import {
   AURA_SYSTEM_PROMPT,
   AURA_WEEKLY_REPORT_LENGTH_RULE,
+  AURA_COUNCIL_SYSTEM_PROMPT,
   buildMetricsContextBlock,
 } from "@/lib/aura-ai/system-prompt";
-import { buildAllowedNumbers, checkCitedNumbers, checkTrapHandling } from "./verifier";
+import {
+  buildAllowedNumbers,
+  checkCitedNumbers,
+  checkTrapHandling,
+  detectsPromisedResultOrFuturePrediction,
+  detectsInventedMoneyOrPercent,
+} from "./verifier";
+import {
+  runCouncilCore,
+  type CouncilCoreResult,
+  type CouncilCorePerspective,
+} from "@/lib/aura-ai/council-core";
 import {
   checkStatements,
   type StatementGabarito,
@@ -107,8 +125,21 @@ function emailFromContext(context: { claims?: unknown }): string | undefined {
 
 /** Variáveis específicas do Laboratório (AURA_LAB_*_CHAT_MODEL/REPORT_MODEL); quando ausentes, cai
  * no mesmo default por provedor+tarefa usado pelo app (model-select.ts) — null para o Google, que
- * não tem default fixo (ver model-select.ts). */
-function pickLabModel(provider: LabProviderId, task: "chat" | "weekly_report"): string | null {
+ * não tem default fixo (ver model-select.ts).
+ *
+ * FASE IA-9 (item 5) — "council" (nova tarefa do Laboratório) tenta AURA_LAB_ANTHROPIC_COUNCIL_MODEL
+ * primeiro (só pro Anthropic — a fase não pediu uma variável própria pro Google); ausente, cai
+ * EXATAMENTE no que a tarefa "chat" já resolveria pro mesmo provedor (nunca um 3º fallback próprio). */
+function pickLabModel(
+  provider: LabProviderId,
+  task: "chat" | "weekly_report" | "council",
+): string | null {
+  if (task === "council") {
+    if (provider === "anthropic" && process.env.AURA_LAB_ANTHROPIC_COUNCIL_MODEL) {
+      return process.env.AURA_LAB_ANTHROPIC_COUNCIL_MODEL;
+    }
+    return pickLabModel(provider, "chat");
+  }
   const isReport = task === "weekly_report";
   const envVar =
     provider === "anthropic"
@@ -463,6 +494,304 @@ export const listLabAvailableModels = createServerFn({ method: "POST" })
         enabled: true,
         configured: true,
         error: e instanceof Error ? e.message : "Falha ao listar modelos.",
+      };
+    }
+  });
+
+// ---- runLabCouncilQuestion: seção "Conselho" do Laboratório (FASE IA-9, item 6) ----
+//
+// O Conselho NUNCA tinha sido testado no Laboratório (só chat e relatório semanal, desde a FASE
+// IA-1) — evidência real em produção (ver aura.functions.ts) mostrou 2 perguntas diferentes caindo
+// no MESMO fallback disfarçado. Esta função exercita o MESMO caminho de produção (runCouncilCore,
+// compartilhado com askCouncil — nunca duplicado) com as 2 perguntas fixas de LAB_COUNCIL_QUESTIONS,
+// no estúdio fictício. Única diferença de produção: skipStripMetricIds=true (como o chat do
+// Laboratório, que precisa dos ids de métrica intactos pra conferência) e NUNCA chama
+// nenhum registro de diagnóstico no servidor (o Laboratório devolve o motivo da falha de parse pra
+// tela, nunca escreve nada em log).
+
+export interface LabCouncilResult {
+  councilQuestionId: string;
+  question: string;
+  model: string;
+  thinkingMode: string;
+  latencyMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  costUSD: number | null;
+  stopReason?: string;
+  /** (a) + "tentativa em que o JSON foi aceito (1/2) ou falha" — null quando as duas tentativas
+   * falharam (fallback honesto, ver council-core.ts). */
+  acceptedOnAttempt: 1 | 2 | null;
+  jsonValid: boolean;
+  perspectivesCount: number;
+  status: string;
+  recommendation: string;
+  whatToMeasure: string;
+  perspectives: CouncilCorePerspective[];
+  /** (b) números R$/contagens/percentuais citados (no texto BRUTO, antes de qualquer sanitização)
+   * que existem no gabarito — unmatchedNumbers é o que não bate (possível invenção). */
+  citedNumbersTotal: number;
+  unmatchedNumbers: number[];
+  /** (c) mesmo contador do chat — nome de campo interno / rótulo "Cliente N" que sobrou no texto
+   * bruto depois de restoreClientNames, medido nos 3 campos do JSON (recommendation/whatToMeasure/
+   * cada perspectives[].analysis) concatenados. */
+  leakedFieldNames: string[];
+  leakedLabelFragments: string[];
+  /** (d) promessa de resultado concreto OU previsão futura com número — nunca deveria aparecer numa
+   * recomendação do Conselho (que só indica "o que medir depois"). */
+  promisedResultOrFuturePrediction: boolean;
+  /** (e) valor em R$/% citado que não existe no gabarito (heurística simples pedida na fase). */
+  inventedMoneyOrPercent: boolean;
+  error?: string;
+}
+
+export interface RunLabCouncilQuestionResult {
+  enabled: boolean;
+  disabledReason?: string;
+  configured: boolean;
+  model?: string;
+  result?: LabCouncilResult;
+  gabaritoText?: string;
+  serverBuildTag: string;
+  thinkingMode: string;
+}
+
+function emptyCouncilResult(
+  question: LabCouncilQuestion,
+  model: string,
+  error: string,
+): LabCouncilResult {
+  return {
+    councilQuestionId: question.id,
+    question: question.question,
+    model,
+    thinkingMode: "n/a",
+    latencyMs: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    costUSD: null,
+    acceptedOnAttempt: null,
+    jsonValid: false,
+    perspectivesCount: 0,
+    status: "atencao",
+    recommendation: "",
+    whatToMeasure: "",
+    perspectives: [],
+    citedNumbersTotal: 0,
+    unmatchedNumbers: [],
+    leakedFieldNames: [],
+    leakedLabelFragments: [],
+    promisedResultOrFuturePrediction: false,
+    inventedMoneyOrPercent: false,
+    error,
+  };
+}
+
+/** Monta o LabCouncilResult a partir do CouncilCoreResult — diagnósticos (b)/(c)/(d)/(e) medidos no
+ * texto BRUTO (rawValue, antes de qualquer sanitização) concatenado dos 3 campos do JSON, igual ao
+ * espírito de runOneLabQuestion (que mede no texto já com restoreClientNames, antes do sanitizador).
+ * rawValue é null só no fallback (usedFallback=true) — nesse caso os diagnósticos ficam vazios/false,
+ * nunca inventados. */
+function buildLabCouncilResult(
+  question: LabCouncilQuestion,
+  model: string,
+  thinkingMode: string,
+  core: CouncilCoreResult,
+  allowedNumbers: ReturnType<typeof buildAllowedNumbers>,
+  labelMap: Map<string, string>,
+  names: Map<string, string>,
+  provider: LabProviderId,
+): LabCouncilResult {
+  const rawConcat = core.rawValue
+    ? [
+        core.rawValue.recommendation,
+        core.rawValue.whatToMeasure,
+        ...core.rawValue.perspectives.map((p) => p.analysis),
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : "";
+  const afterRestore = restoreClientNames(rawConcat, labelMap, names);
+  const { citedNumbers, unmatchedNumbers } = checkCitedNumbers(afterRestore, allowedNumbers);
+
+  return {
+    councilQuestionId: question.id,
+    question: question.question,
+    model,
+    thinkingMode,
+    latencyMs: core.lastGenerateResult.latencyMs,
+    inputTokens: core.lastGenerateResult.usage.inputTokens,
+    outputTokens: core.lastGenerateResult.usage.outputTokens,
+    reasoningTokens: core.lastGenerateResult.usage.reasoningOutputTokens ?? 0,
+    costUSD: estimateCostUSD(core.lastGenerateResult.usage, provider, model),
+    stopReason: core.lastGenerateResult.diagnostics?.stopReason,
+    acceptedOnAttempt: core.acceptedOnAttempt,
+    jsonValid: core.acceptedOnAttempt !== null,
+    perspectivesCount: core.perspectives.length,
+    status: core.status,
+    recommendation: core.recommendation,
+    whatToMeasure: core.whatToMeasure,
+    perspectives: core.perspectives,
+    citedNumbersTotal: citedNumbers.length,
+    unmatchedNumbers,
+    leakedFieldNames: detectLeakedInternalFieldNames(afterRestore),
+    leakedLabelFragments: afterRestore.match(/Clientes?\s+\d+/g) ?? [],
+    promisedResultOrFuturePrediction: detectsPromisedResultOrFuturePrediction(afterRestore),
+    inventedMoneyOrPercent: detectsInventedMoneyOrPercent(afterRestore, allowedNumbers),
+  };
+}
+
+const RunLabCouncilQuestionInput = z.object({
+  providerId: z.enum(["anthropic", "google"]),
+  councilQuestionId: z.string().min(1),
+});
+
+export const runLabCouncilQuestion = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => RunLabCouncilQuestionInput.parse(input))
+  .handler(async ({ data, context }): Promise<RunLabCouncilQuestionResult> => {
+    await requireAuraAdmin(context.supabase, context.userId);
+    // Mesma lógica de precedência de runLabQuestion (ver doc comment de RunLabQuestionResult.thinkingMode
+    // acima) — aqui "task" já é conhecida ("council") antes de qualquer retorno, então não precisa do
+    // "earlyThinkingMode" em duas etapas que runLabQuestion usa.
+    const thinkingMode =
+      data.providerId === "anthropic"
+        ? parseLabAnthropicThinkingModeForTask(
+            "council",
+            process.env.AURA_LAB_ANTHROPIC_CHAT_THINKING,
+            process.env.AURA_LAB_ANTHROPIC_REPORT_THINKING,
+            process.env.AURA_LAB_ANTHROPIC_THINKING,
+            process.env.AURA_LAB_ANTHROPIC_COUNCIL_THINKING,
+          )
+        : "n/a";
+
+    const access = checkLabAccess(process.env.AURA_LAB_ALLOWED_EMAILS, emailFromContext(context));
+    if (!access.enabled) {
+      return {
+        enabled: false,
+        disabledReason: access.disabledReason,
+        configured: false,
+        serverBuildTag: LAB_BUILD_TAG,
+        thinkingMode,
+      };
+    }
+
+    const question = LAB_COUNCIL_QUESTIONS.find((q) => q.id === data.councilQuestionId);
+    if (!question) throw new Error("Pergunta do Conselho desconhecida.");
+
+    const apiKey =
+      data.providerId === "anthropic" ? process.env.ANTHROPIC_API_KEY : process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return { enabled: true, configured: false, serverBuildTag: LAB_BUILD_TAG, thinkingMode };
+    }
+
+    const model = pickLabModel(data.providerId, "council");
+    if (!model) {
+      const envName = `AURA_LAB_${data.providerId.toUpperCase()}_CHAT_MODEL`;
+      return {
+        enabled: true,
+        configured: true,
+        result: emptyCouncilResult(
+          question,
+          "",
+          `Nenhum modelo configurado para ${data.providerId} nesta tarefa (defina AURA_LAB_ANTHROPIC_COUNCIL_MODEL ou ${envName}).`,
+        ),
+        serverBuildTag: LAB_BUILD_TAG,
+        thinkingMode,
+      };
+    }
+    try {
+      validateModelForProvider(data.providerId, model);
+    } catch (e) {
+      return {
+        enabled: true,
+        configured: true,
+        model,
+        result: emptyCouncilResult(
+          question,
+          model,
+          e instanceof Error ? e.message : "Modelo inválido para este provedor.",
+        ),
+        serverBuildTag: LAB_BUILD_TAG,
+        thinkingMode,
+      };
+    }
+
+    const now = new Date();
+    const fake = generateFakeStudio(now);
+    const block = buildMetricsBlock({ ...fake, now });
+    const clientIds = (block.vanishingClients.value ?? []).map((c) => c.clientId);
+    const labelMap = buildClientLabelMap(clientIds);
+    const names = new Map(Array.from(fake.fakeNamesByClientId.entries()));
+    const pseudonymized = pseudonymizeClientIds(block, labelMap);
+    const contextBlockText = buildMetricsContextBlock(JSON.stringify(pseudonymized));
+    const gabarito = buildGabarito(block, labelMap);
+    const allowedNumbers = buildAllowedNumbers(gabarito.structured);
+    // Prompt do Conselho NUNCA é alterado pelo Laboratório — mesmo AURA_COUNCIL_SYSTEM_PROMPT que
+    // askCouncil usa em produção (ver condição 7 do merge condicional desta fase).
+    const system = `${AURA_COUNCIL_SYSTEM_PROMPT}\n\n${contextBlockText}`;
+
+    const adapter =
+      data.providerId === "anthropic"
+        ? createAnthropicAdapter(
+            apiKey,
+            undefined,
+            undefined,
+            thinkingMode as "default" | "disabled" | "low",
+          )
+        : createGoogleAdapter(apiKey);
+
+    try {
+      const core = await runCouncilCore({
+        question: question.question,
+        generateFn: (userMessage) =>
+          adapter.generate(
+            { task: "council", system, messages: [{ role: "user", content: userMessage }] },
+            model,
+          ),
+        labelMap,
+        names,
+        // Laboratório NUNCA aplica stripMetricIds — precisa dos ids de métrica intactos pra
+        // conferência (mesma arquitetura do chat, ver FASE IA-7). Nunca loga: a falha de parse vai
+        // pro resultado (acceptedOnAttempt/jsonValid), nunca pro console.
+        skipStripMetricIds: true,
+      });
+
+      const result = buildLabCouncilResult(
+        question,
+        model,
+        thinkingMode,
+        core,
+        allowedNumbers,
+        labelMap,
+        names,
+        data.providerId,
+      );
+
+      return {
+        enabled: true,
+        configured: true,
+        model,
+        result,
+        gabaritoText: gabarito.text,
+        serverBuildTag: LAB_BUILD_TAG,
+        thinkingMode,
+      };
+    } catch (e) {
+      return {
+        enabled: true,
+        configured: true,
+        model,
+        result: emptyCouncilResult(
+          question,
+          model,
+          e instanceof Error ? e.message : "Falha desconhecida",
+        ),
+        gabaritoText: gabarito.text,
+        serverBuildTag: LAB_BUILD_TAG,
+        thinkingMode,
       };
     }
   });

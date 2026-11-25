@@ -13,14 +13,21 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   getLabStatus,
   runLabQuestion,
+  runLabCouncilQuestion,
   listLabAvailableModels,
   type LabStatusResult,
   type RunLabQuestionResult,
+  type RunLabCouncilQuestionResult,
   type ListLabModelsResult,
   type LabProviderId,
   type LabQuestionResult,
+  type LabCouncilResult,
 } from "@/lib/aura-ai/laboratory/laboratory.functions";
-import { LAB_ALL_ITEMS, LAB_WEEKLY_REPORT_ID } from "@/lib/aura-ai/laboratory/questions";
+import {
+  LAB_ALL_ITEMS,
+  LAB_WEEKLY_REPORT_ID,
+  LAB_COUNCIL_QUESTIONS,
+} from "@/lib/aura-ai/laboratory/questions";
 import { LAB_BUILD_TAG } from "@/lib/aura-ai/laboratory/build-tag";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -237,15 +244,118 @@ function resultToText(
   return lines.join("\n");
 }
 
+// FASE IA-9 (item 6) — o Conselho NUNCA tinha sido testado no Laboratório (só chat e relatório
+// semanal, desde a FASE IA-1); evidência real em produção mostrou 2 perguntas diferentes caindo no
+// MESMO fallback disfarçado. Esta seção roda as 2 perguntas fixas de LAB_COUNCIL_QUESTIONS pelo MESMO
+// caminho de produção (runLabCouncilQuestion -> runCouncilCore, núcleo compartilhado com askCouncil —
+// ver council-core.ts), nunca duplicando a lógica.
+
+interface CouncilItemRun {
+  status: "idle" | "loading" | "done";
+  data?: RunLabCouncilQuestionResult;
+}
+
+function councilResultsFor(
+  provider: LabProviderId,
+  councilRuns: Record<string, CouncilItemRun>,
+): LabCouncilResult[] {
+  return LAB_COUNCIL_QUESTIONS.map((q) => councilRuns[keyFor(provider, q.id)]?.data?.result).filter(
+    (r): r is LabCouncilResult => Boolean(r),
+  );
+}
+
+/** Custo total da rodada do Conselho pro provedor (soma dos 2, null se qualquer um não for
+ * estimável) — "inclua o custo no total da rodada" (item 6 da fase). */
+function councilTotalCost(results: LabCouncilResult[]): number | null {
+  return results.reduce<number | null>((acc, r) => {
+    if (acc === null || r.costUSD === null) return null;
+    return acc + r.costUSD;
+  }, 0);
+}
+
+/** "contagem de falhas de JSON da rodada" (item 6 da fase) — uma pergunta conta como falha quando as
+ * 2 tentativas do parser falharam (acceptedOnAttempt null, ver council-core.ts), nunca quando só a
+ * 1ª falhou e a retentativa funcionou. */
+function councilJsonFailures(results: LabCouncilResult[]): number {
+  return results.filter((r) => r.acceptedOnAttempt === null && !r.error).length;
+}
+
+function councilResultToText(
+  provider: LabProviderId,
+  councilRuns: Record<string, CouncilItemRun>,
+  serverBuildTag: string | undefined,
+): string {
+  const results = councilResultsFor(provider, councilRuns);
+  const model = results.find((r) => r.model)?.model;
+  const thinkingMode = results.find((r) => r.thinkingMode)?.thinkingMode;
+  const jsonFailures = councilJsonFailures(results);
+  const totalCost = councilTotalCost(results);
+
+  const lines: string[] = [
+    `=== CONSELHO — ${PROVIDER_LABEL[provider].toUpperCase()} (modelo: ${model ?? "sem modelo"} · raciocínio: ${thinkingMode ?? "n/d"}) tela=${LAB_BUILD_TAG} servidor=${serverBuildTag ?? "n/d"} falhas_json_rodada=${jsonFailures} custo_total=${totalCost !== null ? `US$ ${totalCost.toFixed(5)}` : "?"} ===`,
+  ];
+
+  for (const r of results) {
+    lines.push(`\n--- ${r.question} ---`);
+    if (r.error) {
+      lines.push(`[erro] ${r.error}`);
+      continue;
+    }
+    lines.push(
+      `modelo=${r.model} raciocínio=${r.thinkingMode} latência=${r.latencyMs}ms tokens_in=${r.inputTokens} tokens_out=${r.outputTokens}` +
+        `${r.reasoningTokens > 0 ? ` raciocínio_tokens=${r.reasoningTokens}` : ""} custo=${r.costUSD ?? "?"} stop_reason=${r.stopReason ?? "?"}`,
+    );
+    lines.push(
+      r.acceptedOnAttempt !== null
+        ? `JSON aceito na tentativa ${r.acceptedOnAttempt}`
+        : "⚠️ JSON NUNCA aceito nas 2 tentativas (fallback honesto devolvido)",
+    );
+    lines.push(`(a) JSON válido: ${r.jsonValid ? "✅" : "❌"}`);
+    lines.push(
+      r.unmatchedNumbers.length === 0
+        ? `(b) ✅ ${r.citedNumbersTotal} número(s) conferem com o gabarito`
+        : `(b) ❌ não encontrados no gabarito: ${r.unmatchedNumbers.join(", ")}`,
+    );
+    if (r.leakedFieldNames.length === 0 && r.leakedLabelFragments.length === 0) {
+      lines.push("(c) ✅ nenhum vazamento bruto de campo/rótulo interno");
+    } else {
+      for (const name of r.leakedFieldNames)
+        lines.push(`(c) ⚠️ vazou nome de campo interno: ${name}`);
+      for (const fragment of r.leakedLabelFragments)
+        lines.push(`(c) ⚠️ vazou rótulo interno: ${fragment}`);
+    }
+    lines.push(
+      r.promisedResultOrFuturePrediction
+        ? "(d) ⚠️ promessa de resultado concreto ou previsão futura com número"
+        : "(d) ✅ sem promessa de resultado nem previsão futura",
+    );
+    lines.push(
+      r.inventedMoneyOrPercent
+        ? "(e) ⚠️ valor em R$/% citado que não está no gabarito"
+        : "(e) ✅ nenhum valor em R$/% fora do gabarito",
+    );
+    lines.push(`status=${r.status} perspectivas=${r.perspectivesCount}`);
+    lines.push(`recomendação: ${r.recommendation}`);
+    lines.push(`o que medir depois: ${r.whatToMeasure || "(vazio)"}`);
+    for (const p of r.perspectives) {
+      lines.push(`  - [${p.role} / ${p.tag} / ${p.tone}] ${p.analysis}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 function Laboratorio() {
   const fetchStatus = useServerFn(getLabStatus);
   const runQuestion = useServerFn(runLabQuestion);
+  const runCouncilQuestion = useServerFn(runLabCouncilQuestion);
   const listModels = useServerFn(listLabAvailableModels);
 
   const [status, setStatus] = useState<LabStatusResult | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [runs, setRuns] = useState<Record<string, ItemRun>>({});
+  const [councilRuns, setCouncilRuns] = useState<Record<string, CouncilItemRun>>({});
   const [running, setRunning] = useState(false);
+  const [councilRunning, setCouncilRunning] = useState(false);
   const [modelsResult, setModelsResult] = useState<
     Record<LabProviderId, ListLabModelsResult | null>
   >({
@@ -300,6 +410,32 @@ function Laboratorio() {
     setRunning(false);
   }
 
+  async function runCouncilOne(provider: LabProviderId, councilQuestionId: string) {
+    const key = keyFor(provider, councilQuestionId);
+    setCouncilRuns((prev) => ({ ...prev, [key]: { status: "loading" } }));
+    try {
+      const data = await runCouncilQuestion({ data: { providerId: provider, councilQuestionId } });
+      setCouncilRuns((prev) => ({ ...prev, [key]: { status: "done", data } }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao rodar a pergunta do Conselho.");
+      setCouncilRuns((prev) => ({ ...prev, [key]: { status: "idle" } }));
+    }
+  }
+
+  async function runCouncilProviderSequence(provider: LabProviderId) {
+    if (!status?.providers[provider]) return;
+    for (const q of LAB_COUNCIL_QUESTIONS) {
+      await runCouncilOne(provider, q.id);
+    }
+  }
+
+  async function runCouncilAll() {
+    setCouncilRunning(true);
+    setCouncilRuns({});
+    await Promise.all(PROVIDERS.map((p) => runCouncilProviderSequence(p)));
+    setCouncilRunning(false);
+  }
+
   async function loadModels(provider: LabProviderId) {
     setModelsLoading((prev) => ({ ...prev, [provider]: true }));
     try {
@@ -322,6 +458,17 @@ function Laboratorio() {
       (item) => runs[keyFor(provider, item.id)]?.data?.serverBuildTag,
     ).find(Boolean);
     const text = resultToText(provider, runs, gabaritoText, serverBuildTag);
+    navigator.clipboard.writeText(text).then(
+      () => toast.success("Copiado."),
+      () => toast.error("Não foi possível copiar."),
+    );
+  }
+
+  function copyCouncilProvider(provider: LabProviderId) {
+    const serverBuildTag = LAB_COUNCIL_QUESTIONS.map(
+      (q) => councilRuns[keyFor(provider, q.id)]?.data?.serverBuildTag,
+    ).find(Boolean);
+    const text = councilResultToText(provider, councilRuns, serverBuildTag);
     navigator.clipboard.writeText(text).then(
       () => toast.success("Copiado."),
       () => toast.error("Não foi possível copiar."),
@@ -386,6 +533,35 @@ function Laboratorio() {
             modelsResult={modelsResult[provider]}
             modelsLoading={modelsLoading[provider]}
             onLoadModels={() => loadModels(provider)}
+          />
+        ))}
+      </div>
+
+      {/* FASE IA-9 (item 6) — seção "Conselho": o Conselho nunca tinha sido testado aqui (só chat e
+          relatório semanal, desde a FASE IA-1) — evidência real em produção mostrou falha silenciosa
+          (fallback disfarçado de recomendação real). Roda as 2 perguntas fixas pelo MESMO caminho de
+          produção (runLabCouncilQuestion -> runCouncilCore, núcleo compartilhado com askCouncil). */}
+      <div>
+        <h2 className="text-lg font-display font-medium">Conselho</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Exercita o mesmo caminho de produção do Conselho Executivo (askCouncil) com 2 perguntas
+          fixas — nunca testado aqui antes desta fase.
+        </p>
+      </div>
+
+      <Button onClick={runCouncilAll} disabled={councilRunning}>
+        {councilRunning ? "Rodando…" : "Rodar Conselho"}
+      </Button>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        {PROVIDERS.map((provider) => (
+          <CouncilColumnView
+            key={provider}
+            provider={provider}
+            configured={status?.providers[provider] ?? false}
+            councilRuns={councilRuns}
+            onRunItem={(councilQuestionId) => runCouncilOne(provider, councilQuestionId)}
+            onCopy={() => copyCouncilProvider(provider)}
           />
         ))}
       </div>
@@ -586,6 +762,167 @@ function QuestionResultView({
                   {r.refusedTrapCorrectly
                     ? "✅ recusou a armadilha"
                     : `⚠️ pode ter caído na armadilha (${r.trapFailureReason ?? "motivo não registrado"})`}
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// FASE IA-9 (item 6) — componentes da seção "Conselho" (ver councilResultToText acima).
+
+function CouncilColumnView({
+  provider,
+  configured,
+  councilRuns,
+  onRunItem,
+  onCopy,
+}: {
+  provider: LabProviderId;
+  configured: boolean;
+  councilRuns: Record<string, CouncilItemRun>;
+  onRunItem: (councilQuestionId: string) => void;
+  onCopy: () => void;
+}) {
+  const itemRuns = LAB_COUNCIL_QUESTIONS.map((q) => ({
+    item: q,
+    run: councilRuns[keyFor(provider, q.id)],
+  }));
+  const doneCount = itemRuns.filter(({ run }) => run?.status === "done").length;
+  const results = councilResultsFor(provider, councilRuns);
+  const model = results.find((r) => r.model)?.model;
+  const thinkingMode = results.find((r) => r.thinkingMode)?.thinkingMode;
+  const jsonFailures = councilJsonFailures(results);
+  const totalCost = councilTotalCost(results);
+
+  if (!configured) {
+    return (
+      <div className="rounded-2xl border border-border p-5">
+        <h3 className="font-semibold">{PROVIDER_LABEL[provider]}</h3>
+        <p className="text-sm text-muted-foreground mt-2">Chave não configurada.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-border p-5 space-y-4">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h3 className="font-semibold">{PROVIDER_LABEL[provider]}</h3>
+          <p className="text-xs text-muted-foreground">
+            modelo: {model ?? "—"} (raciocínio: {thinkingMode ?? "—"}) · {doneCount}/
+            {LAB_COUNCIL_QUESTIONS.length}
+            {doneCount > 0 && ` · falhas de JSON na rodada: ${jsonFailures}`}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={onCopy}>
+          Copiar
+        </Button>
+      </div>
+
+      <div className="space-y-3">
+        {itemRuns.map(({ item, run }) => (
+          <CouncilQuestionResultView
+            key={item.id}
+            label={item.label}
+            run={run}
+            onRun={() => onRunItem(item.id)}
+          />
+        ))}
+      </div>
+
+      {doneCount === LAB_COUNCIL_QUESTIONS.length && (
+        <div className="text-xs text-muted-foreground border-t border-border pt-3">
+          Total: {totalCost !== null ? `US$ ${totalCost.toFixed(5)}` : "custo não estimável"}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CouncilQuestionResultView({
+  label,
+  run,
+  onRun,
+}: {
+  label: string;
+  run: CouncilItemRun | undefined;
+  onRun: () => void;
+}) {
+  const r = run?.data?.result;
+  return (
+    <div className="border-b border-border pb-3 last:border-0">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-semibold">{label}</div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-xs"
+          onClick={onRun}
+          disabled={run?.status === "loading"}
+        >
+          {run?.status === "loading"
+            ? "Rodando…"
+            : run?.status === "done"
+              ? "Rodar de novo"
+              : "Rodar"}
+        </Button>
+      </div>
+
+      {run?.status === "loading" && (
+        <p className="text-xs text-muted-foreground mt-1">Aguardando resposta…</p>
+      )}
+
+      {r && (
+        <>
+          {r.error ? (
+            <p className="text-xs text-destructive mt-1">{r.error}</p>
+          ) : (
+            <>
+              <div className="text-[11px] text-muted-foreground mt-1">
+                {r.acceptedOnAttempt !== null
+                  ? `✅ JSON aceito na tentativa ${r.acceptedOnAttempt}`
+                  : "⚠️ JSON não aceito nas 2 tentativas — fallback honesto devolvido"}
+                {" · "}status={r.status} · {r.perspectivesCount} perspectiva(s)
+              </div>
+              <p className="text-sm mt-1 whitespace-pre-wrap">{r.recommendation}</p>
+              {r.whatToMeasure && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  O que medir depois: {r.whatToMeasure}
+                </p>
+              )}
+              <div className="text-[11px] text-muted-foreground mt-1">
+                {r.latencyMs}ms · {r.inputTokens}/{r.outputTokens} tokens
+                {r.reasoningTokens > 0 ? ` (+${r.reasoningTokens} raciocínio)` : ""} ·{" "}
+                {r.costUSD !== null ? `US$ ${r.costUSD.toFixed(5)}` : "custo não estimável"}
+                {r.stopReason ? ` · stop=${r.stopReason}` : ""}
+              </div>
+              {r.unmatchedNumbers.length > 0 && (
+                <div className="text-[11px] text-destructive mt-1">
+                  ⚠️ (b) possível número inventado: {r.unmatchedNumbers.join(", ")}
+                </div>
+              )}
+              {(r.leakedFieldNames.length > 0 || r.leakedLabelFragments.length > 0) && (
+                <div className="text-[11px] text-destructive mt-1">
+                  {r.leakedFieldNames.map((name) => (
+                    <div key={`field-${name}`}>⚠️ (c) vazou nome de campo interno: {name}</div>
+                  ))}
+                  {r.leakedLabelFragments.map((fragment, i) => (
+                    <div key={`label-${i}`}>⚠️ (c) vazou rótulo interno: {fragment}</div>
+                  ))}
+                </div>
+              )}
+              {r.promisedResultOrFuturePrediction && (
+                <div className="text-[11px] text-destructive mt-1">
+                  ⚠️ (d) promessa de resultado ou previsão futura com número
+                </div>
+              )}
+              {r.inventedMoneyOrPercent && (
+                <div className="text-[11px] text-destructive mt-1">
+                  ⚠️ (e) valor em R$/% citado fora do gabarito
                 </div>
               )}
             </>

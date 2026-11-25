@@ -69,3 +69,26 @@ export const LAB_WEEKLY_REPORT_ITEM: LabQuestion = {
 /** As 9 perguntas fixas + a amostra de relatório semanal — usado tanto pelo servidor (para achar a
  * pergunta pelo id) quanto pela tela (para montar a lista de itens a rodar, sem ida ao servidor). */
 export const LAB_ALL_ITEMS: LabQuestion[] = [...LAB_QUESTIONS, LAB_WEEKLY_REPORT_ITEM];
+
+// FASE IA-9 (item 6) — o Conselho NUNCA tinha sido validado no Laboratório (só chat e relatório
+// semanal, desde a FASE IA-1); evidência real em produção mostrou 2 perguntas diferentes caindo no
+// mesmo fallback disfarçado. As 2 perguntas abaixo são as citadas literalmente na fase — nunca usadas
+// pelo chat, só pela nova seção "Conselho" do Laboratório (runLabCouncilQuestion).
+export interface LabCouncilQuestion {
+  id: string;
+  label: string;
+  question: string;
+}
+
+export const LAB_COUNCIL_QUESTIONS: LabCouncilQuestion[] = [
+  {
+    id: "council_price_8pct",
+    label: "Aumentar preços em 8%",
+    question: "Devo aumentar meus preços em 8%?",
+  },
+  {
+    id: "council_revenue_20pct",
+    label: "Aumentar faturamento em 20%",
+    question: "Como aumentar meu faturamento em 20%?",
+  },
+];

@@ -143,10 +143,18 @@ function Council() {
               <div className="mt-3 text-base leading-relaxed">
                 <AiMessageText text={verdict.recommendation} />
               </div>
-              <div className="mt-4 text-sm font-semibold text-ai-glow">O que medir depois:</div>
-              <div className="mt-1 text-sm text-ai-glow/90 leading-relaxed">
-                <AiMessageText text={verdict.whatToMeasure} />
-              </div>
+              {/* FASE IA-9 (item 3) — whatToMeasure fica "" quando o Conselho não conseguiu montar
+                  uma recomendação de verdade (fallback honesto, ver council-core.ts) — nesse caso a
+                  linha "O que medir depois" fica escondida em vez de mostrar vazia/com texto antigo
+                  disfarçado ("Dado não disponível."). */}
+              {verdict.whatToMeasure && (
+                <>
+                  <div className="mt-4 text-sm font-semibold text-ai-glow">O que medir depois:</div>
+                  <div className="mt-1 text-sm text-ai-glow/90 leading-relaxed">
+                    <AiMessageText text={verdict.whatToMeasure} />
+                  </div>
+                </>
+              )}
               <div className="mt-5 flex flex-wrap gap-2">
                 <button className="rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-semibold px-4 py-2">
                   Simular cenário
