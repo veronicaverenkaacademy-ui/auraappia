@@ -206,12 +206,11 @@ test("GUARDA: LAB_BUILD_TAG é uma constante exportada e não-vazia", async () =
   assert.ok(LAB_BUILD_TAG.length > 0);
 });
 
-// FASE IA-6 (item 6) — esta fase tocou o Laboratório de novo (laboratory.functions.ts, a tela,
-// statement-checks.ts) — a etiqueta precisa ter avançado pra "IA-6" (atualização à mão, ver
-// comentário em build-tag.ts).
-test("GUARDA: LAB_BUILD_TAG está em 'IA-6' nesta fase", async () => {
+// FASE IA-7 (item 5) — esta fase tocou o Laboratório de novo (verifier.ts, e o item 5 pede a troca) —
+// a etiqueta precisa ter avançado pra "IA-7" (atualização à mão, ver comentário em build-tag.ts).
+test("GUARDA: LAB_BUILD_TAG está em 'IA-7' nesta fase", async () => {
   const { LAB_BUILD_TAG } = await import("../src/lib/aura-ai/laboratory/build-tag.ts");
-  assert.equal(LAB_BUILD_TAG, "IA-6");
+  assert.equal(LAB_BUILD_TAG, "IA-7");
 });
 
 test("GUARDA: a tela do Laboratório importa LAB_BUILD_TAG e renderiza o aviso de divergência tela/servidor", () => {
@@ -392,6 +391,46 @@ test("GUARDA: regra 21 (rótulo completo e separado) e regra 22 (nunca camelCase
   for (let n = 1; n <= 20; n++) {
     assert.match(src, new RegExp(`${n}\\.\\s`), `regra ${n} anterior deveria continuar presente`);
   }
+});
+
+// FASE IA-7 (item 4) — regra 6 não foi removida (o Laboratório depende dela pra conferência), só
+// ganhou uma nota curta avisando que os ids entre parênteses podem ser removidos do texto final e
+// que a frase precisa fazer sentido mesmo sem o id (nunca "Esses dados vêm de (id)." isolada).
+test("GUARDA: regra 6 continua presente e ganhou a nota sobre ids removíveis do texto final (FASE IA-7)", () => {
+  const src = readFileSync(new URL("../src/lib/aura-ai/system-prompt.ts", import.meta.url), "utf8");
+  assert.match(src, /6\.\s*Ao citar um dado de uma métrica, mencione o "id"/);
+  assert.match(src, /podem ser removidos do texto final/);
+  assert.match(src, /nunca "Esses dados vêm de \(vanishing_clients\)\." como frase isolada/);
+  // as 21 regras seguintes (7-22) continuam presentes, sem renumerar.
+  for (let n = 1; n <= 22; n++) {
+    assert.match(src, new RegExp(`${n}\\.\\s`), `regra ${n} deveria continuar presente`);
+  }
+});
+
+// FASE IA-7 (item 2) — rodada 7: a dona não deveria ver ids técnicos de métrica
+// ("(vanishing_clients_total)") no app real, mas o Laboratório PRECISA deles intactos pra conferir
+// (checkCitedNumbers/checkStatements/checkTrapHandling). Guarda estática: produção (chatWithAura E
+// askCouncil) chama stripMetricIds; laboratory.functions.ts NUNCA chama.
+test("GUARDA: aura.functions.ts aplica stripMetricIds em chatWithAura E askCouncil; laboratory.functions.ts nunca aplica", () => {
+  const prodSrc = readFileSync(new URL("../src/lib/aura.functions.ts", import.meta.url), "utf8");
+  assert.match(
+    prodSrc,
+    /import\s*\{\s*stripMetricIds\s*\}\s*from\s*"@\/lib\/aura-ai\/strip-metric-ids"/,
+  );
+
+  for (const fn of ["chatWithAura", "askCouncil"]) {
+    const start = prodSrc.indexOf(`export const ${fn}`);
+    assert.ok(start > -1, `${fn} não encontrada`);
+    const nextExport = prodSrc.indexOf("export const", start + 1);
+    const body = prodSrc.slice(start, nextExport > -1 ? nextExport : undefined);
+    assert.match(body, /stripMetricIds\(/, `${fn} deveria aplicar stripMetricIds`);
+  }
+
+  const labSrc = readFileSync(
+    new URL("../src/lib/aura-ai/laboratory/laboratory.functions.ts", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(labSrc, /stripMetricIds/, "o Laboratório nunca deve aplicar stripMetricIds");
 });
 
 test("GUARDA: os nomes literais citados nas regras 10/15 do system-prompt vêm do MESMO lugar que sanitize-internal-field-names.ts (nunca redigitados)", () => {

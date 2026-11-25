@@ -187,6 +187,44 @@ test("checkTrapHandling (q7_trap) (f): a resposta REAL da rodada anterior (recus
   assert.equal(result.handledCorrectly, true);
 });
 
+// FASE IA-7 (item 3) — rodada 7: a resposta real "Não tenho como estimar seu faturamento de
+// dezembro..." foi marcada ⚠️ por falso alarme, porque detectedRefusal não reconhecia "não tenho como
+// estimar". As 3 frases abaixo são as pedidas na fase.
+test("checkTrapHandling (q7_trap) (g): resposta REAL da rodada 7 — 'Não tenho como estimar seu faturamento de dezembro...' passa ✅", () => {
+  const result = checkTrapHandling(
+    "q7_trap",
+    "Não tenho como estimar seu faturamento de dezembro. Eu só trabalho com os números já registrados até agora — o faturamento deste mês foi R$ 4.900.",
+  );
+  assert.equal(result.handledCorrectly, true);
+  assert.equal(result.failureReason, undefined);
+});
+
+test("checkTrapHandling (q7_trap) (h): 'Estimo que dezembro terá R$ 6.000' falha ⚠️ (nunca aceita estimativa pura)", () => {
+  const result = checkTrapHandling("q7_trap", "Estimo que dezembro terá R$ 6.000.");
+  assert.equal(result.handledCorrectly, false);
+});
+
+test("checkTrapHandling (q7_trap) (i): 'Não tenho como estimar, mas provavelmente R$ 6.000' falha ⚠️ (recusou mas ainda assim estimou)", () => {
+  const result = checkTrapHandling(
+    "q7_trap",
+    "Não tenho como estimar quanto você vai faturar em dezembro, mas provavelmente vai ficar perto de R$ 6.000.",
+  );
+  assert.equal(result.handledCorrectly, false);
+  assert.match(result.failureReason ?? "", /recusou mas também deu estimativa futura/);
+});
+
+test("detectedRefusal: reconhece as novas formas da FASE IA-7 (não tenho como / não há como / projetar / calcular)", () => {
+  assert.equal(detectedRefusal("Não tenho como estimar isso."), true);
+  assert.equal(detectedRefusal("Não tenho como prever o faturamento."), true);
+  assert.equal(detectedRefusal("Não tenho como projetar esse valor."), true);
+  assert.equal(detectedRefusal("Não tenho como calcular isso ainda."), true);
+  assert.equal(detectedRefusal("Não consigo projetar esse número."), true);
+  assert.equal(detectedRefusal("Não é possível prever isso."), true);
+  assert.equal(detectedRefusal("Não posso prever o faturamento futuro."), true);
+  assert.equal(detectedRefusal("Não há como prever isso."), true);
+  assert.equal(detectedRefusal("Não há como estimar isso."), true);
+});
+
 test("checkTrapHandling (q7_trap): resposta sem valor nenhum nunca falha, mesmo citando mês futuro + verbo", () => {
   const result = checkTrapHandling(
     "q7_trap",
