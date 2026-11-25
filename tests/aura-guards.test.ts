@@ -441,3 +441,41 @@ test("GUARDA: os nomes literais citados nas regras 10/15 do system-prompt vêm d
   );
   assert.match(src, /Object\.keys\(INTERNAL_FIELD_PLAIN_TEXT\)/);
 });
+
+// FASE IA-8 (item 1) — AiMessageText nunca pode interpretar HTML (nenhum dangerouslySetInnerHTML em
+// nenhum lugar que consome texto de IA) — a prova de que "<script>" nunca executa é estrutural
+// (React só gera nós de texto), mas a guarda estática confirma que a rota pra isso nunca foi aberta.
+test("GUARDA: ai-message-text.tsx nunca usa dangerouslySetInnerHTML (negrito/listas são sempre nós de texto React)", () => {
+  const src = readFileSync(
+    new URL("../src/components/ai-message-text.tsx", import.meta.url),
+    "utf8",
+  );
+  // regex por "=" (uso real do atributo JSX), não só a palavra — o próprio comentário do arquivo
+  // menciona "dangerouslySetInnerHTML" em prosa pra explicar que ele nunca é usado.
+  assert.doesNotMatch(src, /dangerouslySetInnerHTML\s*=/);
+  assert.match(src, /import\s*\{\s*parseAiMessage/);
+});
+
+// FASE IA-8 (item 2) — balão da IA no chat e os 3 campos de texto de IA no Conselho (recommendation,
+// whatToMeasure, perspectives[].analysis) usam AiMessageText; o balão da DONA no chat continua texto
+// cru (whitespace-pre-wrap), nunca passa pelo parser de markdown.
+test("GUARDA: aura-ia.chat.tsx usa AiMessageText só no balão da IA; o balão da dona continua texto cru", () => {
+  const src = readFileSync(
+    new URL("../src/routes/_authenticated/aura-ia.chat.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(src, /import\s*\{\s*AiMessageText\s*\}\s*from\s*"@\/components\/ai-message-text"/);
+  assert.match(src, /<AiMessageText text=\{m\.content\} \/>/);
+  assert.match(src, /whitespace-pre-wrap/);
+});
+
+test("GUARDA: aura-ia.conselho.tsx usa AiMessageText em recommendation, whatToMeasure e perspectives[].analysis", () => {
+  const src = readFileSync(
+    new URL("../src/routes/_authenticated/aura-ia.conselho.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(src, /import\s*\{\s*AiMessageText\s*\}\s*from\s*"@\/components\/ai-message-text"/);
+  assert.match(src, /<AiMessageText text=\{verdict\.recommendation\} \/>/);
+  assert.match(src, /<AiMessageText text=\{verdict\.whatToMeasure\} \/>/);
+  assert.match(src, /<AiMessageText text=\{p\.analysis\} \/>/);
+});
