@@ -224,3 +224,37 @@ export function checkTrapHandling(questionId: string, text: string): TrapCheckRe
     ? { handledCorrectly: true }
     : { handledCorrectly: false, failureReason: "resposta não admitiu a ausência do dado" };
 }
+
+// FASE IA-9 (item 6) — duas checagens novas, só pro Conselho no Laboratório (nunca usadas pelo chat):
+// o Conselho dá RECOMENDAÇÕES (não só descreve dados), então tem um risco que as perguntas do chat
+// não têm — prometer um resultado concreto ou citar um valor/desconto que não está nas métricas.
+
+/** (d) promessa de resultado concreto ("vai aumentar", "você vai faturar", "garanto"...) OU previsão
+ * futura com número (reaproveita estimatedFutureRevenue, já usada pela armadilha q7_trap do chat) —
+ * qualquer um dos dois sinais, isolado, já é motivo de ⚠️ pro Conselho (que deveria indicar "o que
+ * medir depois", nunca prometer o resultado em si). */
+const PROMISED_RESULT_RE =
+  /vai (?:aumentar|recuperar|gerar|trazer|crescer)|voc[êe] vai faturar|\bgaranto\b|\bgarantido\b/i;
+
+export function detectsPromisedResultOrFuturePrediction(text: string): boolean {
+  return PROMISED_RESULT_RE.test(text) || estimatedFutureRevenue(text);
+}
+
+/** (e) heurística SIMPLES (pedida assim na fase): qualquer valor em R$ ou percentual citado no texto
+ * que não exista no gabarito (mesma tolerância de arredondamento de checkCitedNumbers) → ⚠️ — cobre
+ * desconto/valor/prazo inventado que o Conselho às vezes sugere sem base nas métricas reais. */
+const MONEY_OR_PERCENT_RE = /R\$\s*[\d.,]+|\d+(?:[.,]\d+)?\s*%/g;
+
+export function detectsInventedMoneyOrPercent(text: string, allowed: Set<number>): boolean {
+  const tokens = text.match(MONEY_OR_PERCENT_RE) ?? [];
+  const allowedArr = Array.from(allowed);
+  for (const token of tokens) {
+    for (const n of extractNumbersFromText(token)) {
+      const matches = allowedArr.some(
+        (a) => Math.abs(a - n) <= 1 || Math.abs(a - n) <= Math.abs(a) * 0.02,
+      );
+      if (!matches) return true;
+    }
+  }
+  return false;
+}

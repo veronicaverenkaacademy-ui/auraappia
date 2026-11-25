@@ -30,6 +30,7 @@ import {
 import { normalizePtBrNumbers } from "@/lib/aura-ai/normalize-pt-br";
 import { sanitizeInternalFieldNames } from "@/lib/aura-ai/sanitize-internal-field-names";
 import { stripMetricIds } from "@/lib/aura-ai/strip-metric-ids";
+import { runCouncilCore, logCouncilParseFailure } from "@/lib/aura-ai/council-core";
 
 // ---- Types shared with the client ----
 
@@ -62,7 +63,10 @@ export type AuraSummary = {
 export type CouncilPerspective = {
   role: string;
   tag: string;
-  tone: "green" | "blue" | "purple" | "amber" | "red";
+  // FASE IA-9 — tone vem de JSON gerado pela IA (nunca validado contra uma lista fechada antes desta
+  // fase tampouco — o código antigo confiava num cast implícito de Partial<CouncilVerdict>); a tela
+  // (aura-ia.conselho.tsx) já trata qualquer valor desconhecido com TONE_STYLES[p.tone] ?? blue.
+  tone: string;
   analysis: string;
 };
 
@@ -285,6 +289,18 @@ export const chatWithAura = createServerFn({ method: "POST" })
 
 const CouncilInput = z.object({ question: z.string().min(3).max(400) });
 
+// FASE IA-9 — evidência real em produção (conta de dona SEM dados, tela com IA-8): 2 perguntas
+// DIFERENTES ("Como aumentar meu faturamento em 20%?", "Devo aumentar meus preços em 8%?") deram o
+// MESMO resultado — perspectives vazio, recommendation = "A Aura não conseguiu consolidar uma
+// recomendação com os dados atuais." e whatToMeasure = "Dado não disponível." (os fallbacks ANTIGOS,
+// que apareciam sempre que JSON.parse(result.text) falhava — o catch antigo engolia o erro e NUNCA
+// logava nada — ou vinha sem os campos certos). Investigação (ver relatório da fase): o adapter
+// Anthropic nunca aplicava nenhum "modo JSON" real a partir de json:true (a API não tem esse
+// parâmetro nativo — era um no-op completo), e o parse antigo só removia ``` no início/fim — nunca
+// tolerava prosa antes/depois nem cerca "```json". A lógica real agora mora em council-core.ts
+// (runCouncilCore), extraída pra ser compartilhada com o Laboratório (item 6 da fase — ver
+// laboratory.functions.ts) sem duplicar nada: parseCouncilJson tolerante + 1 retentativa pedindo só o
+// JSON + fallback HONESTO (nunca mais disfarçado de recomendação real) se as duas falharem.
 export const askCouncil = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => CouncilInput.parse(input))
@@ -296,56 +312,25 @@ export const askCouncil = createServerFn({ method: "POST" })
 
     const pseudonymized = pseudonymizeClientIds(block, labelMap);
     const contextBlock = buildMetricsContextBlock(JSON.stringify(pseudonymized));
+    const system = `${AURA_COUNCIL_SYSTEM_PROMPT}\n\n${contextBlock}`;
 
-    const result = await generate({
-      task: "council",
-      system: `${AURA_COUNCIL_SYSTEM_PROMPT}\n\n${contextBlock}`,
-      messages: [{ role: "user", content: data.question }],
-      json: true,
+    const core = await runCouncilCore({
+      question: data.question,
+      generateFn: (userMessage) =>
+        generate({ task: "council", system, messages: [{ role: "user", content: userMessage }] }),
+      labelMap,
+      names,
+      // Produção aplica stripMetricIds (a dona não deveria ver ids técnicos de métrica) — nunca no
+      // Laboratório, que precisa deles intactos pra conferência (ver FASE IA-7).
+      skipStripMetricIds: false,
+      onParseFailure: (info) => logCouncilParseFailure("council", info),
     });
-
-    let parsed: Partial<CouncilVerdict> = {};
-    try {
-      const stripped = result.text
-        .replace(/^```(?:json)?/i, "")
-        .replace(/```$/, "")
-        .trim();
-      parsed = JSON.parse(stripped);
-    } catch {
-      parsed = {};
-    }
-
-    // FASE IA-6 (item 2) / FASE IA-7 (item 2) — mesma rede de segurança determinística do chat (ver
-    // chatWithAura acima): restoreClientNames -> sanitizeInternalFieldNames -> stripMetricIds, sempre
-    // nessa ordem. O Conselho nunca aplicou normalizePtBrNumbers (não fazia parte do escopo da FASE
-    // IA-3), então essa última etapa continua de fora aqui — não é uma mudança desta fase.
-    const recommendation = stripMetricIds(
-      sanitizeInternalFieldNames(
-        restoreClientNames(
-          parsed.recommendation ??
-            "A Aura não conseguiu consolidar uma recomendação com os dados atuais.",
-          labelMap,
-          names,
-        ),
-      ),
-    );
-    const whatToMeasure = stripMetricIds(
-      sanitizeInternalFieldNames(
-        restoreClientNames(parsed.whatToMeasure ?? "Dado não disponível.", labelMap, names),
-      ),
-    );
-    const perspectives = (parsed.perspectives ?? []).slice(0, 6).map((p) => ({
-      ...p,
-      analysis: stripMetricIds(
-        sanitizeInternalFieldNames(restoreClientNames(p.analysis ?? "", labelMap, names)),
-      ),
-    }));
 
     return {
       question: data.question,
-      perspectives,
-      recommendation,
-      whatToMeasure,
-      status: parsed.status ?? "atencao",
+      perspectives: core.perspectives,
+      recommendation: core.recommendation,
+      whatToMeasure: core.whatToMeasure,
+      status: core.status,
     };
   });

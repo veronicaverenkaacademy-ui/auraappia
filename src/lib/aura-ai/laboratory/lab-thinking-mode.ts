@@ -32,6 +32,11 @@
 // (AURA_LAB_ANTHROPIC_CHAT_THINKING / AURA_LAB_ANTHROPIC_REPORT_THINKING) e a variável antiga/geral
 // (AURA_LAB_ANTHROPIC_THINKING, mantida pra não quebrar quem já a configurou). Import relativo (não
 // "@/...") de propósito — mantém este arquivo importável direto em teste sem aliases.
+//
+// FASE IA-9 (item 5) — "council" (nova tarefa do Laboratório, ver laboratory.functions.ts) tenta
+// AURA_LAB_ANTHROPIC_COUNCIL_THINKING primeiro; ausente, cai EXATAMENTE no que a tarefa "chat" já
+// resolveria (não só na variável base) — ver o parâmetro opcional `envCouncil` abaixo, que preserva
+// todas as chamadas existentes (sem esse 5º argumento) exatamente como estavam.
 import { parseAnthropicThinkingMode, type AnthropicThinkingMode } from "../thinking-mode.ts";
 
 export type AnthropicLabThinkingMode = AnthropicThinkingMode;
@@ -47,11 +52,18 @@ export function parseLabAnthropicThinkingMode(raw: string | undefined): Anthropi
  * — vira "default" diretamente (mesmo comportamento de "valor inválido" de sempre), pra não misturar
  * "esqueci de configurar" com "configurei errado". */
 export function parseLabAnthropicThinkingModeForTask(
-  task: "chat" | "weekly_report",
+  task: "chat" | "weekly_report" | "council",
   envChat: string | undefined,
   envReport: string | undefined,
   envBase: string | undefined,
+  envCouncil?: string | undefined,
 ): AnthropicLabThinkingMode {
+  if (task === "council") {
+    if (envCouncil !== undefined) return parseAnthropicThinkingMode(envCouncil);
+    // "com fallback para as de chat" — nunca um 3º fallback próprio: resolve exatamente como "chat"
+    // resolveria (que por sua vez ainda cai pra envBase/"default" se também não estiver definida).
+    return parseLabAnthropicThinkingModeForTask("chat", envChat, envReport, envBase);
+  }
   const specific = task === "weekly_report" ? envReport : envChat;
   if (specific !== undefined) return parseAnthropicThinkingMode(specific);
   return parseAnthropicThinkingMode(envBase);
