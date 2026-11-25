@@ -5,6 +5,7 @@ import { chatWithAura } from "@/lib/aura.functions";
 import { Sparkles, Send, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { AiMessageText } from "@/components/ai-message-text";
 
 export const Route = createFileRoute("/_authenticated/aura-ia/chat")({
   component: AuraChat,
@@ -69,13 +70,16 @@ function AuraChat() {
             )}
             <div
               className={cn(
-                "max-w-[85%] md:max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap",
+                "max-w-[85%] md:max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
                 m.role === "user"
-                  ? "bg-foreground text-background rounded-br-md"
+                  ? "whitespace-pre-wrap bg-foreground text-background rounded-br-md"
                   : "bg-card border border-border text-foreground rounded-bl-md"
               )}
             >
-              {m.content}
+              {/* FASE IA-8 (item 2) — balão da dona continua texto cru (whitespace-pre-wrap acima);
+                  balão da IA usa AiMessageText pra renderizar negrito e listas em vez dos
+                  asteriscos/marcadores literais que o system-prompt instrui a IA a escrever. */}
+              {m.role === "user" ? m.content : <AiMessageText text={m.content} />}
             </div>
           </div>
         ))}

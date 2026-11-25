@@ -7,6 +7,7 @@ import { Briefcase, Calendar, Megaphone, Package, Sparkles, Loader2, CheckCircle
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { AiMessageText } from "@/components/ai-message-text";
 
 export const Route = createFileRoute("/_authenticated/aura-ia/conselho")({
   component: Council,
@@ -122,7 +123,11 @@ function Council() {
                         <div className="text-[11px] text-muted-foreground">{p.tag}</div>
                       </div>
                     </div>
-                    <p className="text-sm text-muted-foreground leading-relaxed">{p.analysis}</p>
+                    {/* FASE IA-8 (item 2) — mesma limitação do chat: a análise de cada perspectiva
+                        também vem com negrito e listas do system-prompt (regra 18/20). */}
+                    <div className="text-sm text-muted-foreground leading-relaxed">
+                      <AiMessageText text={p.analysis} />
+                    </div>
                   </article>
                 );
               })}
@@ -133,9 +138,14 @@ function Council() {
             <div className="absolute -right-16 -bottom-16 h-56 w-56 rounded-full bg-ai-glow/25 blur-3xl" aria-hidden />
             <div className="relative">
               <VerdictBadge status={verdict.status} />
-              <p className="mt-3 text-base leading-relaxed">{verdict.recommendation}</p>
-              <div className="mt-4 text-sm font-semibold text-ai-glow">
-                O que medir depois: {verdict.whatToMeasure}
+              {/* FASE IA-8 (item 2) — recommendation e whatToMeasure também vêm com negrito e
+                  listas do system-prompt, pela mesma limitação do chat. */}
+              <div className="mt-3 text-base leading-relaxed">
+                <AiMessageText text={verdict.recommendation} />
+              </div>
+              <div className="mt-4 text-sm font-semibold text-ai-glow">O que medir depois:</div>
+              <div className="mt-1 text-sm text-ai-glow/90 leading-relaxed">
+                <AiMessageText text={verdict.whatToMeasure} />
               </div>
               <div className="mt-5 flex flex-wrap gap-2">
                 <button className="rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-semibold px-4 py-2">
