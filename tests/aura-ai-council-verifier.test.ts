@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import {
   detectsPromisedResultOrFuturePrediction,
   detectsInventedMoneyOrPercent,
+  checkCitedMoneyCents,
 } from "../src/lib/aura-ai/laboratory/verifier.ts";
 
 test("detectsPromisedResultOrFuturePrediction: 'vai aumentar' dispara ⚠️", () => {
@@ -87,4 +88,42 @@ test("detectsInventedMoneyOrPercent: texto sem nenhum R$/% nunca dispara", () =>
     ),
     false,
   );
+});
+
+// FASE IA-10 (item 5d) — checkCitedMoneyCents: diferença de 1 centavo (arredondamento) vira aviso,
+// nunca ❌; diferença maior vira mismatch (❌) mesmo quando a tolerância GENÉRICA (1 absoluto/2%
+// relativo) deixaria passar — caso real: "R$ 123,55" citado com gabarito "R$ 123,56".
+test("checkCitedMoneyCents: valor EXATO (igual ao gabarito) não aparece em nenhuma das duas listas", () => {
+  const result = checkCitedMoneyCents("O total foi R$ 123,56.", new Set([123.56]));
+  assert.deepEqual(result.mismatches, []);
+  assert.deepEqual(result.centWarnings, []);
+});
+
+test("checkCitedMoneyCents: diferença de 1 centavo (R$ 123,55 vs gabarito R$ 123,56) vira AVISO, nunca ❌ — caso real da comparação A/B", () => {
+  const result = checkCitedMoneyCents("O total foi R$ 123,55.", new Set([123.56]));
+  assert.deepEqual(result.mismatches, []);
+  assert.deepEqual(result.centWarnings, [123.55]);
+});
+
+test("checkCitedMoneyCents: diferença MAIOR que 1 centavo vira mismatch (❌) — mesmo dentro da tolerância genérica de 1 absoluto", () => {
+  // |123.00 - 123.56| = 0.56 — passaria pela tolerância GENÉRICA (<=1 absoluto), mas aqui é ❌: mais
+  // que 1 centavo de diferença em dinheiro é um valor errado, não arredondamento.
+  const result = checkCitedMoneyCents("O total foi R$ 123,00.", new Set([123.56]));
+  assert.deepEqual(result.mismatches, [123]);
+  assert.deepEqual(result.centWarnings, []);
+});
+
+test("checkCitedMoneyCents: valor bem diferente (fora até da tolerância genérica) também vira mismatch", () => {
+  const result = checkCitedMoneyCents("Sugiro um desconto de R$ 50,00.", new Set([123.56, 5560]));
+  assert.deepEqual(result.mismatches, [50]);
+  assert.deepEqual(result.centWarnings, []);
+});
+
+test("checkCitedMoneyCents: vários valores no mesmo texto são classificados independentemente", () => {
+  const result = checkCitedMoneyCents(
+    "Receita de R$ 5.560,00 e ticket de R$ 154,45 (gabarito 154,44).",
+    new Set([5560, 154.44]),
+  );
+  assert.deepEqual(result.mismatches, []);
+  assert.deepEqual(result.centWarnings, [154.45]);
 });

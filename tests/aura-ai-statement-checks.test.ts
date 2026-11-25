@@ -7,6 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   checkStatements,
+  checkServiceAttendanceLeaderClaims,
   extractVanishingTotal,
   extractStoppedBooking,
   extractOpsCompleted,
@@ -14,12 +15,18 @@ import {
   type StatementGabarito,
 } from "../src/lib/aura-ai/laboratory/statement-checks.ts";
 
+// FASE IA-10 (item 1c) — gabarito "vazio" de topByAttendances, reutilizado pelos testes que não
+// cobrem a checagem (f) (serviço líder em atendimentos) — nenhuma afirmação desse tipo é esperada.
+const NO_SERVICE_LEADER_GABARITO = { currentMonth: null, previousMonth: null, last90Days: null };
+
 const FULL_GABARITO: StatementGabarito = {
   vanishingClientsTotal: 17,
   stoppedBookingCurrentMonth: 5,
   stoppedBookingPreviousMonth: 8,
   opsCompletedCurrentMonth: 39,
   currentMonthRevenue: 4200,
+  serviceTopByAttendances: NO_SERVICE_LEADER_GABARITO,
+  knownServiceNames: [],
 };
 
 // Caso real da rodada 5: a IA disse 16 (contando a lista) quando o gabarito (total pronto) era 17.
@@ -117,6 +124,8 @@ test("checkStatements: atendimentos realizados com erro plantado (40 em vez de 4
     stoppedBookingPreviousMonth: null,
     opsCompletedCurrentMonth: 43,
     currentMonthRevenue: null,
+    serviceTopByAttendances: NO_SERVICE_LEADER_GABARITO,
+    knownServiceNames: [],
   });
   assert.equal(result.mismatches.length, 1);
   assert.equal(result.mismatches[0].said, 40);
@@ -124,11 +133,15 @@ test("checkStatements: atendimentos realizados com erro plantado (40 em vez de 4
 });
 
 // FASE IA-6 (item 5a) — markdown (**, __, *, _, `) nunca impede a extração.
+// FASE IA-10 (item 4) — extractCurrentMonthRevenue agora exige o marcador de período ANTES do valor
+// na mesma cláusula (nunca depois, ver nearestPrecedingMarker) — a frase deste teste foi reordenada
+// (marcador primeiro) pra refletir a nova semântica; markdown continuar sem impedir a extração é o
+// que este teste cobre, não a ordem marcador/valor (coberta nos testes dedicados da FASE IA-10).
 test("stripMarkdown (via extratores): markdown em negrito/itálico/código nunca impede a extração", () => {
   assert.equal(extractVanishingTotal("**17** clientes sumindo esta semana."), 17);
   assert.equal(extractStoppedBooking("**8 clientes** deixaram de agendar este mês.").current, 8);
   assert.equal(extractOpsCompleted("`39` atendimentos realizados este mês."), 39);
-  assert.equal(extractCurrentMonthRevenue("__R$ 4.200__ este mês."), 4200);
+  assert.equal(extractCurrentMonthRevenue("Este mês, o faturamento foi de __R$ 4.200__."), 4200);
 });
 
 // FASE IA-6 (item 5d) — "este mês ... contra ... no mês anterior" na MESMA sentença, antes descartado
@@ -158,6 +171,8 @@ test("checkStatements: 'deixaram de agendar' com erro plantado (9 em vez de 8) v
     stoppedBookingPreviousMonth: null,
     opsCompletedCurrentMonth: null,
     currentMonthRevenue: null,
+    serviceTopByAttendances: NO_SERVICE_LEADER_GABARITO,
+    knownServiceNames: [],
   });
   assert.equal(result.mismatches.length, 1);
   assert.equal(result.mismatches[0].said, 9);
@@ -197,6 +212,8 @@ test("checkStatements: receita com erro plantado (R$ 5.730 em vez de R$ 5.370) v
     stoppedBookingPreviousMonth: null,
     opsCompletedCurrentMonth: null,
     currentMonthRevenue: 5370,
+    serviceTopByAttendances: NO_SERVICE_LEADER_GABARITO,
+    knownServiceNames: [],
   });
   assert.equal(result.mismatches.length, 1);
   assert.equal(result.mismatches[0].said, 5730);
@@ -230,4 +247,142 @@ test("checkStatements: gabarito com fato ausente (null) nunca conta aquele fato,
   const result = checkStatements("O faturamento deste mês foi R$ 4200.", gabaritoSemReceita);
   assert.equal(result.checked, 0);
   assert.equal(result.mismatches.length, 0);
+});
+
+// FASE IA-10 (item 1c) — rodada 9, caso real: "Nos últimos 90 dias, o campeão em atendimentos é o
+// Volume Russo, com 29 atendimentos e R$ 5.220" — ERRADO (Volume Brasileiro tinha 34 atendimentos;
+// Volume Russo só lidera a RECEITA).
+const SERVICE_LEADER_GABARITO: StatementGabarito = {
+  vanishingClientsTotal: null,
+  stoppedBookingCurrentMonth: null,
+  stoppedBookingPreviousMonth: null,
+  opsCompletedCurrentMonth: null,
+  currentMonthRevenue: null,
+  serviceTopByAttendances: {
+    currentMonth: null,
+    previousMonth: null,
+    last90Days: { serviceName: "Volume Brasileiro", count: 34 },
+  },
+  knownServiceNames: ["Volume Russo", "Volume Brasileiro"],
+};
+
+test("checkServiceAttendanceLeaderClaims: frase real ERRADA da rodada 9 (Volume Russo citado como campeão em atendimentos, mas é Volume Brasileiro) vira ❌", () => {
+  const result = checkStatements(
+    "Nos últimos 90 dias, o campeão em atendimentos é o Volume Russo, com 29 atendimentos e R$ 5.220.",
+    SERVICE_LEADER_GABARITO,
+  );
+  assert.equal(result.mismatches.length, 1);
+  assert.equal(result.mismatches[0].said, "Volume Russo");
+  assert.equal(result.mismatches[0].expected, "Volume Brasileiro");
+});
+
+test("checkServiceAttendanceLeaderClaims: mesma frase com o serviço CORRETO (Volume Brasileiro) vira ✅", () => {
+  const result = checkStatements(
+    "Nos últimos 90 dias, o campeão em atendimentos é o Volume Brasileiro, com 34 atendimentos.",
+    SERVICE_LEADER_GABARITO,
+  );
+  assert.equal(result.checked, 1);
+  assert.equal(result.mismatches.length, 0);
+});
+
+test("checkServiceAttendanceLeaderClaims: 'lidera EM RECEITA' nunca é conferido contra topByAttendances (critério diferente) — sempre ✅", () => {
+  const result = checkStatements(
+    "Nos últimos 90 dias, o Volume Russo lidera em receita, com R$ 5.220.",
+    SERVICE_LEADER_GABARITO,
+  );
+  assert.equal(result.mismatches.length, 0);
+});
+
+// FASE IA-10 (item 4) — as 2 frases reais do contexto que geraram falsos ❌ na rodada 9.
+const SERVICE_NAMES_RODADA_9 = ["Volume Brasileiro", "Volume Russo"];
+
+test("checkStatements (IA-10 item 4): frase real 1 — receita de UM SERVIÇO ('O serviço com mais saída é...') nunca é confundida com a receita do mês — nenhum ❌", () => {
+  const gabarito: StatementGabarito = {
+    ...FULL_GABARITO,
+    currentMonthRevenue: 5560,
+    knownServiceNames: SERVICE_NAMES_RODADA_9,
+  };
+  const result = checkStatements(
+    "O serviço com mais saída é o **Volume Brasileiro**, com 11 atendimentos e receita de R$ 1.650 até hoje (service_breakdown_current_month).",
+    gabarito,
+  );
+  assert.equal(result.mismatches.filter((m) => m.label === "receita do mês atual").length, 0);
+});
+
+test("checkStatements (IA-10 item 4): frase real 2 — receita do MÊS ANTERIOR (R$ 8.590) nunca é confundida com a do mês atual (R$ 5.560) — nenhum ❌", () => {
+  const gabarito: StatementGabarito = {
+    ...FULL_GABARITO,
+    currentMonthRevenue: 5560,
+    knownServiceNames: [],
+  };
+  const result = checkStatements(
+    "O ticket médio por cliente no mês atual é de R$ 154,44 (ticket_current_month), com 36 clientes distintas e receita de R$ 5.560 até hoje. No mês anterior completo, o ticket por cliente foi de R$ 199,77 (ticket_previous_month), com 43 clientes distintas e receita de R$ 8.590.",
+    gabarito,
+  );
+  assert.equal(result.mismatches.filter((m) => m.label === "receita do mês atual").length, 0);
+});
+
+test("checkStatements (IA-10 item 4): erro plantado — receita atual R$ 6.650 em vez de R$ 5.560 (fora da tolerância de 2%) vira ❌", () => {
+  const gabarito: StatementGabarito = {
+    ...FULL_GABARITO,
+    currentMonthRevenue: 5560,
+    knownServiceNames: [],
+  };
+  const result = checkStatements(
+    "A receita do mês atual foi de R$ 6.650, bem acima do esperado.",
+    gabarito,
+  );
+  const mismatch = result.mismatches.find((m) => m.label === "receita do mês atual");
+  assert.ok(mismatch, "deveria ter marcado ❌ pra receita do mês atual");
+  assert.equal(mismatch!.said, 6650);
+  assert.equal(mismatch!.expected, 5560);
+});
+
+test("checkStatements (IA-10 item 4): erro plantado — receita do mês anterior completo R$ 8.950 (gabarito correto pro mês ANTERIOR) nunca é lida como receita do mês ATUAL — mas um valor plantado ERRADO pro mês atual continua pegando ❌", () => {
+  const gabarito: StatementGabarito = {
+    ...FULL_GABARITO,
+    currentMonthRevenue: 5560,
+    knownServiceNames: [],
+  };
+  // "R$ 8.950" vem depois de "mês anterior completo" — marcador mais próximo é "previous", nunca
+  // confere contra o gabarito do mês ATUAL (nenhum ❌ por essa frase sozinha).
+  const semErro = checkStatements("No mês anterior completo, a receita foi de R$ 8.950.", gabarito);
+  assert.equal(semErro.mismatches.filter((m) => m.label === "receita do mês atual").length, 0);
+
+  // mas um valor ERRADO explicitamente atribuído ao mês ATUAL continua reprovando normalmente.
+  const comErro = checkStatements(
+    "Este mês a receita foi de R$ 8.950, bem diferente do esperado.",
+    gabarito,
+  );
+  const mismatch = comErro.mismatches.find((m) => m.label === "receita do mês atual");
+  assert.ok(mismatch, "deveria ter marcado ❌ pra receita do mês atual");
+  assert.equal(mismatch!.said, 8950);
+  assert.equal(mismatch!.expected, 5560);
+});
+
+test("checkServiceAttendanceLeaderClaims: sem marcador de período, sem nome de serviço conhecido ou sem o critério 'em atendimentos' nunca afirma nada (nunca adivinha)", () => {
+  assert.equal(
+    checkServiceAttendanceLeaderClaims(
+      "O campeão em atendimentos é bem conhecido por aqui.",
+      SERVICE_LEADER_GABARITO.serviceTopByAttendances,
+      SERVICE_LEADER_GABARITO.knownServiceNames,
+    ).checked,
+    0,
+  );
+  assert.equal(
+    checkServiceAttendanceLeaderClaims(
+      "Volume Russo foi o serviço mais pedido este mês.",
+      SERVICE_LEADER_GABARITO.serviceTopByAttendances,
+      SERVICE_LEADER_GABARITO.knownServiceNames,
+    ).checked,
+    0,
+  );
+  assert.equal(
+    checkServiceAttendanceLeaderClaims(
+      "Nos últimos 90 dias, o campeão em atendimentos superou as expectativas.",
+      SERVICE_LEADER_GABARITO.serviceTopByAttendances,
+      SERVICE_LEADER_GABARITO.knownServiceNames,
+    ).checked,
+    0,
+  );
 });

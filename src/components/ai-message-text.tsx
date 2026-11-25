@@ -6,14 +6,19 @@
 import { Fragment } from "react";
 import { parseAiMessage, type AiInline } from "@/components/parse-ai-message";
 
+// FASE IA-10 (item 3) — *itálico* (asterisco único, nunca _underscore_) agora também é reconhecido
+// por parseAiMessage (ver parse-ai-message.ts) — renderizado como <em>, mesmo padrão de <strong> pro
+// negrito (nó de texto React simples, nunca dangerouslySetInnerHTML).
 function renderInline(inlines: AiInline[], keyPrefix: string) {
-  return inlines.map((inline, idx) =>
-    inline.type === "bold" ? (
-      <strong key={`${keyPrefix}-b${idx}`}>{inline.value}</strong>
-    ) : (
-      <Fragment key={`${keyPrefix}-t${idx}`}>{inline.value}</Fragment>
-    ),
-  );
+  return inlines.map((inline, idx) => {
+    if (inline.type === "bold") {
+      return <strong key={`${keyPrefix}-b${idx}`}>{inline.value}</strong>;
+    }
+    if (inline.type === "italic") {
+      return <em key={`${keyPrefix}-i${idx}`}>{inline.value}</em>;
+    }
+    return <Fragment key={`${keyPrefix}-t${idx}`}>{inline.value}</Fragment>;
+  });
 }
 
 /** Mantenha o estilo de fonte/alinhamento no componente PAI (ex.: o balão do chat) — este componente

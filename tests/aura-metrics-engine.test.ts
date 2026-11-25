@@ -3,7 +3,7 @@
 // "not_configured" do engine.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { serviceBreakdown } from "../src/lib/aura-metrics/service-breakdown.ts";
+import { serviceBreakdown, topByAttendances } from "../src/lib/aura-metrics/service-breakdown.ts";
 import { ticketAverages } from "../src/lib/aura-metrics/ticket.ts";
 import { opsRates } from "../src/lib/aura-metrics/ops.ts";
 import { dayOccupancy, hasAnyConfiguredDay } from "../src/lib/aura-metrics/occupancy.ts";
@@ -301,6 +301,172 @@ test("buildMetricsBlock: vanishingClientsTotal é insufficient_data (nunca 0 fin
   assert.equal(block.vanishingClients.state, "insufficient_data");
   assert.equal(block.vanishingClientsTotal.state, "insufficient_data");
   assert.equal(block.vanishingClientsTotal.value, null);
+});
+
+// FASE IA-10 (item 1a) — rodada 9: a IA tratou o 1º item da lista (ordenada por RECEITA) como "o
+// serviço com mais atendimentos" — errado. topByAttendances() é a função pura por trás do campo
+// aditivo correspondente no motor (testado via buildMetricsBlock abaixo).
+test("topByAttendances: escolhe o serviço com MAIS atendimentos, nunca o 1º por receita", () => {
+  const rows = serviceBreakdown([
+    appt({ clientId: "c1", startsAt: d(2026, 11, 1), serviceName: "Volume Russo", price: 300 }),
+    appt({ clientId: "c2", startsAt: d(2026, 11, 2), serviceName: "Volume Russo", price: 300 }),
+    appt({ clientId: "c3", startsAt: d(2026, 11, 3), serviceName: "Fio a Fio", price: 100 }),
+    appt({ clientId: "c4", startsAt: d(2026, 11, 4), serviceName: "Fio a Fio", price: 100 }),
+    appt({ clientId: "c5", startsAt: d(2026, 11, 5), serviceName: "Fio a Fio", price: 100 }),
+  ]);
+  // ranking por receita: Volume Russo (600) na frente de Fio a Fio (300) — mas Fio a Fio tem mais
+  // atendimentos (3 > 2).
+  assert.equal(rows[0].serviceName, "Volume Russo");
+  const top = topByAttendances(rows);
+  assert.deepEqual(top, { serviceName: "Fio a Fio", count: 3, revenue: 300 });
+});
+
+test("topByAttendances: empate em atendimentos resolvido pela MAIOR receita", () => {
+  const rows = serviceBreakdown([
+    appt({ clientId: "c1", startsAt: d(2026, 11, 1), serviceName: "A", price: 50 }),
+    appt({ clientId: "c2", startsAt: d(2026, 11, 2), serviceName: "A", price: 50 }),
+    appt({ clientId: "c3", startsAt: d(2026, 11, 3), serviceName: "B", price: 90 }),
+    appt({ clientId: "c4", startsAt: d(2026, 11, 4), serviceName: "B", price: 90 }),
+  ]);
+  const top = topByAttendances(rows);
+  assert.deepEqual(top, { serviceName: "B", count: 2, revenue: 180 });
+});
+
+test("topByAttendances: lista vazia devolve null (nunca um objeto fingido)", () => {
+  assert.equal(topByAttendances([]), null);
+});
+
+test("buildMetricsBlock: serviceBreakdownLast90DaysTopByAttendances aponta o serviço com MAIS atendimentos — caso real da rodada 9 (Volume Brasileiro 34 vs Volume Russo 29, que lidera a receita)", () => {
+  const now = d(2026, 11, 23);
+  const appointments: AppointmentForMetrics[] = [];
+  for (let i = 0; i < 34; i++) {
+    appointments.push(
+      appt({
+        clientId: `vb-${i}`,
+        startsAt: new Date(now.getTime() - i * 86_400_000),
+        serviceName: "Volume Brasileiro",
+        price: 150,
+      }),
+    );
+  }
+  for (let i = 0; i < 29; i++) {
+    appointments.push(
+      appt({
+        clientId: `vr-${i}`,
+        startsAt: new Date(now.getTime() - i * 86_400_000),
+        serviceName: "Volume Russo",
+        price: 180,
+      }),
+    );
+  }
+  const block = buildMetricsBlock({
+    appointments,
+    clients: [],
+    transactions: [],
+    products: [],
+    businessHours: null,
+    now,
+  });
+
+  // Ranking por RECEITA (serviceBreakdown, intocado): Volume Russo (29*180=5220) na frente de Volume
+  // Brasileiro (34*150=5100) — exatamente a inversão real que confundiu a IA na rodada 9.
+  assert.equal(block.serviceBreakdownLast90Days.value![0].serviceName, "Volume Russo");
+  assert.equal(block.serviceBreakdownLast90Days.value![0].revenue, 5220);
+  assert.equal(block.serviceBreakdownLast90Days.value![1].serviceName, "Volume Brasileiro");
+  assert.equal(block.serviceBreakdownLast90Days.value![1].revenue, 5100);
+
+  assert.equal(block.serviceBreakdownLast90DaysTopByAttendances.state, "ok");
+  assert.deepEqual(block.serviceBreakdownLast90DaysTopByAttendances.value, {
+    serviceName: "Volume Brasileiro",
+    count: 34,
+    revenue: 5100,
+  });
+});
+
+test("buildMetricsBlock: serviceBreakdownCurrentMonthTopByAttendances — mês atual, Volume Brasileiro 11 atendimentos (R$ 1.650) vs Volume Russo 9 atendimentos de maior receita (R$ 2.700)", () => {
+  const now = d(2026, 11, 23);
+  const appointments: AppointmentForMetrics[] = [];
+  for (let i = 0; i < 11; i++) {
+    appointments.push(
+      appt({
+        clientId: `vb-${i}`,
+        startsAt: d(2026, 11, 1 + i),
+        serviceName: "Volume Brasileiro",
+        price: 150,
+      }),
+    );
+  }
+  for (let i = 0; i < 9; i++) {
+    appointments.push(
+      appt({
+        clientId: `vr-${i}`,
+        startsAt: d(2026, 11, 1 + i),
+        serviceName: "Volume Russo",
+        price: 300,
+      }),
+    );
+  }
+  const block = buildMetricsBlock({
+    appointments,
+    clients: [],
+    transactions: [],
+    products: [],
+    businessHours: null,
+    now,
+  });
+
+  assert.equal(block.serviceBreakdownCurrentMonth.value![0].serviceName, "Volume Russo");
+  assert.equal(block.serviceBreakdownCurrentMonth.value![0].revenue, 2700);
+
+  assert.deepEqual(block.serviceBreakdownCurrentMonthTopByAttendances.value, {
+    serviceName: "Volume Brasileiro",
+    count: 11,
+    revenue: 1650,
+  });
+});
+
+test("buildMetricsBlock: topByAttendances espelha o MESMO MetricState da lista base (insufficient_data/not_configured, nunca 'ok' fingido)", () => {
+  const now = d(2026, 11, 23);
+  const block = buildMetricsBlock({
+    appointments: [],
+    clients: [],
+    transactions: [],
+    products: [],
+    businessHours: null,
+    now,
+  });
+  assert.equal(block.serviceBreakdownCurrentMonth.state, "insufficient_data");
+  assert.equal(block.serviceBreakdownCurrentMonthTopByAttendances.state, "insufficient_data");
+  assert.equal(block.serviceBreakdownCurrentMonthTopByAttendances.value, null);
+});
+
+// FASE IA-10 (item 1a) — regressão: o ranking por receita (serviceBreakdown, chamado de dentro do
+// motor) continua EXATAMENTE igual — prova que o campo novo é puramente aditivo, nunca reordena nem
+// recalcula a lista existente.
+test("buildMetricsBlock: ranking de serviços por receita continua idêntico ao chamar serviceBreakdown() direto — topByAttendances é só um campo aditivo a mais", () => {
+  const now = d(2026, 11, 23);
+  const appointments = [
+    appt({ clientId: "c1", startsAt: d(2026, 11, 5), serviceName: "Volume Russo", price: 300 }),
+    appt({ clientId: "c2", startsAt: d(2026, 11, 6), serviceName: "Volume Russo", price: 300 }),
+    appt({ clientId: "c3", startsAt: d(2026, 11, 7), serviceName: "Fio a Fio", price: 100 }),
+  ];
+  const block = buildMetricsBlock({
+    appointments,
+    clients: [],
+    transactions: [],
+    products: [],
+    businessHours: null,
+    now,
+  });
+  const expectedRows = serviceBreakdown(appointments);
+  assert.deepEqual(block.serviceBreakdownCurrentMonth.value, expectedRows);
+  assert.deepEqual(block.serviceBreakdownLast90Days.value, expectedRows);
+  // as 3 chaves novas existem (aditivas) sem nunca substituir/remover as já existentes.
+  assert.ok("serviceBreakdownCurrentMonthTopByAttendances" in block);
+  assert.ok("serviceBreakdownPreviousMonthTopByAttendances" in block);
+  assert.ok("serviceBreakdownLast90DaysTopByAttendances" in block);
+  assert.ok("serviceBreakdownCurrentMonth" in block);
+  assert.ok("serviceBreakdownCurrentMonthTotal" in block);
 });
 
 test("buildMetricsBlock: cada métrica tem id e definition não vazios", () => {

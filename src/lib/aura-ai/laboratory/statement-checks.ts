@@ -22,6 +22,14 @@ function stripMarkdown(text: string): string {
   return text.replace(/[*_`]/g, "");
 }
 
+/** FASE IA-10 (item 1c) — serviço com MAIS atendimentos por período (topByAttendances do motor) —
+ * null quando o gabarito não tem esse dado para aquele período (lista vazia/insufficient_data). */
+export interface ServiceAttendanceLeaderGabarito {
+  currentMonth: { serviceName: string; count: number } | null;
+  previousMonth: { serviceName: string; count: number } | null;
+  last90Days: { serviceName: string; count: number } | null;
+}
+
 export interface StatementGabarito {
   /** vanishing_clients_total — null quando o gabarito não tem esse dado (estado != "ok"). */
   vanishingClientsTotal: number | null;
@@ -33,12 +41,19 @@ export interface StatementGabarito {
   opsCompletedCurrentMonth: number | null;
   /** revenue_comparison.currentMonthRevenue */
   currentMonthRevenue: number | null;
+  /** FASE IA-10 (item 1c) — topByAttendances dos 3 períodos (ver service-breakdown.ts). */
+  serviceTopByAttendances: ServiceAttendanceLeaderGabarito;
+  /** FASE IA-10 (item 1c) — todo nome de serviço distinto que aparece em QUALQUER um dos 3 rankings
+   * (mês atual/anterior/90 dias) — usado pra achar qual serviço o texto citou como "líder em
+   * atendimentos", mesmo quando é o nome ERRADO (ex.: citou Volume Russo quando o certo era Volume
+   * Brasileiro). */
+  knownServiceNames: string[];
 }
 
 export interface StatementMismatch {
   label: string;
-  said: number;
-  expected: number;
+  said: number | string;
+  expected: number | string;
 }
 
 export interface StatementCheckResult {
@@ -52,14 +67,6 @@ export interface StatementCheckResult {
 const CURRENT_MONTH_CONTEXT_RE =
   /este\s+m[eê]s|neste\s+m[eê]s|m[eê]s\s+atual|m[eê]s\s+corrente|at[ée]\s+hoje/i;
 const PREVIOUS_MONTH_CONTEXT_RE = /m[eê]s\s+anterior|m[eê]s\s+passado/i;
-
-/** Janela de texto em volta de um match (pra decidir contexto "mês atual" vs. "mês anterior" sem
- * depender só da MESMA frase — cobre "X deixaram de agendar este mês, contra Y no mês anterior"). */
-function windowAround(text: string, index: number, matchLength: number, radius = 60): string {
-  const start = Math.max(0, index - radius);
-  const end = Math.min(text.length, index + matchLength + radius);
-  return text.slice(start, end);
-}
 
 // FASE IA-6 (item 5d) — divide o texto em SENTENÇAS (";" e ponto final de frase — o ponto só conta
 // como fim de frase quando seguido de espaço/fim do texto, pra nunca quebrar "R$ 1.234,56" no meio).
@@ -198,33 +205,155 @@ function parseMoneyBR(raw: string): number | null {
 // confiar na tolerância "por acaso" do Number() com um ponto solto no final.
 const MONEY_RE = /r\$\s*([\d.,]*\d)/gi;
 
-// FASE IA-6 (item 5c) — falso ❌ real: "receita do mês atual: IA disse 149.17, gabarito 5370" — 149,17
-// era o TICKET por cliente, citado perto de "mês atual" na mesma resposta, não a receita. Ignora
-// qualquer "R$" cujo contexto IMEDIATO (até 50 caracteres antes, não a janela ampla de ±60 usada pro
-// mês) contenha uma dessas palavras — ticket/despesa/custo são outras métricas; "mês anterior" é o
-// mês errado mesmo que a janela ampla também contenha "mês atual" em outro lugar da frase.
-const REVENUE_EXCLUDE_RE =
-  /ticket|por\s+cliente|por\s+atendimento|por\s+visita|despesa|custo|m[eê]s\s+anterior/i;
+/** Nomes mais longos primeiro — evita "Volume" bater antes de "Volume Russo" quando os dois
+ * aparecem no texto (nenhum id/nome do estúdio hoje é prefixo de outro, mas a ordem é defensiva).
+ * Usado tanto por extractCurrentMonthRevenue (exclusão por nome de serviço, FASE IA-10 item 4) quanto
+ * por checkServiceAttendanceLeaderClaims (FASE IA-10 item 1c). */
+function findMentionedService(sentence: string, knownNames: string[]): string | null {
+  const sorted = [...knownNames].sort((a, b) => b.length - a.length);
+  for (const name of sorted) {
+    if (sentence.includes(name)) return name;
+  }
+  return null;
+}
 
-/** (d) receita do mês atual (R$) — só quando a frase/janela ao redor menciona "mês atual"/"este
- * mês"/"até hoje" E NÃO menciona "mês anterior" (evita confundir com a receita do mês anterior, que
- * aparece lado a lado na mesma resposta com frequência), e o contexto imediato antes do "R$" não é
- * ticket/despesa/custo (ver REVENUE_EXCLUDE_RE). */
-export function extractCurrentMonthRevenue(text: string): number | null {
-  const clean = stripMarkdown(text);
-  for (const m of clean.matchAll(MONEY_RE)) {
+// FASE IA-6 (item 5c) / FASE IA-10 (item 4) — falso ❌ real (rodada 6): "receita do mês atual: IA
+// disse 149.17, gabarito 5370" — 149,17 era o TICKET por cliente, citado perto de "mês atual" na
+// mesma resposta, não a receita. GENERALIZADO na FASE IA-10: dois falsos ❌ reais da rodada 9 ("IA
+// disse 1650, gabarito 5560" — 1650 era a receita de UM SERVIÇO específico, citada numa frase que
+// começava com "O serviço com mais saída é..."; "IA disse 8590, gabarito 5560" — 8590 era a receita
+// do MÊS ANTERIOR, lida como se fosse do mês atual) mostraram que a checagem só nos 50 caracteres
+// IMEDIATAMENTE antes do "R$" não bastava — "serviço"/nome de serviço podia aparecer bem no início da
+// frase, longe do valor. Agora a exclusão vale pra FRASE INTEIRA (nunca só os 50 chars antes).
+const REVENUE_EXCLUDE_CLAUSE_RE =
+  /ticket|servi[çc]o|por\s+cliente|por\s+atendimento|por\s+visita|despesa|custo/i;
+
+interface PeriodMarkerMatch {
+  index: number;
+  isCurrent: boolean;
+}
+
+// "mês anterior até hoje"/"mês anterior até o mesmo dia" é uma referência ao MÊS ANTERIOR (contado
+// até hoje — ver gabarito.ts: "Receita mês anterior até o mesmo dia"), nunca ao mês atual, mesmo
+// contendo "até hoje" literalmente. Sem este caso especial, "A receita do mês anterior até hoje foi
+// de R$ 200." criaria um marcador "atual" (o mais próximo do valor) e devolveria 200 como receita do
+// MÊS ATUAL — errado.
+const AT_SAME_DAY_RE = /at[ée]\s+(?:hoje|o\s+mesmo\s+dia)/i;
+
+/** Todo marcador de período ("mês atual"/"este mês"/"até hoje" OU "mês anterior"/"mês passado") que
+ * aparece na cláusula, com a posição de cada ocorrência — pra achar o MAIS PRÓXIMO antes de um valor
+ * específico (ver nearestPrecedingMarker), nunca só "existe algum marcador na janela". */
+function findPeriodMarkers(clause: string): PeriodMarkerMatch[] {
+  const markers: PeriodMarkerMatch[] = [];
+  for (const m of clause.matchAll(new RegExp(CURRENT_MONTH_CONTEXT_RE.source, "gi"))) {
     const idx = m.index ?? 0;
-    const immediateContext = clean.slice(Math.max(0, idx - 50), idx);
-    if (REVENUE_EXCLUDE_RE.test(immediateContext)) continue;
-    const window = windowAround(clean, idx, m[0].length);
-    const isCurrent = CURRENT_MONTH_CONTEXT_RE.test(window);
-    const isPrevious = PREVIOUS_MONTH_CONTEXT_RE.test(window);
-    if (isCurrent && !isPrevious) {
+    if (AT_SAME_DAY_RE.test(m[0])) {
+      const before = clause.slice(Math.max(0, idx - 25), idx);
+      if (PREVIOUS_MONTH_CONTEXT_RE.test(before)) continue; // "mês anterior até hoje" — é previous.
+    }
+    markers.push({ index: idx, isCurrent: true });
+  }
+  for (const m of clause.matchAll(new RegExp(PREVIOUS_MONTH_CONTEXT_RE.source, "gi"))) {
+    markers.push({ index: m.index ?? 0, isCurrent: false });
+  }
+  return markers;
+}
+
+/** O marcador de período MAIS PRÓXIMO ANTES do índice dado (nunca depois, nunca o mais distante) —
+ * null quando nenhum marcador precede o valor nessa cláusula (nunca adivinha). */
+function nearestPrecedingMarker(
+  markers: PeriodMarkerMatch[],
+  index: number,
+): PeriodMarkerMatch | null {
+  let best: PeriodMarkerMatch | null = null;
+  for (const marker of markers) {
+    if (marker.index < index && (best === null || marker.index > best.index)) {
+      best = marker;
+    }
+  }
+  return best;
+}
+
+/** (d) receita do mês atual (R$) — FASE IA-10 (item 4): cada valor em R$ é atribuído ao marcador de
+ * período MAIS PRÓXIMO ANTES dele NA MESMA CLÁUSULA (nunca a uma janela simétrica que podia
+ * atravessar pra cláusula seguinte/anterior — o marcador reinicia a cada ponto final/";", ver
+ * CLAUSE_SPLIT_RE); sem nenhum marcador antes dele na cláusula, o valor é ignorado (nunca adivinha).
+ * `knownServiceNames` (ver ServiceAttendanceLeaderGabarito) generaliza a exclusão por contexto: toda
+ * a cláusula é ignorada quando cita "ticket"/"serviço" ou o nome de um serviço do gabarito — nunca só
+ * os 50 caracteres imediatamente antes do valor. */
+export function extractCurrentMonthRevenue(
+  text: string,
+  knownServiceNames: string[] = [],
+): number | null {
+  const clean = stripMarkdown(text);
+  for (const clause of clean.split(CLAUSE_SPLIT_RE)) {
+    if (REVENUE_EXCLUDE_CLAUSE_RE.test(clause)) continue;
+    if (findMentionedService(clause, knownServiceNames)) continue;
+    const markers = findPeriodMarkers(clause);
+    for (const m of clause.matchAll(MONEY_RE)) {
+      const idx = m.index ?? 0;
+      const nearest = nearestPrecedingMarker(markers, idx);
+      if (!nearest || !nearest.isCurrent) continue;
       const value = parseMoneyBR(m[1]);
       if (value !== null) return value;
     }
   }
   return null;
+}
+
+// FASE IA-10 (item 1c) — rodada 9: "Nos últimos 90 dias, o campeão em atendimentos é o Volume
+// Russo, com 29 atendimentos e R$ 5.220" — ERRADO (Volume Brasileiro tinha 34; Volume Russo só lidera
+// a RECEITA). Detecta frases que afirmam um serviço como líder/campeão "EM ATENDIMENTOS" (nunca "em
+// receita" — essas são ignoradas aqui de propósito, ver regra 23 do system-prompt) e confere contra
+// topByAttendances do período citado.
+const SERVICE_LEADER_PHRASE_RE =
+  /campe[ãa]o|l[íi]der|lidera|mais\s+sa[íi]da|mais\s+atendimentos|mais\s+vendido/i;
+const ATTENDANCE_CRITERION_RE = /em\s+atendimentos/i;
+const LAST_90_DAYS_RE = /[úu]ltimos?\s+90\s+dias/i;
+
+const SERVICE_LEADER_PERIOD_LABEL: Record<keyof ServiceAttendanceLeaderGabarito, string> = {
+  currentMonth: "mês atual",
+  previousMonth: "mês anterior",
+  last90Days: "últimos 90 dias",
+};
+
+/** (f) serviço líder "EM ATENDIMENTOS" por período — nunca confere claims "em receita" (essas usam
+ * o ranking já exibido no bloco, não topByAttendances — ver regra 23 do system-prompt). Uma sentença
+ * sem marcador de período, sem o critério "em atendimentos" explícito, ou sem nenhum nome de serviço
+ * conhecido simplesmente não é contada (nunca adivinha). */
+export function checkServiceAttendanceLeaderClaims(
+  text: string,
+  gabarito: ServiceAttendanceLeaderGabarito,
+  knownServiceNames: string[],
+): StatementCheckResult {
+  const clean = stripMarkdown(text);
+  const mismatches: StatementMismatch[] = [];
+  let checked = 0;
+  for (const sentence of clean.split(CLAUSE_SPLIT_RE)) {
+    if (!SERVICE_LEADER_PHRASE_RE.test(sentence)) continue;
+    if (!ATTENDANCE_CRITERION_RE.test(sentence)) continue;
+    const period: keyof ServiceAttendanceLeaderGabarito | null = LAST_90_DAYS_RE.test(sentence)
+      ? "last90Days"
+      : PREVIOUS_MONTH_CONTEXT_RE.test(sentence)
+        ? "previousMonth"
+        : CURRENT_MONTH_CONTEXT_RE.test(sentence)
+          ? "currentMonth"
+          : null;
+    if (!period) continue;
+    const expected = gabarito[period];
+    if (!expected) continue;
+    const said = findMentionedService(sentence, knownServiceNames);
+    if (!said) continue;
+    checked++;
+    if (said !== expected.serviceName) {
+      mismatches.push({
+        label: `serviço líder em atendimentos (${SERVICE_LEADER_PERIOD_LABEL[period]})`,
+        said,
+        expected: expected.serviceName,
+      });
+    }
+  }
+  return { checked, mismatches };
 }
 
 /** Comparação EXATA (sem tolerância de 1/2%) — pedida explicitamente pra inteiros de contagem (a/b/c). */
@@ -304,13 +433,21 @@ export function checkStatements(text: string, gabarito: StatementGabarito): Stat
   if (
     compareApprox(
       "receita do mês atual",
-      extractCurrentMonthRevenue(text),
+      extractCurrentMonthRevenue(text, gabarito.knownServiceNames),
       gabarito.currentMonthRevenue,
       mismatches,
     )
   ) {
     checked++;
   }
+
+  const leaderCheck = checkServiceAttendanceLeaderClaims(
+    text,
+    gabarito.serviceTopByAttendances,
+    gabarito.knownServiceNames,
+  );
+  checked += leaderCheck.checked;
+  mismatches.push(...leaderCheck.mismatches);
 
   return { checked, mismatches };
 }

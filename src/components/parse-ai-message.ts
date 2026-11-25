@@ -11,7 +11,10 @@
 // Nunca interpreta HTML (nenhum dangerouslySetInnerHTML em nenhum lugar que consome isto) — todo
 // texto vira nó de texto React, então "<script>" nunca executa, só aparece como texto.
 
-export type AiInline = { type: "text"; value: string } | { type: "bold"; value: string };
+export type AiInline =
+  | { type: "text"; value: string }
+  | { type: "bold"; value: string }
+  | { type: "italic"; value: string };
 
 export type AiBlock =
   | { type: "paragraph"; lines: AiInline[][] }
@@ -37,17 +40,35 @@ function lineKind(line: string): LineKind {
 // nenhum estilo — satisfaz o item (f) sem precisar de um caso especial. Um marcador sem fechamento
 // ("**texto sem fechar") simplesmente não casa com o regex — o texto (asteriscos incluídos) segue
 // intacto como texto simples, nunca quebra e nunca desaparece.
-const BOLD_RE = /(\*\*|__)(.+?)\1/g;
+//
+// FASE IA-10 (item 3) — rodada 9: o chat escreveu uma mensagem de exemplo em *itálico* com asterisco
+// SIMPLES (`*"Oi! Sentimos sua falta..."*`) — antes disso só **negrito**/__negrito__ eram entendidos,
+// então o asterisco aparecia literal. Acrescentado: grupo 2 do alternation abaixo reconhece
+// *itálico* (asterisco único) — NUNCA _itálico_ (underscore, que continua reservado só pro negrito
+// __duplo__, por pedido explícito da fase). A ordem do alternation importa: "\*\*"/"__" (negrito) vem
+// ANTES de "\*" (itálico) — numa posição com "**", o regex tenta o 1º ramo primeiro e sempre bate
+// (preferência correta, sem precisar de lookahead extra). O itálico exige que o conteúdo não comece
+// nem termine em espaço, nem contenha outro "*" (evita casar "R$ 5.370 * 2" — multiplicação solta,
+// sem fechamento — ou atravessar dois asteriscos não relacionados) — e os lookbehind/lookahead
+// "(?<!\*)"/"(?!\*)" nos marcadores garantem que um "*" de "**" nunca é lido como abertura/fechamento
+// de itálico sozinho. Uma lista com marcador de asterisco ("* item") nunca chega aqui: a linha já foi
+// consumida por BULLET_RE/lineKind ANTES de parseInline rodar — só o conteúdo depois do "* " chega
+// nesta função, nunca o marcador em si.
+const BOLD_OR_ITALIC_RE = /(\*\*|__)(.+?)\1|(?<!\*)\*(?!\*)([^\s*](?:[^*]*[^\s*])?)\*(?!\*)/g;
 
 function parseInline(line: string): AiInline[] {
   const result: AiInline[] = [];
   let lastIndex = 0;
-  for (const match of line.matchAll(BOLD_RE)) {
+  for (const match of line.matchAll(BOLD_OR_ITALIC_RE)) {
     const start = match.index ?? 0;
     if (start > lastIndex) {
       result.push({ type: "text", value: line.slice(lastIndex, start) });
     }
-    result.push({ type: "bold", value: match[2] });
+    if (match[2] !== undefined) {
+      result.push({ type: "bold", value: match[2] });
+    } else {
+      result.push({ type: "italic", value: match[3] });
+    }
     lastIndex = start + match[0].length;
   }
   if (lastIndex < line.length) {

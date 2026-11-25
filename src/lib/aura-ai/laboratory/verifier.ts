@@ -258,3 +258,42 @@ export function detectsInventedMoneyOrPercent(text: string, allowed: Set<number>
   }
   return false;
 }
+
+// FASE IA-10 (item 5d) — a comparação A/B do Conselho no Laboratório flagrou "R$ 123,55" citado
+// quando o gabarito era "R$ 123,56" — a tolerância GENÉRICA de checkCitedNumbers/
+// detectsInventedMoneyOrPercent (1 absoluto OU 2% relativo) é apropriada pra contagens/percentuais,
+// mas é generosa demais pra DINHEIRO: um valor de R$ errado por 50 centavos passaria batido pela
+// mesma tolerância de "1 absoluto". checkCitedMoneyCents é mais estrito, só pra valores em R$: exato
+// (diferença 0) nunca aparece em nenhuma das duas listas; diferença de até 1 centavo (arredondamento
+// de ponto flutuante) vira um AVISO (centWarnings — "⚠️ diferença de 1 centavo", nunca ❌); qualquer
+// diferença MAIOR que 1 centavo vira mismatch (❌) — mesmo que a tolerância genérica (1 absoluto)
+// deixasse passar.
+export interface MoneyCentCheckResult {
+  /** Valores em R$ com diferença MAIOR que 1 centavo contra o gabarito — ❌ de verdade. */
+  mismatches: number[];
+  /** Valores em R$ com diferença de ATÉ 1 centavo (arredondamento) — ⚠️, nunca ❌. */
+  centWarnings: number[];
+}
+
+const MONEY_ONLY_RE = /R\$\s*[\d.,]+/gi;
+const CENT_TOLERANCE = 0.01 + 1e-9;
+
+export function checkCitedMoneyCents(text: string, allowed: Set<number>): MoneyCentCheckResult {
+  const tokens = text.match(MONEY_ONLY_RE) ?? [];
+  const allowedArr = Array.from(allowed);
+  const mismatches: number[] = [];
+  const centWarnings: number[] = [];
+  for (const token of tokens) {
+    for (const n of extractNumbersFromText(token)) {
+      let minDiff = Infinity;
+      for (const a of allowedArr) {
+        const diff = Math.abs(a - n);
+        if (diff < minDiff) minDiff = diff;
+      }
+      if (minDiff < 1e-9) continue; // valor exato — nem aviso, nem mismatch.
+      if (minDiff <= CENT_TOLERANCE) centWarnings.push(n);
+      else mismatches.push(n);
+    }
+  }
+  return { mismatches, centWarnings };
+}

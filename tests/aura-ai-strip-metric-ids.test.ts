@@ -101,6 +101,106 @@ function collectIds(block: Record<string, unknown>): string[] {
   return ids;
 }
 
+// --- FASE IA-10 (item 2a) — "id: texto" dentro de parênteses (mantém o resto) ---
+
+test("stripMetricIds (IA-10 2a): '(id: texto, id2: texto)' remove só os prefixos 'id:', mantém o resto — caso real da rodada 9", () => {
+  assert.equal(
+    stripMetricIds(
+      "Sua agenda de hoje está livre (today_appointments: 0 atendimentos, occupancy_today: 0%).",
+    ),
+    "Sua agenda de hoje está livre (0 atendimentos, 0%).",
+  );
+});
+
+test("stripMetricIds (IA-10 2a): um único 'id: texto' dentro do parêntese", () => {
+  assert.equal(
+    stripMetricIds("O estoque está ok (low_stock: nenhum produto abaixo do mínimo)."),
+    "O estoque está ok (nenhum produto abaixo do mínimo).",
+  );
+});
+
+// --- FASE IA-10 (item 2b) — parêntese que só sobra enchimento depois de remover o id ---
+
+test("stripMetricIds (IA-10 2b): '(ex.: id)' remove o parêntese INTEIRO (enchimento 'ex.:' + id) — caso real da rodada 9", () => {
+  assert.equal(
+    stripMetricIds(
+      "Os dados que tenho são de serviços realizados (ex.: service_breakdown_current_month), não de produtos.",
+    ),
+    "Os dados que tenho são de serviços realizados, não de produtos.",
+  );
+});
+
+test("stripMetricIds (IA-10 2b): '(por exemplo, id)' e '(como id)' também removem o parêntese inteiro", () => {
+  assert.equal(
+    stripMetricIds("Veja o relatório (por exemplo, revenue_comparison) pra mais detalhes."),
+    "Veja o relatório pra mais detalhes.",
+  );
+  assert.equal(
+    stripMetricIds("Confira uma métrica (como ops_current_month) se quiser."),
+    "Confira uma métrica se quiser.",
+  );
+});
+
+// --- FASE IA-10 (item 2c) — id SOLTO em texto corrido (fora de parênteses/crase) ---
+
+test("stripMetricIds (IA-10 2c): artigo simples 'o id' → frase amigável (descarta o artigo original) — caso real da rodada 9", () => {
+  assert.equal(
+    stripMetricIds("Olhe de novo o revenue_comparison e o ops_current_month em 4 semanas."),
+    "Olhe de novo a receita e as despesas e os atendimentos do mês em 4 semanas.",
+  );
+});
+
+test("stripMetricIds (IA-10 2c): 'acompanhe o stopped_booking_this_month' — caso real da rodada 9 (Conselho)", () => {
+  assert.equal(
+    stripMetricIds("Acompanhe o stopped_booking_this_month para ver se melhora."),
+    "Acompanhe as clientes que deixaram de agendar para ver se melhora.",
+  );
+});
+
+test("stripMetricIds (IA-10 2c): contração 'no id' recompõe o artigo pelo gênero/número da FRASE (nunca do id) — caso real da rodada 9", () => {
+  assert.equal(stripMetricIds("Olhe no ops_current_month."), "Olhe nos atendimentos do mês.");
+});
+
+test("stripMetricIds (IA-10 2c): contração 'do id' (fem./plural) recompõe para 'das'", () => {
+  assert.equal(
+    stripMetricIds("Isso vem do stopped_booking_this_month."),
+    "Isso vem das clientes que deixaram de agendar.",
+  );
+});
+
+test("stripMetricIds (IA-10 2c): id solto SEM nenhum artigo antes também vira a frase amigável", () => {
+  assert.equal(
+    stripMetricIds("revenue_comparison mostra isso bem."),
+    "a receita e as despesas mostra isso bem.",
+  );
+});
+
+test("stripMetricIds (IA-10 2c): id solto dentro de um parêntese MISTURADO continua intocado (continua só parênteses/crase 'puros')", () => {
+  const text = "Olha os detalhes (o revenue_comparison, calculado hoje de manhã).";
+  assert.equal(stripMetricIds(text), text);
+});
+
+test("stripMetricIds: cobre TODO id de METRIC_IDS na tabela de frases amigáveis (nunca diverge em silêncio)", () => {
+  for (const id of METRIC_IDS) {
+    const result = stripMetricIds(`Veja ${id} para saber mais.`);
+    assert.notEqual(result, `Veja ${id} para saber mais.`, `id "${id}" não tem frase amigável`);
+    assert.doesNotMatch(result, new RegExp(id), `id "${id}" não foi substituído por completo`);
+  }
+});
+
+test("stripMetricIds: idempotente mesmo com as novas formas (2a/2b/2c) — aplicar duas vezes dá o mesmo resultado", () => {
+  const texts = [
+    "Sua agenda de hoje está livre (today_appointments: 0 atendimentos, occupancy_today: 0%).",
+    "Os dados que tenho são de serviços realizados (ex.: service_breakdown_current_month), não de produtos.",
+    "Olhe de novo o revenue_comparison e o ops_current_month em 4 semanas.",
+    "Olhe no ops_current_month.",
+  ];
+  for (const text of texts) {
+    const once = stripMetricIds(text);
+    assert.equal(stripMetricIds(once), once);
+  }
+});
+
 test("METRIC_IDS: cobre todo id que buildMetricsBlock produz de verdade (nunca diverge em silêncio)", () => {
   const now = new Date("2026-11-25T12:00:00Z");
   const data = generateFakeStudio(now);

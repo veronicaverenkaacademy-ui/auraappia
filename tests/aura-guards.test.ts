@@ -206,12 +206,12 @@ test("GUARDA: LAB_BUILD_TAG é uma constante exportada e não-vazia", async () =
   assert.ok(LAB_BUILD_TAG.length > 0);
 });
 
-// FASE IA-9 (item 7) — esta fase tocou o Laboratório de novo (nova seção Conselho, verifier.ts,
-// lab-thinking-mode.ts, questions.ts) — a etiqueta precisa ter avançado pra "IA-9" (atualização à
-// mão, ver comentário em build-tag.ts).
-test("GUARDA: LAB_BUILD_TAG está em 'IA-9' nesta fase", async () => {
+// FASE IA-10 (item 6) — esta fase tocou o Laboratório de novo (comparação A/B do Conselho,
+// statement-checks.ts, verifier.ts, strip-metric-ids.ts) — a etiqueta precisa ter avançado pra
+// "IA-10" (atualização à mão, ver comentário em build-tag.ts).
+test("GUARDA: LAB_BUILD_TAG está em 'IA-10' nesta fase", async () => {
   const { LAB_BUILD_TAG } = await import("../src/lib/aura-ai/laboratory/build-tag.ts");
-  assert.equal(LAB_BUILD_TAG, "IA-9");
+  assert.equal(LAB_BUILD_TAG, "IA-10");
 });
 
 test("GUARDA: a tela do Laboratório importa LAB_BUILD_TAG e renderiza o aviso de divergência tela/servidor", () => {
@@ -314,6 +314,43 @@ test("GUARDA: pickLabModel e a resolução de thinkingMode usam as variáveis AU
   assert.match(src, /AURA_LAB_ANTHROPIC_COUNCIL_MODEL/);
   assert.match(src, /AURA_LAB_ANTHROPIC_COUNCIL_THINKING/);
   assert.match(src, /parseLabAnthropicThinkingModeForTask\(\s*\n?\s*"council"/);
+});
+
+// FASE IA-10 (item 5c) — mesma garantia de serverBuildTag em TODO retorno, agora pra
+// runLabCouncilCompareQuestion (comparação A/B do Conselho).
+test("GUARDA: runLabCouncilCompareQuestion devolve serverBuildTag em TODO caminho de retorno (fonte)", () => {
+  const src = readFileSync(
+    new URL("../src/lib/aura-ai/laboratory/laboratory.functions.ts", import.meta.url),
+    "utf8",
+  );
+  const start = src.indexOf("export const runLabCouncilCompareQuestion");
+  assert.ok(start > -1, "runLabCouncilCompareQuestion não encontrada");
+  const nextExport = src.indexOf("export const", start + 1);
+  const body = src.slice(start, nextExport > -1 ? nextExport : undefined);
+  const returns = body.match(/return\s*\{[\s\S]*?\};/g) ?? [];
+  assert.ok(returns.length >= 5, "runLabCouncilCompareQuestion deveria ter pelo menos 5 retornos");
+  for (const ret of returns) {
+    assert.match(ret, /serverBuildTag:\s*LAB_BUILD_TAG/);
+  }
+});
+
+// FASE IA-10 (item 5c) — a comparação A/B também exercita o MESMO caminho de produção
+// (runCouncilCore) e nunca toca o texto do AURA_COUNCIL_SYSTEM_PROMPT, nem usa pickLabModel/
+// AURA_LAB_ANTHROPIC_COUNCIL_* (essas continuam só pra runLabCouncilQuestion) — o modelo/raciocínio
+// vêm da config A/B fixa (councilCompareConfig), sobrescrevível por AURA_LAB_COUNCIL_COMPARE_*.
+test("GUARDA: runLabCouncilCompareQuestion usa runCouncilCore (núcleo compartilhado), skipStripMetricIds=true, e nunca altera AURA_COUNCIL_SYSTEM_PROMPT", () => {
+  const src = readFileSync(
+    new URL("../src/lib/aura-ai/laboratory/laboratory.functions.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(src, /AURA_LAB_COUNCIL_COMPARE_\$\{id\}_MODEL/);
+  assert.match(src, /AURA_LAB_COUNCIL_COMPARE_\$\{id\}_THINKING/);
+  const start = src.indexOf("export const runLabCouncilCompareQuestion");
+  const nextExport = src.indexOf("export const", start + 1);
+  const body = src.slice(start, nextExport > -1 ? nextExport : undefined);
+  assert.match(body, /runCouncilCore\(/);
+  assert.match(body, /skipStripMetricIds:\s*true/);
+  assert.match(body, /\$\{AURA_COUNCIL_SYSTEM_PROMPT\}\\n\\n\$\{contextBlockText\}/);
 });
 
 // FASE IA-3C (item 4) — a linha do provedor no texto "Copiar" tem que trazer tela= e servidor=,
@@ -459,6 +496,26 @@ test("GUARDA: regra 6 continua presente e ganhou a nota sobre ids removíveis do
   assert.match(src, /podem ser removidos do texto final/);
   assert.match(src, /nunca "Esses dados vêm de \(vanishing_clients\)\." como frase isolada/);
   // as 21 regras seguintes (7-22) continuam presentes, sem renumerar.
+  for (let n = 1; n <= 22; n++) {
+    assert.match(src, new RegExp(`${n}\\.\\s`), `regra ${n} deveria continuar presente`);
+  }
+});
+
+// FASE IA-10 (item 1b) — rodada 9: "qual serviço mais tem saída" respondeu com o 1º item da lista
+// (ordenada por RECEITA) como se fosse o de MAIS ATENDIMENTOS — errado. Regra 23 ACRESCENTADA (as 22
+// anteriores continuam exatamente como estavam, sem renumerar).
+test("GUARDA: regra 23 ('mais saída' = mais atendimentos, usa topByAttendances, nunca o 1º item da lista por receita) está presente, sem renumerar as 22 anteriores", () => {
+  const src = readFileSync(new URL("../src/lib/aura-ai/system-prompt.ts", import.meta.url), "utf8");
+  assert.match(
+    src,
+    /23\.\s*"Mais saída"\/"mais vendido"\/"campeão" de um serviço significa o serviço com MAIS ATENDIMENTOS/,
+  );
+  assert.match(src, /topByAttendances/);
+  assert.match(src, /service_breakdown_current_month_top_by_attendances/);
+  assert.match(src, /service_breakdown_previous_month_top_by_attendances/);
+  assert.match(src, /service_breakdown_last_90_days_top_by_attendances/);
+  assert.match(src, /NUNCA trate o primeiro item dessa lista como o serviço com mais atendimentos/);
+  assert.match(src, /cite os dois, nunca escolha só um como "o" líder/);
   for (let n = 1; n <= 22; n++) {
     assert.match(src, new RegExp(`${n}\\.\\s`), `regra ${n} deveria continuar presente`);
   }
