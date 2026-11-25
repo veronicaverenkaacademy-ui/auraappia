@@ -13,7 +13,7 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   getLabStatus,
   runLabQuestion,
-  runLabCouncilQuestion,
+  runLabCouncilCompareQuestion,
   listLabAvailableModels,
   type LabStatusResult,
   type RunLabQuestionResult,
@@ -22,6 +22,7 @@ import {
   type LabProviderId,
   type LabQuestionResult,
   type LabCouncilResult,
+  type CouncilCompareConfigId,
 } from "@/lib/aura-ai/laboratory/laboratory.functions";
 import {
   LAB_ALL_ITEMS,
@@ -247,52 +248,78 @@ function resultToText(
 // FASE IA-9 (item 6) — o Conselho NUNCA tinha sido testado no Laboratório (só chat e relatório
 // semanal, desde a FASE IA-1); evidência real em produção mostrou 2 perguntas diferentes caindo no
 // MESMO fallback disfarçado. Esta seção roda as 2 perguntas fixas de LAB_COUNCIL_QUESTIONS pelo MESMO
-// caminho de produção (runLabCouncilQuestion -> runCouncilCore, núcleo compartilhado com askCouncil —
-// ver council-core.ts), nunca duplicando a lógica.
+// caminho de produção (runCouncilCore, núcleo compartilhado com askCouncil — ver council-core.ts),
+// nunca duplicando a lógica.
+//
+// FASE IA-10 (item 5c) — a rodada 9 só comparava provedor x provedor (Anthropic x Google); agora
+// compara DUAS configurações Anthropic FIXAS lado a lado (A: claude-haiku-5-5/low, o que a produção
+// usa hoje por padrão; B: claude-sonnet-5-5/default — ver runLabCouncilCompareQuestion), pra ver se
+// um modelo maior/com raciocínio normal evita as falhas de JSON e os desvios reais da rodada 9.
 
-interface CouncilItemRun {
+const COUNCIL_COMPARE_CONFIGS: CouncilCompareConfigId[] = ["A", "B"];
+const COUNCIL_COMPARE_LABEL: Record<CouncilCompareConfigId, string> = {
+  A: "Config A (padrão: claude-haiku-5-5 / low)",
+  B: "Config B (padrão: claude-sonnet-5-5 / default)",
+};
+
+interface CouncilCompareItemRun {
   status: "idle" | "loading" | "done";
   data?: RunLabCouncilQuestionResult;
 }
 
-function councilResultsFor(
-  provider: LabProviderId,
-  councilRuns: Record<string, CouncilItemRun>,
-): LabCouncilResult[] {
-  return LAB_COUNCIL_QUESTIONS.map((q) => councilRuns[keyFor(provider, q.id)]?.data?.result).filter(
-    (r): r is LabCouncilResult => Boolean(r),
-  );
+function councilCompareKeyFor(config: CouncilCompareConfigId, councilQuestionId: string): string {
+  return `${config}:${councilQuestionId}`;
 }
 
-/** Custo total da rodada do Conselho pro provedor (soma dos 2, null se qualquer um não for
- * estimável) — "inclua o custo no total da rodada" (item 6 da fase). */
-function councilTotalCost(results: LabCouncilResult[]): number | null {
+function councilCompareResultsFor(
+  config: CouncilCompareConfigId,
+  runs: Record<string, CouncilCompareItemRun>,
+): LabCouncilResult[] {
+  return LAB_COUNCIL_QUESTIONS.map(
+    (q) => runs[councilCompareKeyFor(config, q.id)]?.data?.result,
+  ).filter((r): r is LabCouncilResult => Boolean(r));
+}
+
+/** Custo total da rodada do Conselho pra config (soma dos 2, null se qualquer um não for estimável)
+ * — "inclua o custo no total da rodada" (item 6 da FASE IA-9, mantido na comparação A/B). */
+function councilCompareTotalCost(results: LabCouncilResult[]): number | null {
   return results.reduce<number | null>((acc, r) => {
     if (acc === null || r.costUSD === null) return null;
     return acc + r.costUSD;
   }, 0);
 }
 
-/** "contagem de falhas de JSON da rodada" (item 6 da fase) — uma pergunta conta como falha quando as
- * 2 tentativas do parser falharam (acceptedOnAttempt null, ver council-core.ts), nunca quando só a
- * 1ª falhou e a retentativa funcionou. */
-function councilJsonFailures(results: LabCouncilResult[]): number {
+/** "contagem de falhas de JSON da rodada" — uma pergunta conta como falha quando as 2 tentativas do
+ * parser falharam (acceptedOnAttempt null, ver council-core.ts), nunca quando só a 1ª falhou e a
+ * retentativa funcionou. */
+function councilCompareJsonFailures(results: LabCouncilResult[]): number {
   return results.filter((r) => r.acceptedOnAttempt === null && !r.error).length;
 }
 
-function councilResultToText(
-  provider: LabProviderId,
-  councilRuns: Record<string, CouncilItemRun>,
+/** FASE IA-10 (item 5a) — uma linha por tentativa: aceita/falhou + motivo, stop_reason, comprimento
+ * do texto, se começa com "{", tokens de saída/raciocínio, custo e latência DAQUELA tentativa. */
+function councilAttemptLine(a: LabCouncilResult["attempts"][number]): string {
+  return (
+    `  tentativa ${a.attempt}: ${a.accepted ? "✅ aceita" : `❌ falhou (${a.parseFailureReason ?? "?"})`}` +
+    ` stop_reason=${a.stopReason ?? "?"} comprimento_texto=${a.textLength} começa_com_chave=${a.startsWithBrace ? "sim" : "não"}` +
+    ` tokens_out=${a.outputTokens}${a.reasoningTokens > 0 ? ` raciocínio_tokens=${a.reasoningTokens}` : ""}` +
+    ` custo=${a.costUSD !== null ? `US$ ${a.costUSD.toFixed(5)}` : "?"} latência=${a.latencyMs}ms`
+  );
+}
+
+function councilCompareResultToText(
+  config: CouncilCompareConfigId,
+  runs: Record<string, CouncilCompareItemRun>,
   serverBuildTag: string | undefined,
 ): string {
-  const results = councilResultsFor(provider, councilRuns);
+  const results = councilCompareResultsFor(config, runs);
   const model = results.find((r) => r.model)?.model;
   const thinkingMode = results.find((r) => r.thinkingMode)?.thinkingMode;
-  const jsonFailures = councilJsonFailures(results);
-  const totalCost = councilTotalCost(results);
+  const jsonFailures = councilCompareJsonFailures(results);
+  const totalCost = councilCompareTotalCost(results);
 
   const lines: string[] = [
-    `=== CONSELHO — ${PROVIDER_LABEL[provider].toUpperCase()} (modelo: ${model ?? "sem modelo"} · raciocínio: ${thinkingMode ?? "n/d"}) tela=${LAB_BUILD_TAG} servidor=${serverBuildTag ?? "n/d"} falhas_json_rodada=${jsonFailures} custo_total=${totalCost !== null ? `US$ ${totalCost.toFixed(5)}` : "?"} ===`,
+    `=== CONSELHO — ${COUNCIL_COMPARE_LABEL[config]} (modelo: ${model ?? "sem modelo"} · raciocínio: ${thinkingMode ?? "n/d"}) tela=${LAB_BUILD_TAG} servidor=${serverBuildTag ?? "n/d"} falhas_json_rodada=${jsonFailures} custo_total=${totalCost !== null ? `US$ ${totalCost.toFixed(5)}` : "?"} ===`,
   ];
 
   for (const r of results) {
@@ -301,9 +328,13 @@ function councilResultToText(
       lines.push(`[erro] ${r.error}`);
       continue;
     }
+    lines.push(`modelo=${r.model} raciocínio=${r.thinkingMode}`);
+    lines.push("tentativas:");
+    for (const a of r.attempts) lines.push(councilAttemptLine(a));
+    // FASE IA-10 (item 5b) — custo/latência da PERGUNTA = SOMA das tentativas feitas (nunca só a
+    // última, que era o comportamento da rodada 9).
     lines.push(
-      `modelo=${r.model} raciocínio=${r.thinkingMode} latência=${r.latencyMs}ms tokens_in=${r.inputTokens} tokens_out=${r.outputTokens}` +
-        `${r.reasoningTokens > 0 ? ` raciocínio_tokens=${r.reasoningTokens}` : ""} custo=${r.costUSD ?? "?"} stop_reason=${r.stopReason ?? "?"}`,
+      `total da pergunta (soma das tentativas): custo=${r.costUSD !== null ? `US$ ${r.costUSD.toFixed(5)}` : "?"} latência=${r.latencyMs}ms`,
     );
     lines.push(
       r.acceptedOnAttempt !== null
@@ -311,11 +342,24 @@ function councilResultToText(
         : "⚠️ JSON NUNCA aceito nas 2 tentativas (fallback honesto devolvido)",
     );
     lines.push(`(a) JSON válido: ${r.jsonValid ? "✅" : "❌"}`);
-    lines.push(
-      r.unmatchedNumbers.length === 0
-        ? `(b) ✅ ${r.citedNumbersTotal} número(s) conferem com o gabarito`
-        : `(b) ❌ não encontrados no gabarito: ${r.unmatchedNumbers.join(", ")}`,
-    );
+    if (r.unmatchedNumbers.length === 0 && r.moneyMismatches.length === 0) {
+      lines.push(`(b) ✅ ${r.citedNumbersTotal} número(s) conferem com o gabarito`);
+    } else {
+      if (r.unmatchedNumbers.length > 0) {
+        lines.push(`(b) ❌ não encontrados no gabarito: ${r.unmatchedNumbers.join(", ")}`);
+      }
+      if (r.moneyMismatches.length > 0) {
+        lines.push(
+          `(b) ❌ valor em R$ errado (diferença maior que 1 centavo do gabarito): ${r.moneyMismatches.join(", ")}`,
+        );
+      }
+    }
+    // FASE IA-10 (item 5d) — diferença de 1 centavo é um AVISO, nunca ❌ (ver checkCitedMoneyCents).
+    if (r.moneyCentWarnings.length > 0) {
+      lines.push(
+        `(b) ⚠️ diferença de 1 centavo (arredondamento): ${r.moneyCentWarnings.join(", ")}`,
+      );
+    }
     if (r.leakedFieldNames.length === 0 && r.leakedLabelFragments.length === 0) {
       lines.push("(c) ✅ nenhum vazamento bruto de campo/rótulo interno");
     } else {
@@ -347,15 +391,17 @@ function councilResultToText(
 function Laboratorio() {
   const fetchStatus = useServerFn(getLabStatus);
   const runQuestion = useServerFn(runLabQuestion);
-  const runCouncilQuestion = useServerFn(runLabCouncilQuestion);
+  const runCouncilCompareQuestion = useServerFn(runLabCouncilCompareQuestion);
   const listModels = useServerFn(listLabAvailableModels);
 
   const [status, setStatus] = useState<LabStatusResult | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [runs, setRuns] = useState<Record<string, ItemRun>>({});
-  const [councilRuns, setCouncilRuns] = useState<Record<string, CouncilItemRun>>({});
+  const [councilCompareRuns, setCouncilCompareRuns] = useState<
+    Record<string, CouncilCompareItemRun>
+  >({});
   const [running, setRunning] = useState(false);
-  const [councilRunning, setCouncilRunning] = useState(false);
+  const [councilCompareRunning, setCouncilCompareRunning] = useState(false);
   const [modelsResult, setModelsResult] = useState<
     Record<LabProviderId, ListLabModelsResult | null>
   >({
@@ -410,30 +456,34 @@ function Laboratorio() {
     setRunning(false);
   }
 
-  async function runCouncilOne(provider: LabProviderId, councilQuestionId: string) {
-    const key = keyFor(provider, councilQuestionId);
-    setCouncilRuns((prev) => ({ ...prev, [key]: { status: "loading" } }));
+  async function runCouncilCompareOne(config: CouncilCompareConfigId, councilQuestionId: string) {
+    const key = councilCompareKeyFor(config, councilQuestionId);
+    setCouncilCompareRuns((prev) => ({ ...prev, [key]: { status: "loading" } }));
     try {
-      const data = await runCouncilQuestion({ data: { providerId: provider, councilQuestionId } });
-      setCouncilRuns((prev) => ({ ...prev, [key]: { status: "done", data } }));
+      const data = await runCouncilCompareQuestion({
+        data: { compareConfig: config, councilQuestionId },
+      });
+      setCouncilCompareRuns((prev) => ({ ...prev, [key]: { status: "done", data } }));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Falha ao rodar a pergunta do Conselho.");
-      setCouncilRuns((prev) => ({ ...prev, [key]: { status: "idle" } }));
+      setCouncilCompareRuns((prev) => ({ ...prev, [key]: { status: "idle" } }));
     }
   }
 
-  async function runCouncilProviderSequence(provider: LabProviderId) {
-    if (!status?.providers[provider]) return;
+  async function runCouncilCompareConfigSequence(config: CouncilCompareConfigId) {
+    // As 2 configs (A/B) são sempre Anthropic (ver councilCompareConfig em laboratory.functions.ts).
+    if (!status?.providers.anthropic) return;
     for (const q of LAB_COUNCIL_QUESTIONS) {
-      await runCouncilOne(provider, q.id);
+      await runCouncilCompareOne(config, q.id);
     }
   }
 
-  async function runCouncilAll() {
-    setCouncilRunning(true);
-    setCouncilRuns({});
-    await Promise.all(PROVIDERS.map((p) => runCouncilProviderSequence(p)));
-    setCouncilRunning(false);
+  async function runCouncilCompareAll() {
+    setCouncilCompareRunning(true);
+    setCouncilCompareRuns({});
+    // No máximo 2 chamadas em voo ao mesmo tempo: uma sequência por config, as duas em paralelo.
+    await Promise.all(COUNCIL_COMPARE_CONFIGS.map((c) => runCouncilCompareConfigSequence(c)));
+    setCouncilCompareRunning(false);
   }
 
   async function loadModels(provider: LabProviderId) {
@@ -464,11 +514,11 @@ function Laboratorio() {
     );
   }
 
-  function copyCouncilProvider(provider: LabProviderId) {
+  function copyCouncilCompare(config: CouncilCompareConfigId) {
     const serverBuildTag = LAB_COUNCIL_QUESTIONS.map(
-      (q) => councilRuns[keyFor(provider, q.id)]?.data?.serverBuildTag,
+      (q) => councilCompareRuns[councilCompareKeyFor(config, q.id)]?.data?.serverBuildTag,
     ).find(Boolean);
-    const text = councilResultToText(provider, councilRuns, serverBuildTag);
+    const text = councilCompareResultToText(config, councilCompareRuns, serverBuildTag);
     navigator.clipboard.writeText(text).then(
       () => toast.success("Copiado."),
       () => toast.error("Não foi possível copiar."),
@@ -540,28 +590,31 @@ function Laboratorio() {
       {/* FASE IA-9 (item 6) — seção "Conselho": o Conselho nunca tinha sido testado aqui (só chat e
           relatório semanal, desde a FASE IA-1) — evidência real em produção mostrou falha silenciosa
           (fallback disfarçado de recomendação real). Roda as 2 perguntas fixas pelo MESMO caminho de
-          produção (runLabCouncilQuestion -> runCouncilCore, núcleo compartilhado com askCouncil). */}
+          produção (runCouncilCore, núcleo compartilhado com askCouncil).
+          FASE IA-10 (item 5c) — agora compara DUAS configurações Anthropic fixas lado a lado (A:
+          claude-haiku-5-5/low; B: claude-sonnet-5-5/default), em vez de provedor x provedor. */}
       <div>
         <h2 className="text-lg font-display font-medium">Conselho</h2>
         <p className="text-sm text-muted-foreground mt-1">
           Exercita o mesmo caminho de produção do Conselho Executivo (askCouncil) com 2 perguntas
-          fixas — nunca testado aqui antes desta fase.
+          fixas, comparando 2 configurações Anthropic lado a lado (A: claude-haiku-5-5/low — o que a
+          produção usa hoje por padrão; B: claude-sonnet-5-5/default).
         </p>
       </div>
 
-      <Button onClick={runCouncilAll} disabled={councilRunning}>
-        {councilRunning ? "Rodando…" : "Rodar Conselho"}
+      <Button onClick={runCouncilCompareAll} disabled={councilCompareRunning}>
+        {councilCompareRunning ? "Rodando…" : "Rodar Conselho (comparação A/B)"}
       </Button>
 
       <div className="grid md:grid-cols-2 gap-4">
-        {PROVIDERS.map((provider) => (
-          <CouncilColumnView
-            key={provider}
-            provider={provider}
-            configured={status?.providers[provider] ?? false}
-            councilRuns={councilRuns}
-            onRunItem={(councilQuestionId) => runCouncilOne(provider, councilQuestionId)}
-            onCopy={() => copyCouncilProvider(provider)}
+        {COUNCIL_COMPARE_CONFIGS.map((config) => (
+          <CouncilCompareColumnView
+            key={config}
+            config={config}
+            configured={status?.providers.anthropic ?? false}
+            councilCompareRuns={councilCompareRuns}
+            onRunItem={(councilQuestionId) => runCouncilCompareOne(config, councilQuestionId)}
+            onCopy={() => copyCouncilCompare(config)}
           />
         ))}
       </div>
@@ -772,36 +825,37 @@ function QuestionResultView({
   );
 }
 
-// FASE IA-9 (item 6) — componentes da seção "Conselho" (ver councilResultToText acima).
+// FASE IA-9 (item 6) / FASE IA-10 (item 5c) — componentes da seção "Conselho" (ver
+// councilCompareResultToText acima) — comparação A/B em vez de provedor x provedor.
 
-function CouncilColumnView({
-  provider,
+function CouncilCompareColumnView({
+  config,
   configured,
-  councilRuns,
+  councilCompareRuns,
   onRunItem,
   onCopy,
 }: {
-  provider: LabProviderId;
+  config: CouncilCompareConfigId;
   configured: boolean;
-  councilRuns: Record<string, CouncilItemRun>;
+  councilCompareRuns: Record<string, CouncilCompareItemRun>;
   onRunItem: (councilQuestionId: string) => void;
   onCopy: () => void;
 }) {
   const itemRuns = LAB_COUNCIL_QUESTIONS.map((q) => ({
     item: q,
-    run: councilRuns[keyFor(provider, q.id)],
+    run: councilCompareRuns[councilCompareKeyFor(config, q.id)],
   }));
   const doneCount = itemRuns.filter(({ run }) => run?.status === "done").length;
-  const results = councilResultsFor(provider, councilRuns);
+  const results = councilCompareResultsFor(config, councilCompareRuns);
   const model = results.find((r) => r.model)?.model;
   const thinkingMode = results.find((r) => r.thinkingMode)?.thinkingMode;
-  const jsonFailures = councilJsonFailures(results);
-  const totalCost = councilTotalCost(results);
+  const jsonFailures = councilCompareJsonFailures(results);
+  const totalCost = councilCompareTotalCost(results);
 
   if (!configured) {
     return (
       <div className="rounded-2xl border border-border p-5">
-        <h3 className="font-semibold">{PROVIDER_LABEL[provider]}</h3>
+        <h3 className="font-semibold">{COUNCIL_COMPARE_LABEL[config]}</h3>
         <p className="text-sm text-muted-foreground mt-2">Chave não configurada.</p>
       </div>
     );
@@ -811,7 +865,7 @@ function CouncilColumnView({
     <div className="rounded-2xl border border-border p-5 space-y-4">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <h3 className="font-semibold">{PROVIDER_LABEL[provider]}</h3>
+          <h3 className="font-semibold">{COUNCIL_COMPARE_LABEL[config]}</h3>
           <p className="text-xs text-muted-foreground">
             modelo: {model ?? "—"} (raciocínio: {thinkingMode ?? "—"}) · {doneCount}/
             {LAB_COUNCIL_QUESTIONS.length}
@@ -825,7 +879,7 @@ function CouncilColumnView({
 
       <div className="space-y-3">
         {itemRuns.map(({ item, run }) => (
-          <CouncilQuestionResultView
+          <CouncilCompareQuestionResultView
             key={item.id}
             label={item.label}
             run={run}
@@ -843,13 +897,13 @@ function CouncilColumnView({
   );
 }
 
-function CouncilQuestionResultView({
+function CouncilCompareQuestionResultView({
   label,
   run,
   onRun,
 }: {
   label: string;
-  run: CouncilItemRun | undefined;
+  run: CouncilCompareItemRun | undefined;
   onRun: () => void;
 }) {
   const r = run?.data?.result;
@@ -888,21 +942,48 @@ function CouncilQuestionResultView({
                   : "⚠️ JSON não aceito nas 2 tentativas — fallback honesto devolvido"}
                 {" · "}status={r.status} · {r.perspectivesCount} perspectiva(s)
               </div>
+              {/* FASE IA-10 (item 5a) — diagnóstico de CADA tentativa (nunca só a última). */}
+              <div className="text-[11px] text-muted-foreground mt-1 space-y-0.5">
+                {r.attempts.map((a) => (
+                  <div key={a.attempt}>
+                    tentativa {a.attempt}: {a.accepted ? "✅ aceita" : "❌ falhou"}
+                    {!a.accepted && a.parseFailureReason ? ` (${a.parseFailureReason})` : ""}
+                    {" · "}stop={a.stopReason ?? "?"} · texto={a.textLength}
+                    {a.startsWithBrace ? " (começa com {)" : ""} · tokens_out={a.outputTokens}
+                    {a.reasoningTokens > 0 ? ` (+${a.reasoningTokens} raciocínio)` : ""} ·{" "}
+                    {a.costUSD !== null ? `US$ ${a.costUSD.toFixed(5)}` : "custo não estimável"} ·{" "}
+                    {a.latencyMs}ms
+                  </div>
+                ))}
+              </div>
               <p className="text-sm mt-1 whitespace-pre-wrap">{r.recommendation}</p>
               {r.whatToMeasure && (
                 <p className="text-xs text-muted-foreground mt-1">
                   O que medir depois: {r.whatToMeasure}
                 </p>
               )}
+              {/* FASE IA-10 (item 5b) — total da PERGUNTA = soma das tentativas (nunca só a última). */}
               <div className="text-[11px] text-muted-foreground mt-1">
-                {r.latencyMs}ms · {r.inputTokens}/{r.outputTokens} tokens
+                total: {r.latencyMs}ms · {r.inputTokens}/{r.outputTokens} tokens
                 {r.reasoningTokens > 0 ? ` (+${r.reasoningTokens} raciocínio)` : ""} ·{" "}
                 {r.costUSD !== null ? `US$ ${r.costUSD.toFixed(5)}` : "custo não estimável"}
                 {r.stopReason ? ` · stop=${r.stopReason}` : ""}
               </div>
               {r.unmatchedNumbers.length > 0 && (
                 <div className="text-[11px] text-destructive mt-1">
-                  ⚠️ (b) possível número inventado: {r.unmatchedNumbers.join(", ")}
+                  ❌ (b) não encontrado(s) no gabarito: {r.unmatchedNumbers.join(", ")}
+                </div>
+              )}
+              {/* FASE IA-10 (item 5d) — valor em R$ mais estrito: diferença de 1 centavo é aviso,
+                  nunca ❌; diferença maior é ❌ mesmo quando a tolerância genérica deixaria passar. */}
+              {r.moneyMismatches.length > 0 && (
+                <div className="text-[11px] text-destructive mt-1">
+                  ❌ (b) valor em R$ errado: {r.moneyMismatches.join(", ")}
+                </div>
+              )}
+              {r.moneyCentWarnings.length > 0 && (
+                <div className="text-[11px] text-amber-600 mt-1">
+                  ⚠️ (b) diferença de 1 centavo: {r.moneyCentWarnings.join(", ")}
                 </div>
               )}
               {(r.leakedFieldNames.length > 0 || r.leakedLabelFragments.length > 0) && (

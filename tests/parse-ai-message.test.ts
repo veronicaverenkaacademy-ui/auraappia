@@ -235,3 +235,92 @@ test("parseAiMessage: um único '*' isolado (sem par) nunca é tratado como marc
     { type: "paragraph", lines: [[{ type: "text", value: text }]] },
   ]);
 });
+
+// --- FASE IA-10 (item 3) — *itálico* com asterisco SIMPLES (nunca _underscore_) ---
+
+// Frase real da rodada 9 (mensagem de exemplo em itálico com asterisco simples) — antes desta fase
+// o asterisco aparecia literal, porque só **/__ eram entendidos.
+test("parseAiMessage (IA-10): frase real da rodada 9 — *itálico* com asterisco simples vira AiInline italic", () => {
+  const text = '*"Oi! Sentimos sua falta. Ainda tenho horário essa semana..."*';
+  assert.deepEqual(parseAiMessage(text), [
+    {
+      type: "paragraph",
+      lines: [
+        [{ type: "italic", value: '"Oi! Sentimos sua falta. Ainda tenho horário essa semana..."' }],
+      ],
+    },
+  ]);
+});
+
+test("parseAiMessage (IA-10): itálico dentro de item numerado JUNTO com negrito, na mesma linha", () => {
+  const text = "1. **Quem:** a cliente recorrente — mande algo *rápido e simpático* hoje.";
+  assert.deepEqual(parseAiMessage(text), [
+    {
+      type: "numbered-list",
+      items: [
+        {
+          number: 1,
+          inlines: [
+            { type: "bold", value: "Quem:" },
+            { type: "text", value: " a cliente recorrente — mande algo " },
+            { type: "italic", value: "rápido e simpático" },
+            { type: "text", value: " hoje." },
+          ],
+        },
+      ],
+    },
+  ]);
+});
+
+test("parseAiMessage (IA-10): 'R$ 5.370 * 2' (multiplicação, asterisco solto com espaços) nunca é lido como itálico", () => {
+  const text = "O cálculo foi R$ 5.370 * 2 pra chegar nesse total.";
+  assert.deepEqual(parseAiMessage(text), [
+    { type: "paragraph", lines: [[{ type: "text", value: text }]] },
+  ]);
+});
+
+test("parseAiMessage (IA-10): lista com marcador de asterisco ('* item') continua intacta — nunca interpretada como itálico", () => {
+  assert.deepEqual(parseAiMessage("* primeiro item\n* segundo item"), [
+    {
+      type: "bullet-list",
+      items: [
+        [{ type: "text", value: "primeiro item" }],
+        [{ type: "text", value: "segundo item" }],
+      ],
+    },
+  ]);
+});
+
+test("parseAiMessage (IA-10): _itálico_ (underscore) NUNCA é interpretado como itálico — underscore continua reservado só pro negrito __duplo__", () => {
+  const text = "Isso é _importante_ pra você.";
+  assert.deepEqual(parseAiMessage(text), [
+    { type: "paragraph", lines: [[{ type: "text", value: text }]] },
+  ]);
+});
+
+test("parseAiMessage (IA-10): '*' sem fechamento (itálico desbalanceado) nunca quebra nem some — sai intacto", () => {
+  const text = "Isso é *itálico sem fechar e continua normal.";
+  assert.deepEqual(parseAiMessage(text), [
+    { type: "paragraph", lines: [[{ type: "text", value: text }]] },
+  ]);
+});
+
+test("parseAiMessage (IA-10): conteúdo colado nas bordas do asterisco ('*texto*') funciona, mas com espaço colado na borda NÃO vira itálico", () => {
+  assert.deepEqual(parseAiMessage("Confira *isso aqui* com atenção."), [
+    {
+      type: "paragraph",
+      lines: [
+        [
+          { type: "text", value: "Confira " },
+          { type: "italic", value: "isso aqui" },
+          { type: "text", value: " com atenção." },
+        ],
+      ],
+    },
+  ]);
+  // "* isso*" (espaço colado logo depois do "*" de abertura) nunca vira itálico.
+  const comEspacoNaBorda = "Confira * isso* com atenção.";
+  assert.deepEqual(parseAiMessage(comEspacoNaBorda), [
+    { type: "paragraph", lines: [[{ type: "text", value: comEspacoNaBorda }]] },
+  ]);
+});

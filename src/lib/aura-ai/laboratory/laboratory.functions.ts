@@ -45,6 +45,7 @@ import {
   checkTrapHandling,
   detectsPromisedResultOrFuturePrediction,
   detectsInventedMoneyOrPercent,
+  checkCitedMoneyCents,
 } from "./verifier";
 import {
   runCouncilCore,
@@ -401,12 +402,29 @@ export const runLabQuestion = createServerFn({ method: "POST" })
     const allowedNumbers = buildAllowedNumbers(gabarito.structured);
     // FASE IA-5 (item 2) — gabarito por AFIRMAÇÃO, direto do bloco (nunca do texto da IA); .value já
     // vem null quando o estado não é "ok" (ver types.ts), então não precisa checar state aqui.
+    // FASE IA-10 (item 1c) — topByAttendances dos 3 períodos (ver service-breakdown.ts) + todo nome
+    // de serviço distinto nos 3 rankings (pra achar qual serviço o texto citou, mesmo errado).
+    const knownServiceNames = Array.from(
+      new Set(
+        [
+          ...(block.serviceBreakdownCurrentMonth.value ?? []),
+          ...(block.serviceBreakdownPreviousMonth.value ?? []),
+          ...(block.serviceBreakdownLast90Days.value ?? []),
+        ].map((row) => row.serviceName),
+      ),
+    );
     const statementGabarito: StatementGabarito = {
       vanishingClientsTotal: block.vanishingClientsTotal.value,
       stoppedBookingCurrentMonth: block.stoppedBookingThisMonth.value?.currentMonthCount ?? null,
       stoppedBookingPreviousMonth: block.stoppedBookingThisMonth.value?.previousMonthCount ?? null,
       opsCompletedCurrentMonth: block.opsCurrentMonth.value?.completed ?? null,
       currentMonthRevenue: block.revenue.value?.currentMonthRevenue ?? null,
+      serviceTopByAttendances: {
+        currentMonth: block.serviceBreakdownCurrentMonthTopByAttendances.value,
+        previousMonth: block.serviceBreakdownPreviousMonthTopByAttendances.value,
+        last90Days: block.serviceBreakdownLast90DaysTopByAttendances.value,
+      },
+      knownServiceNames,
     };
     // FASE IA-2 (item A.1) — o relatório semanal precisa de mais espaço que o chat padrão; a regra
     // extra só entra quando a tarefa é "weekly_report" (ver AURA_WEEKLY_REPORT_LENGTH_RULE).
@@ -498,6 +516,49 @@ export const listLabAvailableModels = createServerFn({ method: "POST" })
     }
   });
 
+// FASE IA-10 (item 5c) — comparação A/B do Conselho: a rodada 9 só tinha UM modelo configurável pro
+// Conselho no Laboratório (AURA_LAB_ANTHROPIC_COUNCIL_MODEL/THINKING, abaixo — CONTINUAM existindo e
+// valendo pra função da seção seguinte, sem nenhuma mudança). A função de comparação (definida mais
+// abaixo, depois da função da seção seguinte) roda cada pergunta em DUAS configurações Anthropic
+// FIXAS lado a lado — A (claude-haiku-5-5/low, o que a produção usa hoje por padrão) e B
+// (claude-sonnet-5-5/default, pra comparar se um modelo maior/com raciocínio normal evita as falhas
+// de JSON e os desvios da rodada 9) — sobrescrevíveis por AURA_LAB_COUNCIL_COMPARE_A_MODEL/
+// _A_THINKING/_B_MODEL/_B_THINKING. Definido AQUI, antes da seção seguinte, de propósito — nunca
+// entre a função dessa seção e o próximo export — só por segurança da guarda estática de
+// tests/aura-guards.test.ts, que corta exatamente esse intervalo (e por isso este comentário evita
+// escrever o nome completo da função por extenso, pra não ser confundido com a declaração real).
+export type CouncilCompareConfigId = "A" | "B";
+
+interface CouncilCompareConfigValue {
+  model: string;
+  thinking: "default" | "disabled" | "low";
+}
+
+const COUNCIL_COMPARE_DEFAULTS: Record<CouncilCompareConfigId, CouncilCompareConfigValue> = {
+  A: { model: "claude-haiku-5-5", thinking: "low" },
+  B: { model: "claude-sonnet-5-5", thinking: "default" },
+};
+
+function parseThinkingLiteral(
+  raw: string | undefined,
+  fallback: "default" | "disabled" | "low",
+): "default" | "disabled" | "low" {
+  return raw === "default" || raw === "disabled" || raw === "low" ? raw : fallback;
+}
+
+/** Resolve a config A/B fixa (modelo + raciocínio), sobrescrevível por env — nunca cai pra
+ * pickLabModel/AURA_LAB_ANTHROPIC_COUNCIL_* (essas são só de runLabCouncilQuestion). */
+function councilCompareConfig(id: CouncilCompareConfigId): CouncilCompareConfigValue {
+  const def = COUNCIL_COMPARE_DEFAULTS[id];
+  return {
+    model: process.env[`AURA_LAB_COUNCIL_COMPARE_${id}_MODEL`] || def.model,
+    thinking: parseThinkingLiteral(
+      process.env[`AURA_LAB_COUNCIL_COMPARE_${id}_THINKING`],
+      def.thinking,
+    ),
+  };
+}
+
 // ---- runLabCouncilQuestion: seção "Conselho" do Laboratório (FASE IA-9, item 6) ----
 //
 // O Conselho NUNCA tinha sido testado no Laboratório (só chat e relatório semanal, desde a FASE
@@ -509,21 +570,42 @@ export const listLabAvailableModels = createServerFn({ method: "POST" })
 // nenhum registro de diagnóstico no servidor (o Laboratório devolve o motivo da falha de parse pra
 // tela, nunca escreve nada em log).
 
+// FASE IA-10 (item 5a) — diagnóstico de CADA tentativa (1, ou 1+2 quando a 1ª falhou o parse) — a
+// rodada 9 mostrou "JSON aceito na tentativa 2" nas duas perguntas sem nenhuma pista de POR QUE a
+// tentativa 1 falhou, e custo/latência só da última tentativa (nunca a soma das duas, ver item 5b).
+export interface LabCouncilAttemptView {
+  attempt: 1 | 2;
+  accepted: boolean;
+  parseFailureReason: string | null;
+  stopReason?: string;
+  textLength: number;
+  startsWithBrace: boolean;
+  outputTokens: number;
+  reasoningTokens: number;
+  costUSD: number | null;
+  latencyMs: number;
+}
+
 export interface LabCouncilResult {
   councilQuestionId: string;
   question: string;
   model: string;
   thinkingMode: string;
+  /** FASE IA-10 (item 5b) — SOMA da latência das tentativas feitas (1 ou 2) — antes só a última. */
   latencyMs: number;
   inputTokens: number;
   outputTokens: number;
   reasoningTokens: number;
+  /** FASE IA-10 (item 5b) — SOMA do custo das tentativas feitas (1 ou 2) — antes só a última; null
+   * se o custo de QUALQUER tentativa não for estimável. */
   costUSD: number | null;
   stopReason?: string;
   /** (a) + "tentativa em que o JSON foi aceito (1/2) ou falha" — null quando as duas tentativas
    * falharam (fallback honesto, ver council-core.ts). */
   acceptedOnAttempt: 1 | 2 | null;
   jsonValid: boolean;
+  /** FASE IA-10 (item 5a) — diagnóstico de CADA tentativa feita (ver LabCouncilAttemptView). */
+  attempts: LabCouncilAttemptView[];
   perspectivesCount: number;
   status: string;
   recommendation: string;
@@ -533,6 +615,11 @@ export interface LabCouncilResult {
    * que existem no gabarito — unmatchedNumbers é o que não bate (possível invenção). */
   citedNumbersTotal: number;
   unmatchedNumbers: number[];
+  /** FASE IA-10 (item 5d) — (b) mais estrito SÓ pra valores em R$: diferença de até 1 centavo vira
+   * aviso (nunca ❌); diferença maior vira mismatch — mesmo quando a tolerância genérica (1 absoluto)
+   * de unmatchedNumbers deixaria passar (ver checkCitedMoneyCents em verifier.ts). */
+  moneyMismatches: number[];
+  moneyCentWarnings: number[];
   /** (c) mesmo contador do chat — nome de campo interno / rótulo "Cliente N" que sobrou no texto
    * bruto depois de restoreClientNames, medido nos 3 campos do JSON (recommendation/whatToMeasure/
    * cada perspectives[].analysis) concatenados. */
@@ -574,6 +661,7 @@ function emptyCouncilResult(
     costUSD: null,
     acceptedOnAttempt: null,
     jsonValid: false,
+    attempts: [],
     perspectivesCount: 0,
     status: "atencao",
     recommendation: "",
@@ -581,6 +669,8 @@ function emptyCouncilResult(
     perspectives: [],
     citedNumbersTotal: 0,
     unmatchedNumbers: [],
+    moneyMismatches: [],
+    moneyCentWarnings: [],
     leakedFieldNames: [],
     leakedLabelFragments: [],
     promisedResultOrFuturePrediction: false,
@@ -615,20 +705,48 @@ function buildLabCouncilResult(
     : "";
   const afterRestore = restoreClientNames(rawConcat, labelMap, names);
   const { citedNumbers, unmatchedNumbers } = checkCitedNumbers(afterRestore, allowedNumbers);
+  const moneyCents = checkCitedMoneyCents(afterRestore, allowedNumbers);
+
+  // FASE IA-10 (item 5a/5b) — diagnóstico de CADA tentativa (nunca só a última) + custo/latência da
+  // pergunta = SOMA das tentativas feitas (1 ou 2) — a rodada 9 só mostrava a última tentativa, tanto
+  // no diagnóstico quanto no custo/latência somados da rodada.
+  const attempts: LabCouncilAttemptView[] = core.attempts.map((a) => {
+    const text = a.result.text ?? "";
+    return {
+      attempt: a.attempt,
+      accepted: a.accepted,
+      parseFailureReason: a.parseFailureReason,
+      stopReason: a.result.diagnostics?.stopReason,
+      textLength: text.length,
+      startsWithBrace: text.trimStart().startsWith("{"),
+      outputTokens: a.result.usage.outputTokens,
+      reasoningTokens: a.result.usage.reasoningOutputTokens ?? 0,
+      costUSD: estimateCostUSD(a.result.usage, provider, model),
+      latencyMs: a.result.latencyMs,
+    };
+  });
+  const latencyMs = attempts.reduce((sum, a) => sum + a.latencyMs, 0);
+  const inputTokens = core.attempts.reduce((sum, a) => sum + a.result.usage.inputTokens, 0);
+  const outputTokens = attempts.reduce((sum, a) => sum + a.outputTokens, 0);
+  const reasoningTokens = attempts.reduce((sum, a) => sum + a.reasoningTokens, 0);
+  const costUSD = attempts.some((a) => a.costUSD === null)
+    ? null
+    : attempts.reduce((sum, a) => sum + (a.costUSD ?? 0), 0);
 
   return {
     councilQuestionId: question.id,
     question: question.question,
     model,
     thinkingMode,
-    latencyMs: core.lastGenerateResult.latencyMs,
-    inputTokens: core.lastGenerateResult.usage.inputTokens,
-    outputTokens: core.lastGenerateResult.usage.outputTokens,
-    reasoningTokens: core.lastGenerateResult.usage.reasoningOutputTokens ?? 0,
-    costUSD: estimateCostUSD(core.lastGenerateResult.usage, provider, model),
+    latencyMs,
+    inputTokens,
+    outputTokens,
+    reasoningTokens,
+    costUSD,
     stopReason: core.lastGenerateResult.diagnostics?.stopReason,
     acceptedOnAttempt: core.acceptedOnAttempt,
     jsonValid: core.acceptedOnAttempt !== null,
+    attempts,
     perspectivesCount: core.perspectives.length,
     status: core.status,
     recommendation: core.recommendation,
@@ -636,6 +754,8 @@ function buildLabCouncilResult(
     perspectives: core.perspectives,
     citedNumbersTotal: citedNumbers.length,
     unmatchedNumbers,
+    moneyMismatches: moneyCents.mismatches,
+    moneyCentWarnings: moneyCents.centWarnings,
     leakedFieldNames: detectLeakedInternalFieldNames(afterRestore),
     leakedLabelFragments: afterRestore.match(/Clientes?\s+\d+/g) ?? [],
     promisedResultOrFuturePrediction: detectsPromisedResultOrFuturePrediction(afterRestore),
@@ -792,6 +912,132 @@ export const runLabCouncilQuestion = createServerFn({ method: "POST" })
         gabaritoText: gabarito.text,
         serverBuildTag: LAB_BUILD_TAG,
         thinkingMode,
+      };
+    }
+  });
+
+const RunLabCouncilCompareQuestionInput = z.object({
+  compareConfig: z.enum(["A", "B"]),
+  councilQuestionId: z.string().min(1),
+});
+
+// FASE IA-10 (item 5c) — comparação A/B do Conselho: ver o comentário completo (CouncilCompareConfigId
+// etc.) mais acima, logo antes da seção da função anterior — definido mais perto do topo do arquivo
+// de propósito, pra nunca ficar entre a declaração da função anterior e este export (a guarda
+// estática de tests/aura-guards.test.ts corta exatamente esse intervalo pra conferir os retornos da
+// função anterior; código extra ali quebraria essa suposição).
+export const runLabCouncilCompareQuestion = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => RunLabCouncilCompareQuestionInput.parse(input))
+  .handler(async ({ data, context }): Promise<RunLabCouncilQuestionResult> => {
+    await requireAuraAdmin(context.supabase, context.userId);
+    const { model, thinking } = councilCompareConfig(data.compareConfig);
+
+    const access = checkLabAccess(process.env.AURA_LAB_ALLOWED_EMAILS, emailFromContext(context));
+    if (!access.enabled) {
+      return {
+        enabled: false,
+        disabledReason: access.disabledReason,
+        configured: false,
+        serverBuildTag: LAB_BUILD_TAG,
+        thinkingMode: thinking,
+      };
+    }
+
+    const question = LAB_COUNCIL_QUESTIONS.find((q) => q.id === data.councilQuestionId);
+    if (!question) throw new Error("Pergunta do Conselho desconhecida.");
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return {
+        enabled: true,
+        configured: false,
+        serverBuildTag: LAB_BUILD_TAG,
+        thinkingMode: thinking,
+      };
+    }
+
+    try {
+      validateModelForProvider("anthropic", model);
+    } catch (e) {
+      return {
+        enabled: true,
+        configured: true,
+        model,
+        result: emptyCouncilResult(
+          question,
+          model,
+          e instanceof Error ? e.message : "Modelo inválido para este provedor.",
+        ),
+        serverBuildTag: LAB_BUILD_TAG,
+        thinkingMode: thinking,
+      };
+    }
+
+    const now = new Date();
+    const fake = generateFakeStudio(now);
+    const block = buildMetricsBlock({ ...fake, now });
+    const clientIds = (block.vanishingClients.value ?? []).map((c) => c.clientId);
+    const labelMap = buildClientLabelMap(clientIds);
+    const names = new Map(Array.from(fake.fakeNamesByClientId.entries()));
+    const pseudonymized = pseudonymizeClientIds(block, labelMap);
+    const contextBlockText = buildMetricsContextBlock(JSON.stringify(pseudonymized));
+    const gabarito = buildGabarito(block, labelMap);
+    const allowedNumbers = buildAllowedNumbers(gabarito.structured);
+    // Prompt do Conselho NUNCA é alterado pelo Laboratório — mesmo AURA_COUNCIL_SYSTEM_PROMPT que
+    // askCouncil usa em produção (ver condição 7 do merge condicional desta fase).
+    const system = `${AURA_COUNCIL_SYSTEM_PROMPT}\n\n${contextBlockText}`;
+    const adapter = createAnthropicAdapter(apiKey, undefined, undefined, thinking);
+
+    try {
+      const core = await runCouncilCore({
+        question: question.question,
+        generateFn: (userMessage) =>
+          adapter.generate(
+            { task: "council", system, messages: [{ role: "user", content: userMessage }] },
+            model,
+          ),
+        labelMap,
+        names,
+        // Laboratório NUNCA aplica stripMetricIds — precisa dos ids de métrica intactos pra
+        // conferência (mesma arquitetura do chat, ver FASE IA-7). Nunca loga: a falha de parse vai
+        // pro resultado (acceptedOnAttempt/jsonValid/attempts), nunca pro console.
+        skipStripMetricIds: true,
+      });
+
+      const result = buildLabCouncilResult(
+        question,
+        model,
+        thinking,
+        core,
+        allowedNumbers,
+        labelMap,
+        names,
+        "anthropic",
+      );
+
+      return {
+        enabled: true,
+        configured: true,
+        model,
+        result,
+        gabaritoText: gabarito.text,
+        serverBuildTag: LAB_BUILD_TAG,
+        thinkingMode: thinking,
+      };
+    } catch (e) {
+      return {
+        enabled: true,
+        configured: true,
+        model,
+        result: emptyCouncilResult(
+          question,
+          model,
+          e instanceof Error ? e.message : "Falha desconhecida",
+        ),
+        gabaritoText: gabarito.text,
+        serverBuildTag: LAB_BUILD_TAG,
+        thinkingMode: thinking,
       };
     }
   });

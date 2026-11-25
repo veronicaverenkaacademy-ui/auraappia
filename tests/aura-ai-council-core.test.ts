@@ -66,6 +66,62 @@ test("runCouncilCore: aceita na tentativa 1 — acceptedOnAttempt=1, usedFallbac
   assert.equal(result.status, "recomendado");
 });
 
+// FASE IA-10 (item 5a) — attempts expõe o diagnóstico de CADA tentativa feita (nunca só a última),
+// pro Laboratório poder mostrar/somar custo e latência das 2 tentativas.
+test("runCouncilCore: attempts tem 1 item (accepted=true) quando aceita de primeira", async () => {
+  const { labelMap, names } = labelsForOneClient();
+  const result = await runCouncilCore({
+    question: "q",
+    generateFn: async () => fakeResult(VALID_JSON),
+    labelMap,
+    names,
+    skipStripMetricIds: false,
+  });
+  assert.equal(result.attempts.length, 1);
+  assert.equal(result.attempts[0].attempt, 1);
+  assert.equal(result.attempts[0].accepted, true);
+  assert.equal(result.attempts[0].parseFailureReason, null);
+});
+
+test("runCouncilCore: attempts tem 2 itens (1 falhou, 2 aceitou) quando a 1ª tentativa falha o parse", async () => {
+  const { labelMap, names } = labelsForOneClient();
+  let calls = 0;
+  const result = await runCouncilCore({
+    question: "q",
+    generateFn: async () => {
+      calls++;
+      return calls === 1 ? fakeResult("isso não é json") : fakeResult(VALID_JSON);
+    },
+    labelMap,
+    names,
+    skipStripMetricIds: false,
+  });
+  assert.equal(result.attempts.length, 2);
+  assert.equal(result.attempts[0].attempt, 1);
+  assert.equal(result.attempts[0].accepted, false);
+  assert.ok(result.attempts[0].parseFailureReason);
+  assert.equal(result.attempts[1].attempt, 2);
+  assert.equal(result.attempts[1].accepted, true);
+  assert.equal(result.attempts[1].parseFailureReason, null);
+});
+
+test("runCouncilCore: attempts tem 2 itens, os DOIS accepted=false, no fallback honesto", async () => {
+  const { labelMap, names } = labelsForOneClient();
+  const result = await runCouncilCore({
+    question: "q",
+    generateFn: async () => fakeResult("prosa sem json nenhum"),
+    labelMap,
+    names,
+    skipStripMetricIds: false,
+  });
+  assert.equal(result.usedFallback, true);
+  assert.equal(result.attempts.length, 2);
+  assert.equal(result.attempts[0].accepted, false);
+  assert.equal(result.attempts[1].accepted, false);
+  assert.ok(result.attempts[0].parseFailureReason);
+  assert.ok(result.attempts[1].parseFailureReason);
+});
+
 test("runCouncilCore: tentativa 1 falha o parse -> UMA retentativa com o sufixo exato no fim da mensagem", async () => {
   const { labelMap, names } = labelsForOneClient();
   const messagesSent: string[] = [];

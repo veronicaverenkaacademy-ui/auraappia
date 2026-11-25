@@ -54,6 +54,20 @@ export interface CouncilCoreResult {
    * pra o Laboratório medir vazamento bruto/números citados no texto exatamente como o modelo
    * escreveu (ver item 6 da FASE IA-9) — produção nunca lê este campo. */
   rawValue: CouncilJsonValue | null;
+  /** FASE IA-10 (item 5a) — diagnóstico de CADA tentativa feita (1, ou 1+2 quando a 1ª falhou o
+   * parse) — nunca só a última, pra o Laboratório poder mostrar/somar custo e latência das DUAS
+   * tentativas, não só a que "venceu" (ver runLabCouncilCompareQuestion em laboratory.functions.ts).
+   * Produção nunca lê este campo. */
+  attempts: CouncilAttemptDiagnostic[];
+}
+
+/** FASE IA-10 (item 5a) — ver CouncilCoreResult.attempts. */
+export interface CouncilAttemptDiagnostic {
+  attempt: 1 | 2;
+  accepted: boolean;
+  /** null quando accepted é true. */
+  parseFailureReason: string | null;
+  result: GenerateResult;
 }
 
 /** Texto EXATO pedido pela fase pra retentativa — acrescentado ao FIM da mensagem do usuário, mesma
@@ -109,6 +123,7 @@ function buildAcceptedResult(
   labelMap: Map<string, string>,
   names: Map<string, string>,
   skipStripMetricIds: boolean,
+  attempts: CouncilAttemptDiagnostic[],
 ): CouncilCoreResult {
   return {
     perspectives: value.perspectives.slice(0, 6).map((p) => ({
@@ -122,6 +137,7 @@ function buildAcceptedResult(
     lastGenerateResult: result,
     usedFallback: false,
     rawValue: value,
+    attempts,
   };
 }
 
@@ -134,15 +150,32 @@ export async function runCouncilCore(params: RunCouncilCoreParams): Promise<Coun
 
   const attempt1 = await generateFn(question);
   const parsed1 = parseCouncilJson(attempt1.text);
+  const attempt1Diag: CouncilAttemptDiagnostic = {
+    attempt: 1,
+    accepted: parsed1.ok,
+    parseFailureReason: parsed1.ok ? null : parsed1.reason,
+    result: attempt1,
+  };
   if (parsed1.ok) {
-    return buildAcceptedResult(parsed1.value, 1, attempt1, labelMap, names, skipStripMetricIds);
+    return buildAcceptedResult(parsed1.value, 1, attempt1, labelMap, names, skipStripMetricIds, [
+      attempt1Diag,
+    ]);
   }
   onParseFailure?.({ attempt: 1, reason: parsed1.reason, result: attempt1 });
 
   const attempt2 = await generateFn(`${question}${COUNCIL_JSON_RETRY_SUFFIX}`);
   const parsed2 = parseCouncilJson(attempt2.text);
+  const attempt2Diag: CouncilAttemptDiagnostic = {
+    attempt: 2,
+    accepted: parsed2.ok,
+    parseFailureReason: parsed2.ok ? null : parsed2.reason,
+    result: attempt2,
+  };
   if (parsed2.ok) {
-    return buildAcceptedResult(parsed2.value, 2, attempt2, labelMap, names, skipStripMetricIds);
+    return buildAcceptedResult(parsed2.value, 2, attempt2, labelMap, names, skipStripMetricIds, [
+      attempt1Diag,
+      attempt2Diag,
+    ]);
   }
   onParseFailure?.({ attempt: 2, reason: parsed2.reason, result: attempt2 });
 
@@ -155,6 +188,7 @@ export async function runCouncilCore(params: RunCouncilCoreParams): Promise<Coun
     lastGenerateResult: attempt2,
     usedFallback: true,
     rawValue: null,
+    attempts: [attempt1Diag, attempt2Diag],
   };
 }
 

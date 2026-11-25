@@ -86,6 +86,15 @@
 // material por serviço no bloco) — regra 20 ACRESCENTADA (proíbe ligar métricas sem relação
 // calculada entre elas). As 18 regras anteriores continuam presentes, sem renumerar (só a regra 18
 // teve o TEXTO ampliado, mantendo o mesmo número).
+//
+// FASE IA-10 (item 1b) — rodada 9 do Laboratório: "Qual o serviço que mais tem saída?" respondeu "o
+// campeão em atendimentos é o Volume Russo, com 29 atendimentos e R$ 5.220" — ERRADO (Volume
+// Brasileiro tinha 34 atendimentos; Volume Russo só lidera a RECEITA). A lista de serviços
+// (service_breakdown_*) é ordenada por receita (ver aura-metrics/service-breakdown.ts) — a IA tratou
+// o 1º item da lista como "o que tem mais atendimentos", confundindo os dois critérios. Regra 23
+// ACRESCENTADA (as 22 anteriores continuam exatamente como estavam, sem renumerar): usa o novo campo
+// aditivo topByAttendances (ver aura-metrics/engine.ts) e exige que a IA sempre diga qual critério
+// está usando ("em atendimentos" ou "em receita").
 import { INTERNAL_FIELD_PLAIN_TEXT } from "./sanitize-internal-field-names.ts";
 
 // FASE IA-6 (item 3) — nomes literais extraídos da MESMA lista fixa do sanitizador (nunca redigitados
@@ -121,7 +130,8 @@ REGRAS ABSOLUTAS — nunca quebre nenhuma delas:
 19. NUNCA conte os itens de uma lista pra chegar num total (ex.: contar quantas clientes aparecem na lista de vanishing_clients) — use SEMPRE o total já calculado que vier pronto no bloco de métricas para aquela lista (ex.: vanishing_clients_total, low_stock_total, ou o total de uma lista de serviços). Se esse total não existir no bloco para a lista em questão, diga "pelo menos N" (N = quantos itens você está citando individualmente) ou cite só os itens mostrados sem afirmar nenhum total — nunca apresente como total um número que você mesmo contou somando itens de uma lista.
 20. Toda recomendação (regra 7) ou ação do bloco "Ideias gerais" (regra 18) que fizer referência a um dado específico do negócio precisa derivar de uma métrica CITADA NA MESMA RESPOSTA — é PROIBIDO ligar duas métricas que não têm relação calculada entre elas no bloco (ex.: nunca sugira "conferir o estoque de materiais do [serviço mais vendido]" só porque esse serviço aparece no ranking — estoque de produto (low_stock) e ranking de serviço (service_breakdown_*) são métricas independentes, sem nenhuma relação de consumo de material por serviço calculada no bloco).
 21. Ao citar várias clientes sumindo juntas, escreva cada uma com o rótulo completo e separado (ex.: "Cliente 16", "Cliente 5" e "Cliente 11") — NUNCA abrevie numa lista de números só, como "Clientes 16, 5 e 11" ou "Cliente 16, 5 e 11": cada cliente é um rótulo próprio, nunca um número dentro de uma lista.
-22. NUNCA escreva uma palavra em camelCase (ex.: um nome de campo interno — regras 10/15) nem um comentário/instrução pra você mesma entre parênteses (ex.: "(não citado; use: ...)", "(lembrar de...)") no texto da resposta — o texto é lido pela dona do estúdio, nunca por você mesma de novo. Se precisar anotar algo pra si mesma ao calcular a resposta, faça isso SEM escrever no texto final — a resposta só contém o que a dona deveria ler.`;
+22. NUNCA escreva uma palavra em camelCase (ex.: um nome de campo interno — regras 10/15) nem um comentário/instrução pra você mesma entre parênteses (ex.: "(não citado; use: ...)", "(lembrar de...)") no texto da resposta — o texto é lido pela dona do estúdio, nunca por você mesma de novo. Se precisar anotar algo pra si mesma ao calcular a resposta, faça isso SEM escrever no texto final — a resposta só contém o que a dona deveria ler.
+23. "Mais saída"/"mais vendido"/"campeão" de um serviço significa o serviço com MAIS ATENDIMENTOS — use o campo "topByAttendances" de cada período (ids: service_breakdown_current_month_top_by_attendances, service_breakdown_previous_month_top_by_attendances, service_breakdown_last_90_days_top_by_attendances). A lista de serviços (service_breakdown_current_month/previous_month/last_90_days) está ordenada por RECEITA, NUNCA trate o primeiro item dessa lista como o serviço com mais atendimentos — são critérios diferentes e podem apontar para serviços diferentes. Sempre diga explicitamente qual critério você está usando ao afirmar que um serviço "lidera"/"é o campeão" ("em atendimentos" ou "em receita"); se o serviço líder em atendimentos for diferente do líder em receita no mesmo período, cite os dois, nunca escolha só um como "o" líder.`;
 
 /** Acrescentada ao system prompt SÓ quando a tarefa é "weekly_report" — o chat usa a regra 9 (até
  * ~150 palavras) como padrão; o relatório semanal precisa de mais espaço porque cobre a semana

@@ -26,7 +26,12 @@ import {
   type VanishingClient,
   type StoppedBookingThisMonth,
 } from "./client-return.ts";
-import { serviceBreakdown, type ServiceBreakdownRow } from "./service-breakdown.ts";
+import {
+  serviceBreakdown,
+  topByAttendances,
+  type ServiceBreakdownRow,
+  type TopByAttendances,
+} from "./service-breakdown.ts";
 import { ticketAverages, type TicketAverages } from "./ticket.ts";
 import { opsRates, type OpsRates } from "./ops.ts";
 import { dayOccupancy, hasAnyConfiguredDay, type OccupancyResult } from "./occupancy.ts";
@@ -55,6 +60,24 @@ function listTotalMetric<T>(
   return okMetric(id, label, definition, base.value.length);
 }
 
+// FASE IA-10 (item 1a) — mesmo espelhamento de MetricState de listTotalMetric, mas pro serviço com
+// MAIS atendimentos (nunca o 1º da lista, que é ordenada por RECEITA — ver service-breakdown.ts).
+// Campo ADITIVO: nunca substitui serviceBreakdown*/serviceBreakdown*Total, nem muda seus valores.
+function topByAttendancesMetric(
+  base: Metric<ServiceBreakdownRow[]>,
+  id: string,
+  label: string,
+  definition: string,
+): Metric<TopByAttendances | null> {
+  if (base.state === "not_configured") {
+    return notConfiguredMetric<TopByAttendances | null>(id, label, definition);
+  }
+  if (base.state !== "ok" || !base.value) {
+    return insufficientMetric<TopByAttendances | null>(id, label, definition);
+  }
+  return okMetric(id, label, definition, topByAttendances(base.value));
+}
+
 export interface AuraMetricsInput {
   appointments: AppointmentForMetrics[];
   clients: ClientForMetrics[];
@@ -74,10 +97,16 @@ export interface AuraMetricsBlock {
   serviceBreakdownCurrentMonth: Metric<ServiceBreakdownRow[]>;
   /** FASE IA-5 (item 1) — total pronto; use este número, nunca conte serviceBreakdownCurrentMonth. */
   serviceBreakdownCurrentMonthTotal: Metric<number>;
+  /** FASE IA-10 (item 1a) — serviço com MAIS ATENDIMENTOS no período (nunca o 1º da lista acima, que
+   * é ordenada por RECEITA) — use este campo pra responder "qual serviço mais saída/vendeu", nunca
+   * assuma que o 1º item de serviceBreakdownCurrentMonth tem mais atendimentos. */
+  serviceBreakdownCurrentMonthTopByAttendances: Metric<TopByAttendances | null>;
   serviceBreakdownPreviousMonth: Metric<ServiceBreakdownRow[]>;
   serviceBreakdownPreviousMonthTotal: Metric<number>;
+  serviceBreakdownPreviousMonthTopByAttendances: Metric<TopByAttendances | null>;
   serviceBreakdownLast90Days: Metric<ServiceBreakdownRow[]>;
   serviceBreakdownLast90DaysTotal: Metric<number>;
+  serviceBreakdownLast90DaysTopByAttendances: Metric<TopByAttendances | null>;
   ticketCurrentMonth: Metric<TicketAverages>;
   ticketPreviousMonth: Metric<TicketAverages>;
   opsCurrentMonth: Metric<OpsRates>;
@@ -307,6 +336,12 @@ export function buildMetricsBlock(input: AuraMetricsInput): AuraMetricsBlock {
       "Total de serviços distintos vendidos — mês atual",
       "Quantidade TOTAL de serviços distintos na lista de service_breakdown_current_month — use este número pronto, nunca conte os itens da lista.",
     ),
+    serviceBreakdownCurrentMonthTopByAttendances: topByAttendancesMetric(
+      svcCurrent,
+      "service_breakdown_current_month_top_by_attendances",
+      "Serviço com mais atendimentos — mês atual",
+      "Serviço com MAIS atendimentos realizados no mês corrente até hoje (empate: maior receita) — use este campo pra 'qual serviço mais saída em atendimentos', nunca o 1º item de service_breakdown_current_month (que é ordenado por receita).",
+    ),
     serviceBreakdownPreviousMonth: svcPrev,
     serviceBreakdownPreviousMonthTotal: listTotalMetric(
       svcPrev,
@@ -314,12 +349,24 @@ export function buildMetricsBlock(input: AuraMetricsInput): AuraMetricsBlock {
       "Total de serviços distintos vendidos — mês anterior",
       "Quantidade TOTAL de serviços distintos na lista de service_breakdown_previous_month — use este número pronto, nunca conte os itens da lista.",
     ),
+    serviceBreakdownPreviousMonthTopByAttendances: topByAttendancesMetric(
+      svcPrev,
+      "service_breakdown_previous_month_top_by_attendances",
+      "Serviço com mais atendimentos — mês anterior",
+      "Serviço com MAIS atendimentos realizados no mês anterior completo (empate: maior receita) — use este campo pra 'qual serviço mais saída em atendimentos', nunca o 1º item de service_breakdown_previous_month (que é ordenado por receita).",
+    ),
     serviceBreakdownLast90Days: svc90,
     serviceBreakdownLast90DaysTotal: listTotalMetric(
       svc90,
       "service_breakdown_last_90_days_total",
       "Total de serviços distintos vendidos — últimos 90 dias",
       "Quantidade TOTAL de serviços distintos na lista de service_breakdown_last_90_days — use este número pronto, nunca conte os itens da lista.",
+    ),
+    serviceBreakdownLast90DaysTopByAttendances: topByAttendancesMetric(
+      svc90,
+      "service_breakdown_last_90_days_top_by_attendances",
+      "Serviço com mais atendimentos — últimos 90 dias",
+      "Serviço com MAIS atendimentos realizados nos últimos 90 dias (empate: maior receita) — use este campo pra 'qual serviço mais saída em atendimentos', nunca o 1º item de service_breakdown_last_90_days (que é ordenado por receita).",
     ),
     ticketCurrentMonth: ticketCurrent,
     ticketPreviousMonth: ticketPrev,

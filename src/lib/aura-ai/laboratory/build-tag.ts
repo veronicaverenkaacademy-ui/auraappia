@@ -10,4 +10,4 @@
 // Regra: constante LITERAL (nunca derivada de git SHA, data ou variável de ambiente — isso exigiria
 // infraestrutura extra fora do escopo desta fase), atualizada À MÃO toda vez que uma fase futura
 // tocar em src/lib/aura-ai/laboratory/* ou na tela do Laboratório.
-export const LAB_BUILD_TAG = "IA-9";
+export const LAB_BUILD_TAG = "IA-10";
