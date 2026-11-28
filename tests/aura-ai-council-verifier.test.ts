@@ -127,3 +127,59 @@ test("checkCitedMoneyCents: vários valores no mesmo texto são classificados in
   assert.deepEqual(result.mismatches, []);
   assert.deepEqual(result.centWarnings, [154.45]);
 });
+
+// FASE IA-11 (item 3) — rodada 10: "R$ 6.190"/"R$ 6.920"/"R$ 8.530" (ponto como separador de MILHAR,
+// sem vírgula nenhuma) eram lidos como 6,19/6,92/8,53 por extractNumbersFromText (nunca corrigida
+// pra isso) — falso ❌ de "valor em R$ errado". checkCitedMoneyCents agora usa o mesmo parser
+// corrigido de statement-checks.ts (parseMoneyBR).
+test("checkCitedMoneyCents: 'R$ 6.190'/'R$ 6.920'/'R$ 8.530' (ponto de milhar) batem exato com o gabarito — nenhum ❌ falso (rodada 10)", () => {
+  const result = checkCitedMoneyCents(
+    "O Conselho cita R$ 6.190, R$ 6.920 e R$ 8.530 no texto.",
+    new Set([6190, 6920, 8530]),
+  );
+  assert.deepEqual(result.mismatches, []);
+  assert.deepEqual(result.centWarnings, []);
+  assert.deepEqual(result.roundedMismatches, []);
+  assert.deepEqual(result.missingCentZeroWarnings, []);
+});
+
+test("checkCitedMoneyCents: planted 'R$ 6.910' (devia ser 6.920, ponto de milhar) continua virando ❌ — o parser corrigido não esconde erro de verdade", () => {
+  const result = checkCitedMoneyCents("Deveria ser R$ 6.920, mas saiu R$ 6.910.", new Set([6920]));
+  assert.deepEqual(result.mismatches, [6910]);
+  assert.deepEqual(result.centWarnings, []);
+});
+
+test("checkCitedMoneyCents: planted 'R$ 8.350' (devia ser 8.530, ponto de milhar) também vira ❌", () => {
+  const result = checkCitedMoneyCents("Saiu R$ 8.350 no texto.", new Set([8530]));
+  assert.deepEqual(result.mismatches, [8350]);
+  assert.deepEqual(result.centWarnings, []);
+});
+
+// FASE IA-11 (item 3) — rodada 10: a IA às vezes escreve dinheiro com só 1 casa decimal. Dois casos
+// BEM diferentes, que a diferença de 2 centavos escondida atrás da casa que falta não deve confundir.
+test("checkCitedMoneyCents: 'R$ 123,8' com 1 casa decimal que bate EXATO com o gabarito (123,80) — aviso de zero faltando, nunca ❌", () => {
+  const result = checkCitedMoneyCents("O ticket foi de R$ 123,8.", new Set([123.8]));
+  assert.deepEqual(result.mismatches, []);
+  assert.deepEqual(result.centWarnings, []);
+  assert.deepEqual(result.roundedMismatches, []);
+  assert.deepEqual(result.missingCentZeroWarnings, [123.8]);
+});
+
+test("checkCitedMoneyCents: 'R$ 123,6' com 1 casa decimal que DIVERGE do gabarito (123,62) — ❌ de verdade, com o valor do gabarito", () => {
+  const result = checkCitedMoneyCents(
+    "O ticket do mês anterior foi de R$ 123,6.",
+    new Set([123.62]),
+  );
+  assert.deepEqual(result.mismatches, []);
+  assert.deepEqual(result.centWarnings, []);
+  assert.deepEqual(result.missingCentZeroWarnings, []);
+  assert.deepEqual(result.roundedMismatches, [{ said: 123.6, expected: 123.62 }]);
+});
+
+test("checkCitedMoneyCents: 'R$ 123,62' (2 casas, bate exato) continua sem nenhum aviso/mismatch — mesma frase real da rodada 10, lado a lado com as outras", () => {
+  const result = checkCitedMoneyCents("O ticket certo é R$ 123,62.", new Set([123.62]));
+  assert.deepEqual(result.mismatches, []);
+  assert.deepEqual(result.centWarnings, []);
+  assert.deepEqual(result.roundedMismatches, []);
+  assert.deepEqual(result.missingCentZeroWarnings, []);
+});

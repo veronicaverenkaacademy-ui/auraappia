@@ -37,6 +37,11 @@
 // raciocínio adaptativo sem novo deploy (ver AURA_LAB_ANTHROPIC_THINKING em lab-thinking-mode.ts, que
 // documenta os parâmetros exatos confirmados na documentação oficial e suas limitações por modelo).
 // Produção nunca passa esse argumento — continua com o raciocínio adaptativo padrão do modelo.
+// FASE IA-11 (item 2) — `timeoutMs` — 5º parâmetro OPCIONAL, só pro Laboratório poder esperar mais
+// numa comparação de configurações (rodada 10: Sonnet/default estourou os 25s padrão numa pergunta e
+// devolveu "tempo esgotado" nas 4 tentativas de retry; o Laboratório precisa de mais margem pra
+// comparar, produção não). Sem este argumento, fetchWithRetry usa o padrão de produção
+// (AURA_AI_TIMEOUT_MS, 25s) — este arquivo nunca redefine esse default, só repassa.
 import type {
   AuraAiAdapter,
   AuraAiTask,
@@ -122,6 +127,7 @@ export function createAnthropicAdapter(
   fetchImpl: FetchLike = fetch,
   maxTokensOverride?: number,
   thinkingMode?: AnthropicThinkingMode,
+  timeoutMs?: number,
 ): AuraAiAdapter {
   return {
     provider: "anthropic",
@@ -129,21 +135,26 @@ export function createAnthropicAdapter(
       const start = Date.now();
       let res: Response;
       try {
-        res = await fetchWithRetry(fetchImpl, ANTHROPIC_API_URL, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-api-key": apiKey,
-            "anthropic-version": ANTHROPIC_VERSION,
+        res = await fetchWithRetry(
+          fetchImpl,
+          ANTHROPIC_API_URL,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-api-key": apiKey,
+              "anthropic-version": ANTHROPIC_VERSION,
+            },
+            body: JSON.stringify({
+              model,
+              max_tokens: maxTokensForTask(params.task, maxTokensOverride),
+              system: params.system,
+              messages: params.messages.map((m) => ({ role: m.role, content: m.content })),
+              ...extraBodyForThinkingMode(thinkingMode),
+            }),
           },
-          body: JSON.stringify({
-            model,
-            max_tokens: maxTokensForTask(params.task, maxTokensOverride),
-            system: params.system,
-            messages: params.messages.map((m) => ({ role: m.role, content: m.content })),
-            ...extraBodyForThinkingMode(thinkingMode),
-          }),
-        });
+          timeoutMs,
+        );
       } catch (e) {
         if (e instanceof AuraAiHttpError) {
           if ((e.status === 404 || e.status === 400) && looksLikeModelNotFound(e.body)) {

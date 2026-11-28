@@ -3,6 +3,8 @@
 // números PERMITIDOS (derivados do motor de métricas), com tolerância de
 // arredondamento; para as armadilhas, confere se a IA recusou/admitiu
 // falta de dado em vez de inventar.
+import { parseMoneyBR } from "./statement-checks.ts";
+
 function collectNumbers(value: unknown, out: Set<number>): void {
   if (typeof value === "number" && Number.isFinite(value)) {
     out.add(value);
@@ -264,36 +266,87 @@ export function detectsInventedMoneyOrPercent(text: string, allowed: Set<number>
 // detectsInventedMoneyOrPercent (1 absoluto OU 2% relativo) é apropriada pra contagens/percentuais,
 // mas é generosa demais pra DINHEIRO: um valor de R$ errado por 50 centavos passaria batido pela
 // mesma tolerância de "1 absoluto". checkCitedMoneyCents é mais estrito, só pra valores em R$: exato
-// (diferença 0) nunca aparece em nenhuma das duas listas; diferença de até 1 centavo (arredondamento
-// de ponto flutuante) vira um AVISO (centWarnings — "⚠️ diferença de 1 centavo", nunca ❌); qualquer
+// (diferença 0) nunca aparece em nenhuma das listas; diferença de até 1 centavo (arredondamento de
+// ponto flutuante) vira um AVISO (centWarnings — "⚠️ diferença de 1 centavo", nunca ❌); qualquer
 // diferença MAIOR que 1 centavo vira mismatch (❌) — mesmo que a tolerância genérica (1 absoluto)
 // deixasse passar.
+//
+// FASE IA-11 (item 3) — rodada 10 achou DOIS problemas novos: (i) "R$ 6.190"/"R$ 6.920"/"R$ 8.530"
+// (ponto como separador de MILHAR) eram lidos por extractNumbersFromText (que NUNCA ganhou a mesma
+// correção que statement-checks.ts ganhou na FASE IA-6) como 6,19/6,92/8,53 — falso ❌ de "valor em
+// R$ errado"; (ii) a IA às vezes escreve dinheiro com só 1 casa decimal ("R$ 123,6", "R$ 123,8") —
+// dois casos BEM diferentes que a tolerância de centavos sozinha não distingue: "R$ 123,8" bate
+// EXATO com o gabarito (123,80) — só falta o zero, formatação, nunca erro; "R$ 123,6" diverge de
+// verdade do gabarito (123,62) — é a mesma classe de erro que motivou esta função inteira (IA-10),
+// só que a diferença de 2 centavos fica ESCONDIDA atrás da casa decimal que falta. Corrigido
+// reaproveitando o MESMO parser corrigido de statement-checks.ts (parseMoneyBR, ponto de milhar) em
+// vez de extractNumbersFromText (que seguiria sem essa correção — mudá-la afetaria
+// checkCitedNumbers/detectsInventedMoneyOrPercent, fora do pedido desta fase), e separando o
+// tratamento por quantas casas decimais o texto citado realmente tem.
 export interface MoneyCentCheckResult {
-  /** Valores em R$ com diferença MAIOR que 1 centavo contra o gabarito — ❌ de verdade. */
+  /** Valores em R$ com diferença MAIOR que 1 centavo contra o gabarito (2 casas decimais, ou nenhuma)
+   * — ❌ de verdade. */
   mismatches: number[];
-  /** Valores em R$ com diferença de ATÉ 1 centavo (arredondamento) — ⚠️, nunca ❌. */
+  /** Valores em R$ com diferença de ATÉ 1 centavo (arredondamento, 2 casas decimais ou nenhuma) —
+   * ⚠️, nunca ❌. */
   centWarnings: number[];
+  /** FASE IA-11 (item 3) — valor citado com só 1 casa decimal (ex.: "R$ 123,6") cujo gabarito tem
+   * centavos DIFERENTES do que se obtém só completando o zero (ex.: 123,62) — ❌ de verdade, com o
+   * valor do gabarito pronto pra mostrar na mensagem. */
+  roundedMismatches: Array<{ said: number; expected: number }>;
+  /** FASE IA-11 (item 3) — valor citado com só 1 casa decimal que bate EXATAMENTE com o gabarito ao
+   * completar o zero (ex.: "R$ 123,8" vs gabarito 123,80) — nunca erro, só aviso de formatação. */
+  missingCentZeroWarnings: number[];
 }
 
-const MONEY_ONLY_RE = /R\$\s*[\d.,]+/gi;
+const MONEY_TOKEN_RE = /R\$\s*([\d.,]*\d)/gi;
 const CENT_TOLERANCE = 0.01 + 1e-9;
 
+/** Quantos dígitos vêm logo depois da ÚLTIMA vírgula do texto cru (antes de qualquer normalização) —
+ * null quando não há vírgula nenhuma (valor inteiro, ou só ponto de milhar, ex.: "6.190"). Usado só
+ * pra decidir qual das duas regras de 1-casa-decimal aplicar; a conversão pro número em si continua
+ * toda em parseMoneyBR (nunca duplica aquela lógica aqui). */
+function decimalDigitsAfterLastComma(raw: string): number | null {
+  const idx = raw.lastIndexOf(",");
+  if (idx === -1) return null;
+  const digits = raw.slice(idx + 1).match(/^\d+/);
+  return digits ? digits[0].length : 0;
+}
+
 export function checkCitedMoneyCents(text: string, allowed: Set<number>): MoneyCentCheckResult {
-  const tokens = text.match(MONEY_ONLY_RE) ?? [];
   const allowedArr = Array.from(allowed);
   const mismatches: number[] = [];
   const centWarnings: number[] = [];
-  for (const token of tokens) {
-    for (const n of extractNumbersFromText(token)) {
-      let minDiff = Infinity;
-      for (const a of allowedArr) {
-        const diff = Math.abs(a - n);
-        if (diff < minDiff) minDiff = diff;
+  const roundedMismatches: Array<{ said: number; expected: number }> = [];
+  const missingCentZeroWarnings: number[] = [];
+
+  for (const match of text.matchAll(MONEY_TOKEN_RE)) {
+    const raw = match[1];
+    const n = parseMoneyBR(raw);
+    if (n === null) continue;
+
+    let nearest: number | null = null;
+    let minDiff = Infinity;
+    for (const a of allowedArr) {
+      const diff = Math.abs(a - n);
+      if (diff < minDiff) {
+        minDiff = diff;
+        nearest = a;
       }
-      if (minDiff < 1e-9) continue; // valor exato — nem aviso, nem mismatch.
-      if (minDiff <= CENT_TOLERANCE) centWarnings.push(n);
-      else mismatches.push(n);
     }
+    if (nearest === null) continue;
+    const isExact = minDiff < 1e-9;
+
+    if (decimalDigitsAfterLastComma(raw) === 1) {
+      if (isExact) missingCentZeroWarnings.push(n);
+      else roundedMismatches.push({ said: n, expected: nearest });
+      continue;
+    }
+
+    if (isExact) continue; // valor exato — nem aviso, nem mismatch.
+    if (minDiff <= CENT_TOLERANCE) centWarnings.push(n);
+    else mismatches.push(n);
   }
-  return { mismatches, centWarnings };
+
+  return { mismatches, centWarnings, roundedMismatches, missingCentZeroWarnings };
 }

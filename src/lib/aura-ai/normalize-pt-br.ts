@@ -19,6 +19,11 @@
 // "107.25 dias" -> "107,25 dias"; "R$ 4.900" inalterado; "33,06%" inalterado; "(vanishing_clients)"
 // inalterado; "2026-11-23" inalterado.
 //
+// FASE IA-11 (item 4) — acrescenta (c): "R$ <dígitos>,<1 dígito>" (vírgula + EXATAMENTE 1 casa
+// decimal, sem outro dígito colado logo depois) completa o zero que falta ("R$ 123,8" -> "R$
+// 123,80"; "R$ 4,5" -> "R$ 4,50") — nunca toca "R$ 1.800"/"R$ 5.370" (sem vírgula nenhuma) nem "R$
+// 123,62" (já tem as 2 casas).
+//
 // NÃO COBERTO (limitação conhecida, documentada no relatório desta fase): um número no MILHAR com
 // ponto decimal e SEM prefixo "R$" (ex. um dia-contagem hipotético "1234.5 dias") só tem o ponto
 // decimal trocado por vírgula ("1234,5 dias") — não recebe separador de milhar no inteiro, porque a
@@ -41,6 +46,20 @@ function fixDecimalAfterCurrency(text: string): string {
   return text.replace(/(R\$\s*\d+)\.(\d{1,2})\b/g, "$1,$2");
 }
 
+// FASE IA-11 (item 4) — rodada 10: a IA às vezes escreve dinheiro com só 1 casa decimal ("R$ 123,8",
+// "R$ 4,5") — produção não corrige isso hoje (só o chat aplicava normalizePtBrNumbers; askCouncil
+// nunca aplicava — ver wiring abaixo). Completa o zero só quando o formato é EXATAMENTE
+// "vírgula + 1 dígito" sem nenhum outro dígito colado logo depois — "(?!\d)" garante isso, então
+// "R$ 123,62" (2 casas) e "R$ 123,8" seguido de mais um dígito nunca batem aqui. O grupo do inteiro
+// aceita dígitos E pontos ("[\d.]*\d") pra já cobrir um valor que também tenha separador de milhar
+// (ex. "R$ 1.234,5" -> "R$ 1.234,50"), embora os casos reais da fase sejam números pequenos.
+function completeCentZero(text: string): string {
+  return text.replace(
+    /(R\$\s*[\d.]*\d),(\d)(?!\d)/g,
+    (_match, intPart: string, cent: string) => `${intPart},${cent}0`,
+  );
+}
+
 function insertThousandsSeparators(digits: string): string {
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
@@ -55,6 +74,7 @@ function addThousandsSeparatorToCurrency(text: string): string {
 function normalizeSegment(text: string): string {
   let result = fixDecimalBeforeDiasOrPercent(text);
   result = fixDecimalAfterCurrency(result);
+  result = completeCentZero(result);
   result = addThousandsSeparatorToCurrency(result);
   return result;
 }

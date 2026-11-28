@@ -26,6 +26,7 @@ import { parseCouncilJson, type CouncilJsonValue } from "./parse-council-json.ts
 import { restoreClientNames } from "./pseudonymize.ts";
 import { sanitizeInternalFieldNames } from "./sanitize-internal-field-names.ts";
 import { stripMetricIds } from "./strip-metric-ids.ts";
+import { normalizePtBrNumbers } from "./normalize-pt-br.ts";
 import type { GenerateResult } from "./types.ts";
 
 export interface CouncilCorePerspective {
@@ -70,10 +71,21 @@ export interface CouncilAttemptDiagnostic {
   result: GenerateResult;
 }
 
-/** Texto EXATO pedido pela fase pra retentativa — acrescentado ao FIM da mensagem do usuário, mesma
- * chamada (mesmo task/system), nunca um prompt novo. */
-export const COUNCIL_JSON_RETRY_SUFFIX =
+/** FASE IA-11 (item 1) — rodada 10: Config A (haiku/low) falhou o parse na TENTATIVA 1 nas 2
+ * perguntas de uma sessão real (respondeu em prosa) e só acertou na retentativa — ou seja, a
+ * retentativa estava fazendo o trabalho que a chamada original devia fazer desde o início. Este
+ * lembrete (mesmo texto que a retentativa usava antes desta fase) agora vai no fim da mensagem da
+ * TENTATIVA 1 também — acrescentado à mensagem do usuário, nunca ao system prompt
+ * (AURA_COUNCIL_SYSTEM_PROMPT não muda nesta fase). */
+export const COUNCIL_JSON_FORMAT_REMINDER =
   "\n\nResponda somente com o JSON do formato pedido, sem texto antes ou depois.";
+
+/** Texto da retentativa — agora deliberadamente MAIS FORTE e DISTINTO do lembrete da tentativa 1
+ * (que já vai na mensagem e não bastou): nomeia o erro ("não era um objeto JSON válido"), repete
+ * SOMENTE em maiúsculas, e exige os delimitadores exatos ({ ... }). Acrescentado ao FIM da mensagem
+ * do usuário, mesma chamada (mesmo task/system), nunca um prompt novo. */
+export const COUNCIL_JSON_RETRY_SUFFIX =
+  "\n\nSua resposta anterior não era um objeto JSON válido. Responda agora SOMENTE com o objeto JSON do formato pedido, começando com { e terminando com }, sem texto antes ou depois.";
 
 /** Texto EXATO pedido pela fase pro fallback honesto — nunca mais disfarçado de recomendação real. */
 export const COUNCIL_FALLBACK_RECOMMENDATION =
@@ -111,9 +123,13 @@ function sanitizeCouncilText(
   skipStripMetricIds: boolean,
 ): string {
   // FASE IA-6 (item 2) / FASE IA-7 (item 2) — mesma ordem fixa da rede de segurança determinística:
-  // restoreClientNames -> sanitizeInternalFieldNames -> (stripMetricIds, exceto no Laboratório).
+  // restoreClientNames -> sanitizeInternalFieldNames -> (stripMetricIds, exceto no Laboratório) ->
+  // normalizePtBrNumbers (FASE IA-11 item 4 — askCouncil nunca aplicava isso; só o chat aplicava.
+  // normalizePtBrNumbers sempre roda por ÚLTIMO, em produção E no Laboratório — "sem stripMetricIds"
+  // no Laboratório só pula AQUELE passo específico, nunca este).
   const sanitized = sanitizeInternalFieldNames(restoreClientNames(text, labelMap, names));
-  return skipStripMetricIds ? sanitized : stripMetricIds(sanitized);
+  const idsHandled = skipStripMetricIds ? sanitized : stripMetricIds(sanitized);
+  return normalizePtBrNumbers(idsHandled);
 }
 
 function buildAcceptedResult(
@@ -148,7 +164,7 @@ function buildAcceptedResult(
 export async function runCouncilCore(params: RunCouncilCoreParams): Promise<CouncilCoreResult> {
   const { question, generateFn, labelMap, names, skipStripMetricIds, onParseFailure } = params;
 
-  const attempt1 = await generateFn(question);
+  const attempt1 = await generateFn(`${question}${COUNCIL_JSON_FORMAT_REMINDER}`);
   const parsed1 = parseCouncilJson(attempt1.text);
   const attempt1Diag: CouncilAttemptDiagnostic = {
     attempt: 1,

@@ -77,3 +77,54 @@ test("normalizePtBrNumbers: texto sem nenhum número relevante não é alterado"
   const text = "Tudo tranquilo por aqui, sem números pra ajustar.";
   assert.equal(normalizePtBrNumbers(text), text);
 });
+
+// FASE IA-11 (item 4) — rodada 10: a IA escreveu "R$ 123,6" e "R$ 123,8" (só 1 casa decimal) no
+// Conselho — completa o zero que falta, nunca mexe em valores que já têm 2 casas ou nenhuma vírgula.
+test("normalizePtBrNumbers: 'R$ 123,8' -> 'R$ 123,80' (completa o zero da 1 casa decimal)", () => {
+  assert.equal(normalizePtBrNumbers("O ticket foi de R$ 123,8."), "O ticket foi de R$ 123,80.");
+});
+
+test("normalizePtBrNumbers: 'R$ 4,5' -> 'R$ 4,50'", () => {
+  assert.equal(normalizePtBrNumbers("Custou R$ 4,5."), "Custou R$ 4,50.");
+});
+
+test("normalizePtBrNumbers: 'R$ 123,62' (já 2 casas) permanece inalterado", () => {
+  assert.equal(normalizePtBrNumbers("O ticket certo é R$ 123,62."), "O ticket certo é R$ 123,62.");
+});
+
+test("normalizePtBrNumbers: 'R$ 1.800' (sem vírgula nenhuma) permanece inalterado", () => {
+  assert.equal(
+    normalizePtBrNumbers("Receita de R$ 1.800 até hoje."),
+    "Receita de R$ 1.800 até hoje.",
+  );
+});
+
+test("normalizePtBrNumbers: 'R$ 5.370' (sem vírgula nenhuma) permanece inalterado", () => {
+  assert.equal(normalizePtBrNumbers("Faturamento de R$ 5.370."), "Faturamento de R$ 5.370.");
+});
+
+test("normalizePtBrNumbers: percentual com 1 casa decimal NÃO ganha zero (regra é só pra R$)", () => {
+  assert.equal(normalizePtBrNumbers("Ocupação de 33,1% hoje."), "Ocupação de 33,1% hoje.");
+});
+
+test("normalizePtBrNumbers: dias com 1 casa decimal NÃO ganha zero (regra é só pra R$)", () => {
+  assert.equal(normalizePtBrNumbers("Faltam 107,2 dias."), "Faltam 107,2 dias.");
+});
+
+test("normalizePtBrNumbers: 'R$ 123,8' dentro de crase nunca é tocado", () => {
+  assert.equal(
+    normalizePtBrNumbers("Use `R$ 123,8` como exemplo."),
+    "Use `R$ 123,8` como exemplo.",
+  );
+});
+
+test("normalizePtBrNumbers: completar o zero é IDEMPOTENTE — rodar duas vezes dá o mesmo resultado", () => {
+  const once = normalizePtBrNumbers("O ticket foi de R$ 123,8.");
+  const twice = normalizePtBrNumbers(once);
+  assert.equal(once, "O ticket foi de R$ 123,80.");
+  assert.equal(twice, once);
+});
+
+test("normalizePtBrNumbers: 'R$ 123.8' (ponto decimal, 1 casa) vira 'R$ 123,80' — as duas regras (decimal->vírgula + completa zero) se somam", () => {
+  assert.equal(normalizePtBrNumbers("O ticket foi de R$ 123.8."), "O ticket foi de R$ 123,80.");
+});

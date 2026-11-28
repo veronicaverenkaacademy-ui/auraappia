@@ -534,10 +534,24 @@ interface CouncilCompareConfigValue {
   thinking: "default" | "disabled" | "low";
 }
 
+// FASE IA-11 (item 2) — rodada 10: Config B (sonnet/default) estourou o timeout de 25s de
+// produção numa das 2 perguntas, nas 4 tentativas (2 do council-core x 2 do fetchWithRetry) —
+// inviável como estava. Troca pra "low" (mesmo mecanismo output_config:{effort:"low"} já usado no
+// chat — ver thinkingMode acima) pra reduzir a chance de estourar o timeout, e o próprio timeout
+// (só no Laboratório, ver LAB_COUNCIL_TIMEOUT_MS abaixo) sobe de 25s pra 45s de margem extra.
 const COUNCIL_COMPARE_DEFAULTS: Record<CouncilCompareConfigId, CouncilCompareConfigValue> = {
   A: { model: "claude-haiku-5-5", thinking: "low" },
-  B: { model: "claude-sonnet-5-5", thinking: "default" },
+  B: { model: "claude-sonnet-5-5", thinking: "low" },
 };
+
+/** FASE IA-11 (item 2) — timeout POR CHAMADA só para o Conselho no Laboratório (runLabCouncilQuestion
+ * e runLabCouncilCompareQuestion, caminho Anthropic) — produção continua em AURA_AI_TIMEOUT_MS (25s,
+ * http.server.ts, nunca alterado aqui). Passado como 5º parâmetro explícito de createAnthropicAdapter
+ * (nunca o default do módulo) — se uma pergunta ainda assim estourar os 45s, o try/catch já existente
+ * de cada handler (inalterado nesta fase) devolve um resultado com `error` preenchido e custo/latência
+ * zerados (nenhum dado real pra mostrar), sem derrubar a outra pergunta/coluna — cada chamada do
+ * Laboratório é uma invocação independente da server function, sem estado compartilhado entre elas. */
+export const LAB_COUNCIL_TIMEOUT_MS = 45_000;
 
 function parseThinkingLiteral(
   raw: string | undefined,
@@ -620,6 +634,13 @@ export interface LabCouncilResult {
    * de unmatchedNumbers deixaria passar (ver checkCitedMoneyCents em verifier.ts). */
   moneyMismatches: number[];
   moneyCentWarnings: number[];
+  /** FASE IA-11 (item 3) — valor em R$ com só 1 casa decimal (ex.: "R$ 123,6") cujo gabarito tem
+   * centavos diferentes do que se obtém só completando o zero — ❌ de verdade, com o valor do
+   * gabarito pronto pra mostrar (ver checkCitedMoneyCents em verifier.ts). */
+  moneyRoundedMismatches: Array<{ said: number; expected: number }>;
+  /** FASE IA-11 (item 3) — valor em R$ com só 1 casa decimal que bate EXATAMENTE com o gabarito ao
+   * completar o zero (ex.: "R$ 123,8" vs gabarito 123,80) — nunca erro, só aviso de formatação. */
+  moneyMissingCentZeroWarnings: number[];
   /** (c) mesmo contador do chat — nome de campo interno / rótulo "Cliente N" que sobrou no texto
    * bruto depois de restoreClientNames, medido nos 3 campos do JSON (recommendation/whatToMeasure/
    * cada perspectives[].analysis) concatenados. */
@@ -671,6 +692,8 @@ function emptyCouncilResult(
     unmatchedNumbers: [],
     moneyMismatches: [],
     moneyCentWarnings: [],
+    moneyRoundedMismatches: [],
+    moneyMissingCentZeroWarnings: [],
     leakedFieldNames: [],
     leakedLabelFragments: [],
     promisedResultOrFuturePrediction: false,
@@ -756,6 +779,8 @@ function buildLabCouncilResult(
     unmatchedNumbers,
     moneyMismatches: moneyCents.mismatches,
     moneyCentWarnings: moneyCents.centWarnings,
+    moneyRoundedMismatches: moneyCents.roundedMismatches,
+    moneyMissingCentZeroWarnings: moneyCents.missingCentZeroWarnings,
     leakedFieldNames: detectLeakedInternalFieldNames(afterRestore),
     leakedLabelFragments: afterRestore.match(/Clientes?\s+\d+/g) ?? [],
     promisedResultOrFuturePrediction: detectsPromisedResultOrFuturePrediction(afterRestore),
@@ -860,6 +885,7 @@ export const runLabCouncilQuestion = createServerFn({ method: "POST" })
             undefined,
             undefined,
             thinkingMode as "default" | "disabled" | "low",
+            LAB_COUNCIL_TIMEOUT_MS,
           )
         : createGoogleAdapter(apiKey);
 
@@ -987,7 +1013,13 @@ export const runLabCouncilCompareQuestion = createServerFn({ method: "POST" })
     // Prompt do Conselho NUNCA é alterado pelo Laboratório — mesmo AURA_COUNCIL_SYSTEM_PROMPT que
     // askCouncil usa em produção (ver condição 7 do merge condicional desta fase).
     const system = `${AURA_COUNCIL_SYSTEM_PROMPT}\n\n${contextBlockText}`;
-    const adapter = createAnthropicAdapter(apiKey, undefined, undefined, thinking);
+    const adapter = createAnthropicAdapter(
+      apiKey,
+      undefined,
+      undefined,
+      thinking,
+      LAB_COUNCIL_TIMEOUT_MS,
+    );
 
     try {
       const core = await runCouncilCore({

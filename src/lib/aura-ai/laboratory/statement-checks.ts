@@ -159,11 +159,24 @@ const OPS_COMPLETED_PATTERNS = [
   /(\d+)\s+atendimentos?\s+conclu[íi]dos?/i,
 ];
 
-/** (c) atendimentos realizados no mês atual. */
-export function extractOpsCompleted(text: string): number | null {
+// FASE IA-11 (item 5) — falso ❌ real (rodada 10): "Em atendimentos, o serviço que mais tem saída no
+// mês atual é o Volume Brasileiro, com 12 atendimentos realizados e receita de R$ 1.800 até hoje" —
+// os 12 são do SERVIÇO (topByAttendances), nunca do mês inteiro — o ajuste da IA-10 (item 4) cobriu
+// só a receita da mesma classe de frase, nunca "atendimentos realizados". Mesma generalização:
+// ignora a cláusula inteira quando cita "serviço", um nome de serviço do gabarito, ou uma das
+// palavras de liderança (campeão/líder/lidera/mais saída) — nunca só o entorno imediato do número.
+const OPS_COMPLETED_EXCLUDE_RE = /servi[çc]o|campe[ãa]o|l[íi]der|lidera|mais\s+sa[íi]da/i;
+
+/** (c) atendimentos realizados no mês atual. `knownServiceNames` (ver ServiceAttendanceLeaderGabarito)
+ * generaliza a exclusão: toda a cláusula é ignorada quando cita "serviço"/palavra de liderança ou o
+ * nome de um serviço do gabarito — nunca só os caracteres imediatamente perto do número (mesma
+ * generalização de extractCurrentMonthRevenue, FASE IA-10 item 4). */
+export function extractOpsCompleted(text: string, knownServiceNames: string[] = []): number | null {
   const clean = stripMarkdown(text);
   for (const clause of clean.split(CLAUSE_SPLIT_RE)) {
     if (!OPS_CONTEXT_RE.test(clause)) continue;
+    if (OPS_COMPLETED_EXCLUDE_RE.test(clause)) continue;
+    if (findMentionedService(clause, knownServiceNames)) continue;
     for (const re of OPS_COMPLETED_PATTERNS) {
       const m = clause.match(re);
       if (m) return Number(m[1]);
@@ -178,7 +191,7 @@ export function extractOpsCompleted(text: string): number | null {
  * trata como separador de milhar ("5.370" -> 5370, "1.234.567" -> 1234567) — era lido como decimal
  * (5,37) antes desta correção, o falso ❌ real da rodada 6. "5.37" (2 dígitos depois do ponto)
  * continua decimal, sem mudança. */
-function parseMoneyBR(raw: string): number | null {
+export function parseMoneyBR(raw: string): number | null {
   let normalized = raw;
   if (raw.includes(",") && raw.includes(".")) {
     normalized =
@@ -422,7 +435,7 @@ export function checkStatements(text: string, gabarito: StatementGabarito): Stat
   if (
     compareExact(
       "atendimentos realizados (mês atual)",
-      extractOpsCompleted(text),
+      extractOpsCompleted(text, gabarito.knownServiceNames),
       gabarito.opsCompletedCurrentMonth,
       mismatches,
     )
