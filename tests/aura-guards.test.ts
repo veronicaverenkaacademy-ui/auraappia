@@ -206,12 +206,12 @@ test("GUARDA: LAB_BUILD_TAG é uma constante exportada e não-vazia", async () =
   assert.ok(LAB_BUILD_TAG.length > 0);
 });
 
-// FASE IA-10 (item 6) — esta fase tocou o Laboratório de novo (comparação A/B do Conselho,
-// statement-checks.ts, verifier.ts, strip-metric-ids.ts) — a etiqueta precisa ter avançado pra
-// "IA-10" (atualização à mão, ver comentário em build-tag.ts).
-test("GUARDA: LAB_BUILD_TAG está em 'IA-10' nesta fase", async () => {
+// FASE IA-11 (item 7) — esta fase tocou o Laboratório de novo (council-core.ts, laboratory.functions.ts,
+// verifier.ts, normalize-pt-br.ts, statement-checks.ts) — a etiqueta precisa ter avançado pra
+// "IA-11" (atualização à mão, ver comentário em build-tag.ts).
+test("GUARDA: LAB_BUILD_TAG está em 'IA-11' nesta fase", async () => {
   const { LAB_BUILD_TAG } = await import("../src/lib/aura-ai/laboratory/build-tag.ts");
-  assert.equal(LAB_BUILD_TAG, "IA-10");
+  assert.equal(LAB_BUILD_TAG, "IA-11");
 });
 
 test("GUARDA: a tela do Laboratório importa LAB_BUILD_TAG e renderiza o aviso de divergência tela/servidor", () => {
@@ -351,6 +351,44 @@ test("GUARDA: runLabCouncilCompareQuestion usa runCouncilCore (núcleo compartil
   assert.match(body, /runCouncilCore\(/);
   assert.match(body, /skipStripMetricIds:\s*true/);
   assert.match(body, /\$\{AURA_COUNCIL_SYSTEM_PROMPT\}\\n\\n\$\{contextBlockText\}/);
+});
+
+// FASE IA-11 (item 2) — rodada 10: Config B (sonnet/default) estourou o timeout de produção (25s)
+// numa pergunta do Conselho. Config B passa a usar raciocínio "low" (mesmo mecanismo já usado no
+// chat) e o Conselho no Laboratório (as duas funções, runLabCouncilQuestion e
+// runLabCouncilCompareQuestion, caminho Anthropic) passa a usar um timeout de 45s, só ali — produção
+// (chat/relatório/Conselho de verdade) continua em AURA_AI_TIMEOUT_MS (25s, http.server.ts).
+test("GUARDA: Config B do Conselho no Laboratório usa raciocínio 'low' (não mais 'default') e LAB_COUNCIL_TIMEOUT_MS=45000 é passado ao adaptador Anthropic nas duas funções do Conselho", () => {
+  const src = readFileSync(
+    new URL("../src/lib/aura-ai/laboratory/laboratory.functions.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(src, /B:\s*\{\s*model:\s*"claude-sonnet-5-5",\s*thinking:\s*"low"\s*\}/);
+  assert.match(src, /export const LAB_COUNCIL_TIMEOUT_MS = 45_000/);
+
+  // runLabCouncilQuestion (caminho Anthropic) passa LAB_COUNCIL_TIMEOUT_MS pro adaptador.
+  const qStart = src.indexOf("export const runLabCouncilQuestion");
+  const qNextExport = src.indexOf("export const", qStart + 1);
+  const qBody = src.slice(qStart, qNextExport > -1 ? qNextExport : undefined);
+  assert.match(
+    qBody,
+    /createAnthropicAdapter\(\s*apiKey,\s*undefined,\s*undefined,\s*thinkingMode as "default" \| "disabled" \| "low",\s*LAB_COUNCIL_TIMEOUT_MS,\s*\)/,
+  );
+
+  // runLabCouncilCompareQuestion também.
+  const cStart = src.indexOf("export const runLabCouncilCompareQuestion");
+  const cBody = src.slice(cStart);
+  assert.match(
+    cBody,
+    /createAnthropicAdapter\(\s*apiKey,\s*undefined,\s*undefined,\s*thinking,\s*LAB_COUNCIL_TIMEOUT_MS,?\s*\)/,
+  );
+});
+
+// FASE IA-11 (item 2) — o timeout de produção (AURA_AI_TIMEOUT_MS, usado por chat/relatório/Conselho
+// de verdade) nunca muda — só o Laboratório ganha um timeout maior, via parâmetro explícito.
+test("GUARDA: AURA_AI_TIMEOUT_MS (timeout de produção) continua 25 segundos", async () => {
+  const { AURA_AI_TIMEOUT_MS } = await import("../src/lib/aura-ai/http.server.ts");
+  assert.equal(AURA_AI_TIMEOUT_MS, 25_000);
 });
 
 // FASE IA-3C (item 4) — a linha do provedor no texto "Copiar" tem que trazer tela= e servidor=,
@@ -517,6 +555,25 @@ test("GUARDA: regra 23 ('mais saída' = mais atendimentos, usa topByAttendances,
   assert.match(src, /NUNCA trate o primeiro item dessa lista como o serviço com mais atendimentos/);
   assert.match(src, /cite os dois, nunca escolha só um como "o" líder/);
   for (let n = 1; n <= 22; n++) {
+    assert.match(src, new RegExp(`${n}\\.\\s`), `regra ${n} deveria continuar presente`);
+  }
+});
+
+// FASE IA-11 (item 6) — rodada 10: a IA escreveu "R$ 123,6" (devia ser R$ 123,62) e prometeu uma
+// funcionalidade que o app pode não ter ("se você registrar as vendas de produtos..."). Regras 24 e 25
+// ACRESCENTADAS (as 23 anteriores continuam exatamente como estavam, sem renumerar).
+test("GUARDA: regra 24 (centavos exatos, nunca arredondar) e regra 25 (nunca pedir pra registrar/ativar/configurar, nunca prometer funcionalidade desconhecida) estão presentes, sem renumerar as 23 anteriores", () => {
+  const src = readFileSync(new URL("../src/lib/aura-ai/system-prompt.ts", import.meta.url), "utf8");
+  assert.match(src, /24\.\s*Escreva todo valor em R\$ com os centavos EXATOS do bloco de métricas/);
+  assert.match(src, /nunca arredonde nem corte casas decimais/);
+  assert.match(src, /nunca escreva "R\$ 123,6" quando o valor exato é R\$ 123,62/);
+  assert.match(
+    src,
+    /25\.\s*Nunca peça nem sugira que a dona "registre", "ative" ou "configure" algo no aplicativo/,
+  );
+  assert.match(src, /nunca prometa funcionalidades que você não conhece/);
+  assert.match(src, /diga apenas que ainda não tem esse dado/);
+  for (let n = 1; n <= 23; n++) {
     assert.match(src, new RegExp(`${n}\\.\\s`), `regra ${n} deveria continuar presente`);
   }
 });

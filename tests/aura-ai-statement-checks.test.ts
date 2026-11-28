@@ -322,6 +322,52 @@ test("checkStatements (IA-10 item 4): frase real 2 — receita do MÊS ANTERIOR 
   assert.equal(result.mismatches.filter((m) => m.label === "receita do mês atual").length, 0);
 });
 
+// FASE IA-11 (item 5) — falso ❌ real (rodada 10): "Em atendimentos, o serviço que mais tem saída no
+// mês atual é o Volume Brasileiro, com 12 atendimentos realizados..." — os 12 são do SERVIÇO
+// (topByAttendances), não do mês inteiro. Mesma generalização de extractCurrentMonthRevenue (IA-10
+// item 4): a cláusula inteira é ignorada quando cita "serviço"/nome de serviço/palavra de liderança.
+test("checkStatements (IA-11 item 5): frase real da rodada 10 — '12 atendimentos realizados' do SERVIÇO nunca é confundido com o total do mês — nenhum ❌", () => {
+  const gabarito: StatementGabarito = {
+    ...FULL_GABARITO,
+    opsCompletedCurrentMonth: 50,
+    knownServiceNames: SERVICE_NAMES_RODADA_9,
+  };
+  const result = checkStatements(
+    "Em atendimentos, o serviço que mais tem saída no mês atual é o **Volume Brasileiro**, com 12 atendimentos realizados e receita de R$ 1.800 até hoje (service_breakdown_current_month_top_by_attendances).",
+    gabarito,
+  );
+  assert.equal(
+    result.mismatches.filter((m) => m.label === "atendimentos realizados (mês atual)").length,
+    0,
+  );
+});
+
+test("checkStatements (IA-11 item 5): planted '40 atendimentos realizados no mês atual' (gabarito 50, sem menção a serviço) continua virando ❌", () => {
+  const gabarito: StatementGabarito = {
+    ...FULL_GABARITO,
+    opsCompletedCurrentMonth: 50,
+    knownServiceNames: SERVICE_NAMES_RODADA_9,
+  };
+  const result = checkStatements("Foram 40 atendimentos realizados no mês atual.", gabarito);
+  assert.equal(result.mismatches.length, 1);
+  assert.equal(result.mismatches[0].label, "atendimentos realizados (mês atual)");
+  assert.equal(result.mismatches[0].said, 40);
+  assert.equal(result.mismatches[0].expected, 50);
+});
+
+test("checkStatements (IA-11 item 5): '50 atendimentos realizados' (sem menção a serviço, bate com o gabarito) vira ✅", () => {
+  const gabarito: StatementGabarito = {
+    ...FULL_GABARITO,
+    opsCompletedCurrentMonth: 50,
+    knownServiceNames: SERVICE_NAMES_RODADA_9,
+  };
+  const result = checkStatements("Foram 50 atendimentos realizados este mês.", gabarito);
+  assert.equal(
+    result.mismatches.filter((m) => m.label === "atendimentos realizados (mês atual)").length,
+    0,
+  );
+});
+
 test("checkStatements (IA-10 item 4): erro plantado — receita atual R$ 6.650 em vez de R$ 5.560 (fora da tolerância de 2%) vira ❌", () => {
   const gabarito: StatementGabarito = {
     ...FULL_GABARITO,

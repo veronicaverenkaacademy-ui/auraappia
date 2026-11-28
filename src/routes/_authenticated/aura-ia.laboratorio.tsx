@@ -253,13 +253,16 @@ function resultToText(
 //
 // FASE IA-10 (item 5c) — a rodada 9 só comparava provedor x provedor (Anthropic x Google); agora
 // compara DUAS configurações Anthropic FIXAS lado a lado (A: claude-haiku-5-5/low, o que a produção
-// usa hoje por padrão; B: claude-sonnet-5-5/default — ver runLabCouncilCompareQuestion), pra ver se
-// um modelo maior/com raciocínio normal evita as falhas de JSON e os desvios reais da rodada 9.
+// usa hoje por padrão; B: claude-sonnet-5-5/low — ver runLabCouncilCompareQuestion), pra ver se um
+// modelo maior evita as falhas de JSON e os desvios reais da rodada 9.
+// FASE IA-11 (item 2) — Config B estourou o timeout de produção na rodada 10 com raciocínio
+// "default"; trocado pra "low" (mesmo mecanismo já usado no chat) e o Laboratório ganhou um timeout
+// próprio de 45s (LAB_COUNCIL_TIMEOUT_MS em laboratory.functions.ts) só pra esta comparação.
 
 const COUNCIL_COMPARE_CONFIGS: CouncilCompareConfigId[] = ["A", "B"];
 const COUNCIL_COMPARE_LABEL: Record<CouncilCompareConfigId, string> = {
   A: "Config A (padrão: claude-haiku-5-5 / low)",
-  B: "Config B (padrão: claude-sonnet-5-5 / default)",
+  B: "Config B (padrão: claude-sonnet-5-5 / low)",
 };
 
 interface CouncilCompareItemRun {
@@ -342,7 +345,11 @@ function councilCompareResultToText(
         : "⚠️ JSON NUNCA aceito nas 2 tentativas (fallback honesto devolvido)",
     );
     lines.push(`(a) JSON válido: ${r.jsonValid ? "✅" : "❌"}`);
-    if (r.unmatchedNumbers.length === 0 && r.moneyMismatches.length === 0) {
+    if (
+      r.unmatchedNumbers.length === 0 &&
+      r.moneyMismatches.length === 0 &&
+      r.moneyRoundedMismatches.length === 0
+    ) {
       lines.push(`(b) ✅ ${r.citedNumbersTotal} número(s) conferem com o gabarito`);
     } else {
       if (r.unmatchedNumbers.length > 0) {
@@ -353,11 +360,26 @@ function councilCompareResultToText(
           `(b) ❌ valor em R$ errado (diferença maior que 1 centavo do gabarito): ${r.moneyMismatches.join(", ")}`,
         );
       }
+      // FASE IA-11 (item 3) — valor com só 1 casa decimal que diverge de verdade do gabarito
+      // (ex.: "R$ 123,6" vs gabarito 123,62) — ❌, com o valor do gabarito junto.
+      if (r.moneyRoundedMismatches.length > 0) {
+        lines.push(
+          `(b) ❌ valor arredondado/incorreto (1 casa decimal): ${r.moneyRoundedMismatches
+            .map((m) => `${m.said} (gabarito: ${m.expected})`)
+            .join(", ")}`,
+        );
+      }
     }
     // FASE IA-10 (item 5d) — diferença de 1 centavo é um AVISO, nunca ❌ (ver checkCitedMoneyCents).
     if (r.moneyCentWarnings.length > 0) {
       lines.push(
         `(b) ⚠️ diferença de 1 centavo (arredondamento): ${r.moneyCentWarnings.join(", ")}`,
+      );
+    }
+    // FASE IA-11 (item 3) — só faltou o zero dos centavos (123,8 == 123,80) — nunca erro.
+    if (r.moneyMissingCentZeroWarnings.length > 0) {
+      lines.push(
+        `(b) ⚠️ faltou o zero dos centavos (a formatação corrige): ${r.moneyMissingCentZeroWarnings.join(", ")}`,
       );
     }
     if (r.leakedFieldNames.length === 0 && r.leakedLabelFragments.length === 0) {
@@ -592,13 +614,14 @@ function Laboratorio() {
           (fallback disfarçado de recomendação real). Roda as 2 perguntas fixas pelo MESMO caminho de
           produção (runCouncilCore, núcleo compartilhado com askCouncil).
           FASE IA-10 (item 5c) — agora compara DUAS configurações Anthropic fixas lado a lado (A:
-          claude-haiku-5-5/low; B: claude-sonnet-5-5/default), em vez de provedor x provedor. */}
+          claude-haiku-5-5/low; B: claude-sonnet-5-5/low — ver FASE IA-11 item 2, raciocínio "default"
+          estourava o timeout), em vez de provedor x provedor. */}
       <div>
         <h2 className="text-lg font-display font-medium">Conselho</h2>
         <p className="text-sm text-muted-foreground mt-1">
           Exercita o mesmo caminho de produção do Conselho Executivo (askCouncil) com 2 perguntas
           fixas, comparando 2 configurações Anthropic lado a lado (A: claude-haiku-5-5/low — o que a
-          produção usa hoje por padrão; B: claude-sonnet-5-5/default).
+          produção usa hoje por padrão; B: claude-sonnet-5-5/low).
         </p>
       </div>
 
@@ -981,9 +1004,25 @@ function CouncilCompareQuestionResultView({
                   ❌ (b) valor em R$ errado: {r.moneyMismatches.join(", ")}
                 </div>
               )}
+              {/* FASE IA-11 (item 3) — 1 casa decimal que diverge de verdade do gabarito (ex.: "R$
+                  123,6" vs gabarito 123,62) — ❌, com o valor do gabarito junto. */}
+              {r.moneyRoundedMismatches.length > 0 && (
+                <div className="text-[11px] text-destructive mt-1">
+                  ❌ (b) valor arredondado/incorreto:{" "}
+                  {r.moneyRoundedMismatches
+                    .map((m) => `${m.said} (gabarito: ${m.expected})`)
+                    .join(", ")}
+                </div>
+              )}
               {r.moneyCentWarnings.length > 0 && (
                 <div className="text-[11px] text-amber-600 mt-1">
                   ⚠️ (b) diferença de 1 centavo: {r.moneyCentWarnings.join(", ")}
+                </div>
+              )}
+              {/* FASE IA-11 (item 3) — só faltou o zero dos centavos (123,8 == 123,80) — nunca erro. */}
+              {r.moneyMissingCentZeroWarnings.length > 0 && (
+                <div className="text-[11px] text-amber-600 mt-1">
+                  ⚠️ (b) faltou o zero dos centavos: {r.moneyMissingCentZeroWarnings.join(", ")}
                 </div>
               )}
               {(r.leakedFieldNames.length > 0 || r.leakedLabelFragments.length > 0) && (

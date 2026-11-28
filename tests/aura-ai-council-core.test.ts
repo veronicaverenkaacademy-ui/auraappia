@@ -8,6 +8,7 @@ import {
   runCouncilCore,
   formatCouncilParseFailureLog,
   logCouncilParseFailure,
+  COUNCIL_JSON_FORMAT_REMINDER,
   COUNCIL_JSON_RETRY_SUFFIX,
   COUNCIL_FALLBACK_RECOMMENDATION,
   type CouncilParseFailureInfo,
@@ -64,6 +65,33 @@ test("runCouncilCore: aceita na tentativa 1 — acceptedOnAttempt=1, usedFallbac
   assert.equal(result.acceptedOnAttempt, 1);
   assert.equal(result.usedFallback, false);
   assert.equal(result.status, "recomendado");
+});
+
+// FASE IA-11 (item 1) — rodada 10: Config A (haiku/low) falhou o parse na tentativa 1 nas 2
+// perguntas (respondeu em prosa) e só acertou na retentativa. O lembrete de formato agora vai na
+// mensagem da PRIMEIRA chamada também, não só na retentativa.
+test("runCouncilCore: a TENTATIVA 1 já leva o lembrete de formato no fim da mensagem", async () => {
+  const { labelMap, names } = labelsForOneClient();
+  const messagesSent: string[] = [];
+  await runCouncilCore({
+    question: "Devo aumentar meus preços?",
+    generateFn: async (msg) => {
+      messagesSent.push(msg);
+      return fakeResult(VALID_JSON);
+    },
+    labelMap,
+    names,
+    skipStripMetricIds: false,
+  });
+  assert.equal(messagesSent.length, 1);
+  assert.equal(messagesSent[0], `Devo aumentar meus preços?${COUNCIL_JSON_FORMAT_REMINDER}`);
+});
+
+test("COUNCIL_JSON_FORMAT_REMINDER e COUNCIL_JSON_RETRY_SUFFIX são formulações DISTINTAS (retentativa mais forte)", () => {
+  assert.notEqual(COUNCIL_JSON_FORMAT_REMINDER, COUNCIL_JSON_RETRY_SUFFIX);
+  assert.match(COUNCIL_JSON_RETRY_SUFFIX, /SOMENTE/);
+  assert.match(COUNCIL_JSON_RETRY_SUFFIX, /começando com \{ e terminando com \}/);
+  assert.match(COUNCIL_JSON_RETRY_SUFFIX, /não era um objeto JSON válido/);
 });
 
 // FASE IA-10 (item 5a) — attempts expõe o diagnóstico de CADA tentativa feita (nunca só a última),
@@ -136,10 +164,57 @@ test("runCouncilCore: tentativa 1 falha o parse -> UMA retentativa com o sufixo 
     skipStripMetricIds: false,
   });
   assert.equal(messagesSent.length, 2);
-  assert.equal(messagesSent[0], "Devo aumentar meus preços?");
+  assert.equal(messagesSent[0], `Devo aumentar meus preços?${COUNCIL_JSON_FORMAT_REMINDER}`);
   assert.equal(messagesSent[1], `Devo aumentar meus preços?${COUNCIL_JSON_RETRY_SUFFIX}`);
   assert.equal(result.acceptedOnAttempt, 2);
   assert.equal(result.usedFallback, false);
+});
+
+// FASE IA-11 (item 2) — rodada 10: Config B (sonnet/default) estourou o timeout numa pergunta do
+// Conselho, nas 4 tentativas (2 do council-core x 2 do fetchWithRetry). generateFn pode LANÇAR (rede/
+// timeout) — contrato documentado: isso SOBE pra quem chamou, nunca é tratado como "parse falhou"
+// (onParseFailure não é chamado para isso, só pra falha de PARSE). Quem chama (runLabCouncilQuestion/
+// runLabCouncilCompareQuestion em laboratory.functions.ts, e askCouncil em produção) já tem seu
+// próprio try/catch ao redor de runCouncilCore pra esse caso — nunca muda nesta fase.
+test("runCouncilCore: generateFn que lança (timeout/erro de rede) PROPAGA o erro — nunca vira fallback silencioso, onParseFailure não é chamado", async () => {
+  const { labelMap, names } = labelsForOneClient();
+  const failures: CouncilParseFailureInfo[] = [];
+  await assert.rejects(
+    () =>
+      runCouncilCore({
+        question: "q",
+        generateFn: async () => {
+          throw new Error("Não foi possível falar com a IA agora (tempo esgotado)");
+        },
+        labelMap,
+        names,
+        skipStripMetricIds: true,
+        onParseFailure: (info) => failures.push(info),
+      }),
+    /tempo esgotado/,
+  );
+  assert.equal(failures.length, 0);
+});
+
+test("runCouncilCore: tentativa 1 falha o PARSE (não lança) e tentativa 2 (retentativa) LANÇA (timeout) — o lançamento da 2ª propaga, não vira fallback", async () => {
+  const { labelMap, names } = labelsForOneClient();
+  let calls = 0;
+  await assert.rejects(
+    () =>
+      runCouncilCore({
+        question: "q",
+        generateFn: async () => {
+          calls++;
+          if (calls === 1) return fakeResult("isso não é json");
+          throw new Error("tempo esgotado na retentativa");
+        },
+        labelMap,
+        names,
+        skipStripMetricIds: true,
+      }),
+    /tempo esgotado na retentativa/,
+  );
+  assert.equal(calls, 2);
 });
 
 test("runCouncilCore: as duas tentativas falham -> fallback HONESTO (nunca disfarçado), onParseFailure chamado 2x", async () => {
@@ -178,6 +253,54 @@ test("runCouncilCore: produção (skipStripMetricIds=false) aplica restoreClient
   assert.equal(result.recommendation, "Recomendo Fernanda Souza.");
   assert.doesNotMatch(result.whatToMeasure, /revenue_comparison/);
   assert.equal(result.perspectives[0].analysis, "Faturamento de Fernanda Souza.");
+});
+
+// FASE IA-11 (item 4) — askCouncil (produção) nunca aplicava normalizePtBrNumbers (só o chat
+// aplicava) — rodada 10 achou "R$ 123,6"/"R$ 123,8" (1 casa decimal) na resposta real. Prova a ORDEM
+// completa (restoreClientNames -> sanitizeInternalFieldNames -> stripMetricIds -> normalizePtBrNumbers)
+// numa mesma string, pros dois casos (produção e Laboratório).
+test("runCouncilCore: produção aplica normalizePtBrNumbers POR ÚLTIMO — 'R$ 123,8' (1 casa) vira 'R$ 123,80' mesmo junto com nome de cliente e id de métrica na mesma frase", async () => {
+  const { labelMap, names } = labelsForOneClient();
+  const json = JSON.stringify({
+    perspectives: [],
+    recommendation:
+      "O ticket de Cliente 1 foi de R$ 123,8 (ticket_current_month) e a receita de R$ 1.800 ficou igual.",
+    whatToMeasure: "ok",
+    status: "recomendado",
+  });
+  const result = await runCouncilCore({
+    question: "q",
+    generateFn: async () => fakeResult(json),
+    labelMap,
+    names,
+    skipStripMetricIds: false,
+  });
+  // restoreClientNames já trocou "Cliente 1" -> "Fernanda Souza"; stripMetricIds já removeu o id
+  // técnico; normalizePtBrNumbers completou o zero de "R$ 123,8" SEM mexer em "R$ 1.800" (que já
+  // está correto, sem vírgula nenhuma).
+  assert.match(result.recommendation, /Fernanda Souza/);
+  assert.doesNotMatch(result.recommendation, /ticket_current_month/);
+  assert.match(result.recommendation, /R\$ 123,80\b/);
+  assert.match(result.recommendation, /R\$ 1\.800\b/);
+});
+
+test("runCouncilCore: Laboratório (skipStripMetricIds=true) também aplica normalizePtBrNumbers — só pula o passo de stripMetricIds, nunca este", async () => {
+  const { labelMap, names } = labelsForOneClient();
+  const json = JSON.stringify({
+    perspectives: [],
+    recommendation: "O ticket foi de R$ 123,8 (ticket_current_month).",
+    whatToMeasure: "ok",
+    status: "recomendado",
+  });
+  const result = await runCouncilCore({
+    question: "q",
+    generateFn: async () => fakeResult(json),
+    labelMap,
+    names,
+    skipStripMetricIds: true,
+  });
+  assert.match(result.recommendation, /ticket_current_month/); // id de métrica continua intacto
+  assert.match(result.recommendation, /R\$ 123,80\b/); // mas o centavo é sempre completado
 });
 
 test("runCouncilCore: Laboratório (skipStripMetricIds=true) NUNCA aplica stripMetricIds — ids de métrica continuam intactos", async () => {

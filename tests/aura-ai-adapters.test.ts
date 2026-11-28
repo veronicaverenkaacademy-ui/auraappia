@@ -124,6 +124,36 @@ test("timeout: fetch que nunca resolve é abortado no tempo configurado, sem pen
   await assert.rejects(() => fetchWithRetry(fakeFetch, "https://exemplo.invalido", {}, 50));
 });
 
+// FASE IA-11 (item 2) — `timeoutMs` (5º parâmetro de createAnthropicAdapter) só existe pro
+// Laboratório poder esperar mais numa comparação (rodada 10: Sonnet/default estourou os 25s padrão
+// de produção numa pergunta do Conselho) — sem este argumento o adaptador continua no default de
+// produção (AURA_AI_TIMEOUT_MS, 25s, nunca alterado aqui).
+test("anthropic: timeoutMs (5º parâmetro) é repassado pro fetchWithRetry — fetch que nunca resolve aborta no tempo configurado, não no default de 25s", async () => {
+  const fakeFetch = (_url: string, init: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      const signal = init.signal as AbortSignal;
+      signal.addEventListener("abort", () => reject(new Error("abortado pelo timeout")));
+    });
+  const adapter = createAnthropicAdapter("fake-key", fakeFetch, undefined, undefined, 50);
+  const start = Date.now();
+  await assert.rejects(() => adapter.generate(BASE_PARAMS, "claude-haiku-5-5"));
+  assert.ok(
+    Date.now() - start < 2000,
+    "deveria ter abortado perto de 50ms, não esperado o default de 25s",
+  );
+});
+
+test("anthropic: sem timeoutMs (5º parâmetro), continua no default de produção (AURA_AI_TIMEOUT_MS) — comportamento de sempre", async () => {
+  const fakeFetch = async () =>
+    jsonResponse(200, {
+      content: [{ type: "text", text: "ok" }],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+  const adapter = createAnthropicAdapter("fake-key", fakeFetch);
+  const result = await adapter.generate(BASE_PARAMS, "claude-haiku-5-5");
+  assert.equal(result.text, "ok");
+});
+
 test("google: parsing correto de candidates/usageMetadata e role 'assistant' -> 'model'", async () => {
   let capturedBody: Record<string, unknown> = {};
   const fakeFetch = async (_url: string, init: RequestInit) => {
