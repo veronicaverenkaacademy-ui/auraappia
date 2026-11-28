@@ -21,6 +21,21 @@ import { formatCEP, lookupCEP } from "@/lib/cep";
 import { acceptMyTerms } from "@/lib/professional-terms.functions";
 import { claimProfessionalRole } from "@/lib/claim-professional-role.functions";
 import { phoneAuthErrorMessage } from "@/lib/phone-auth-error";
+import {
+  AUTH_DEBUG_STORAGE_KEY,
+  AUTH_DEBUG_LAST_ATTEMPT_KEY,
+  resolveDebugMode,
+  splitUrlParts,
+  paramNamesFrom,
+  detectOAuthCallbackFlags,
+  summarizeUserAgent,
+  serializeLastAttempt,
+  parseLastAttempt,
+  formatDiagnosticText,
+  stripQueryAndHash,
+  type AuthDebugSnapshot,
+  type AuthDebugLastAttempt,
+} from "@/lib/auth-debug";
 
 // FASE AUTH-2 (23/11/2026) — login/cadastro de PROFISSIONAL por telefone
 // (SMS) desligado no lançamento: falhou em produção ("Não foi possível
@@ -139,6 +154,25 @@ function AuthPage() {
   }));
   const [cepLoading, setCepLoading] = useState(false);
   const latestCepDigitsRef = useRef("");
+
+  // FASE AUTH-3 (28/11/2026) — painel de diagnóstico visível, só atrás de
+  // ?debug=1 (persistido 30min, ver src/lib/auth-debug.ts). Todo estado e
+  // efeito abaixo só EXISTE pra alimentar esse painel — nada aqui participa
+  // da lógica real de login/cadastro (finishLogin/navigateAfterAuth/
+  // claimRole/socialSignIn continuam sem nenhuma linha alterada).
+  const [debugActive, setDebugActive] = useState(false);
+  const [debugBase, setDebugBase] = useState<Omit<
+    AuthDebugSnapshot,
+    | "authEvents"
+    | "lastAttempt"
+    | "pathNow"
+    | "currentFlags"
+    | "currentQueryParamNames"
+    | "currentHashParamNames"
+  > | null>(null);
+  const [debugAuthEvents, setDebugAuthEvents] = useState<
+    Array<{ atIso: string; event: string; hasSession: boolean }>
+  >([]);
 
   // Mantém o estado local em sincronia com o rascunho em sessionStorage a cada
   // alteração, pra não perder o endereço se o usuário navegar pra trás e voltar
@@ -309,6 +343,154 @@ function AuthPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate, search.next, search.signup]);
 
+  // FASE AUTH-3 (28/11/2026) — ativa/desativa e popula o painel de
+  // diagnóstico (?debug=1, ver src/lib/auth-debug.ts). Roda DEPOIS do
+  // efeito de produção acima (ordem de declaração) de propósito: a URL
+  // "da carga inicial" não vem de window.location (que o efeito acima pode
+  // já ter reescrito, via o navigate() de hasSignupInProgress() — ver o
+  // comentário em src/lib/auth-debug.ts) e sim de
+  // performance.getEntriesByType("navigation"), que o navegador grava no
+  // momento real do load, antes de qualquer JS nosso rodar — não depende
+  // da ordem dos efeitos. Sem ?debug=1 e sem flag persistido válido, este
+  // efeito só lê a query e o localStorage do próprio flag (decision.active
+  // dá false) e para em seguida — nenhuma chamada nova a getSession,
+  // onAuthStateChange, localStorage de teste ou performance roda.
+  useEffect(() => {
+    let debugParam: string | null = null;
+    try {
+      debugParam = new URLSearchParams(window.location.search).get("debug");
+    } catch {
+      debugParam = null;
+    }
+    let storedRaw: string | null = null;
+    try {
+      storedRaw = window.localStorage.getItem(AUTH_DEBUG_STORAGE_KEY);
+    } catch {
+      storedRaw = null;
+    }
+    const decision = resolveDebugMode(debugParam, storedRaw, Date.now());
+    if (decision.shouldWrite) {
+      try {
+        if (decision.writeValue === null) {
+          window.localStorage.removeItem(AUTH_DEBUG_STORAGE_KEY);
+        } else {
+          window.localStorage.setItem(AUTH_DEBUG_STORAGE_KEY, decision.writeValue);
+        }
+      } catch {
+        // sem storage — segue só com o estado em memória desta renderização.
+      }
+    }
+    setDebugActive(decision.active);
+    if (!decision.active) return;
+
+    // --- só a partir daqui roda algo além do fluxo normal (flag ativo). ---
+    let initialLoadHref: string | null = null;
+    try {
+      const navEntries = performance.getEntriesByType("navigation");
+      initialLoadHref = (navEntries[0] as PerformanceNavigationTiming | undefined)?.name ?? null;
+    } catch {
+      initialLoadHref = null;
+    }
+    const initialParts = initialLoadHref
+      ? splitUrlParts(initialLoadHref)
+      : { search: "", hash: "" };
+
+    const probeKey = "aura_auth_debug_probe";
+    let localStorageOk = false;
+    try {
+      window.localStorage.setItem(probeKey, "1");
+      localStorageOk = window.localStorage.getItem(probeKey) === "1";
+      window.localStorage.removeItem(probeKey);
+    } catch {
+      localStorageOk = false;
+    }
+    let sessionStorageOk = false;
+    try {
+      window.sessionStorage.setItem(probeKey, "1");
+      sessionStorageOk = window.sessionStorage.getItem(probeKey) === "1";
+      window.sessionStorage.removeItem(probeKey);
+    } catch {
+      sessionStorageOk = false;
+    }
+
+    let hasAuthNext = false;
+    try {
+      hasAuthNext = window.sessionStorage.getItem("aura_auth_next") !== null;
+    } catch {
+      hasAuthNext = false;
+    }
+
+    let inIframe = false;
+    try {
+      inIframe = window.self !== window.top;
+    } catch {
+      inIframe = true;
+    }
+    let standalone = false;
+    try {
+      standalone =
+        window.matchMedia?.("(display-mode: standalone)").matches === true ||
+        (navigator as unknown as { standalone?: boolean }).standalone === true;
+    } catch {
+      standalone = false;
+    }
+
+    setDebugBase({
+      // Sanitizado (sem query/hash) — se o fragmento tivesse um token real,
+      // ele NUNCA deve chegar aqui cru; os nomes/flags acima já extraem
+      // tudo que é seguro mostrar.
+      initialLoadHref: initialLoadHref ? stripQueryAndHash(initialLoadHref) : null,
+      initialFlags: initialLoadHref
+        ? detectOAuthCallbackFlags(initialParts.search, initialParts.hash)
+        : null,
+      initialQueryParamNames: paramNamesFrom(initialParts.search),
+      initialHashParamNames: paramNamesFrom(initialParts.hash),
+      referrer: document.referrer,
+      hasSession: false,
+      sessionErrorMessage: null,
+      localStorageOk,
+      sessionStorageOk,
+      signupInProgress: hasSignupInProgress(),
+      hasAuthNext,
+      cookieEnabled: navigator.cookieEnabled,
+      inIframe,
+      standalone,
+      userAgent: summarizeUserAgent(navigator.userAgent),
+    });
+
+    // Chamada SEPARADA de getSession/onAuthStateChange da que o efeito de
+    // produção acima já faz — só pra alimentar o painel, nunca decide
+    // navegação nem roda finishLogin.
+    supabase.auth.getSession().then(
+      ({ data, error }) => {
+        setDebugBase((prev) =>
+          prev
+            ? { ...prev, hasSession: !!data.session, sessionErrorMessage: error?.message ?? null }
+            : prev,
+        );
+      },
+      (err: unknown) => {
+        setDebugBase((prev) =>
+          prev
+            ? {
+                ...prev,
+                hasSession: false,
+                sessionErrorMessage: err instanceof Error ? err.message : String(err),
+              }
+            : prev,
+        );
+      },
+    );
+
+    const { data: debugSub } = supabase.auth.onAuthStateChange((event, session) => {
+      setDebugAuthEvents((prev) => [
+        ...prev,
+        { atIso: new Date().toISOString(), event, hasSession: !!session },
+      ]);
+    });
+    return () => debugSub.subscription.unsubscribe();
+  }, []);
+
   const normalized = (raw: string) => {
     const digits = raw.replace(/\D/g, "");
     return digits.startsWith("55") ? `+${digits}` : `+55${digits}`;
@@ -437,11 +619,39 @@ function AuthPage() {
       // repositório); se não preservar, o marcador em sessionStorage
       // resolve sozinho.
       if (search.signup) markSignupInProgress();
-      const redirectUri =
-        window.location.origin + "/auth" + (search.signup ? "?signup=true" : "");
+      const redirectUri = window.location.origin + "/auth" + (search.signup ? "?signup=true" : "");
       const res = await lovable.auth.signInWithOAuth(provider, {
         redirect_uri: redirectUri,
       });
+      // FASE AUTH-3 — rastro pro painel de diagnóstico, só com debug ativo.
+      // Gravado aqui (logo após termos `res`, ainda síncrono — o navegador
+      // só sai de fato desta página um pouco depois, já que
+      // `window.location.href = ...` não interrompe o JS em execução) pra
+      // sobreviver ao redirecionamento de página inteira e aparecer no
+      // painel depois da volta. Nunca inclui token/código: `res` em si
+      // nunca carrega nenhum dos dois nesta chamada (fora de iframe,
+      // signInWithOAuth só devolve {error, redirected} — ver
+      // node_modules/@lovable.dev/cloud-auth-js/dist/index.js linhas
+      // 141-144 — os tokens só aparecem na volta, numa página nova).
+      if (debugActive) {
+        try {
+          const record: AuthDebugLastAttempt = {
+            provider,
+            atIso: new Date().toISOString(),
+            redirectUriNoQuery: stripQueryAndHash(redirectUri),
+            redirected: (res as unknown as Record<string, unknown>).redirected === true,
+            hadError: !!res.error,
+            errorMessage: res.error
+              ? res.error instanceof Error
+                ? res.error.message
+                : String(res.error)
+              : null,
+          };
+          window.localStorage.setItem(AUTH_DEBUG_LAST_ATTEMPT_KEY, serializeLastAttempt(record));
+        } catch {
+          // sem storage — o resto do fluxo (toast/redirect real) segue normal.
+        }
+      }
       // Cast solto só pra esse log/checagem de diagnóstico — não confio no shape exato
       // retornado pelo pacote externo (@lovable.dev/cloud-auth-js) sem ver o código-fonte dele.
       const resLoose = res as unknown as Record<string, unknown>;
@@ -467,6 +677,43 @@ function AuthPage() {
   const google = () => socialSignIn("google");
   const apple = () => socialSignIn("apple");
 
+  // FASE AUTH-3 — monta o snapshot completo pro painel/"Copiar diagnóstico"
+  // a partir do que foi capturado no efeito de debug (debugBase,
+  // debugAuthEvents) + o que só faz sentido ler "agora" (URL atual e o
+  // último rastro de socialSignIn, que pode ter sido gravado DEPOIS do
+  // efeito já ter rodado). Só é chamada quando debugActive é true.
+  const buildDebugSnapshot = (): AuthDebugSnapshot | null => {
+    if (!debugBase) return null;
+    const nowParts = splitUrlParts(window.location.href);
+    let lastAttemptRaw: string | null = null;
+    try {
+      lastAttemptRaw = window.localStorage.getItem(AUTH_DEBUG_LAST_ATTEMPT_KEY);
+    } catch {
+      lastAttemptRaw = null;
+    }
+    return {
+      ...debugBase,
+      pathNow: window.location.pathname,
+      currentFlags: detectOAuthCallbackFlags(nowParts.search, nowParts.hash),
+      currentQueryParamNames: paramNamesFrom(nowParts.search),
+      currentHashParamNames: paramNamesFrom(nowParts.hash),
+      authEvents: debugAuthEvents,
+      lastAttempt: parseLastAttempt(lastAttemptRaw),
+    };
+  };
+
+  const copyDebugDiagnostic = async () => {
+    const snapshot = buildDebugSnapshot();
+    if (!snapshot) return;
+    const text = formatDiagnosticText(snapshot);
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("Diagnóstico copiado");
+    } catch {
+      toast.error("Não foi possível copiar — selecione o texto manualmente.");
+    }
+  };
+
   const heading =
     step === "otp"
       ? "Digite o código enviado"
@@ -477,6 +724,10 @@ function AuthPage() {
           : search.signup
             ? "Falta pouco: confirme sua identidade"
             : "Entre na sua conta";
+
+  // Só calculado quando debugActive — leitura pura (sem efeito colateral),
+  // mas mantida atrás do flag pra nunca rodar em produção normal.
+  const debugSnapshot = debugActive ? buildDebugSnapshot() : null;
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -826,7 +1077,11 @@ function AuthPage() {
                 Termos de Uso
               </Link>{" "}
               e{" "}
-              <Link to="/politica-de-privacidade" target="_blank" className="underline underline-offset-2">
+              <Link
+                to="/politica-de-privacidade"
+                target="_blank"
+                className="underline underline-offset-2"
+              >
                 Política de Privacidade
               </Link>
               .
@@ -834,6 +1089,92 @@ function AuthPage() {
           )}
         </div>
       </div>
+
+      {/* FASE AUTH-3 — painel de diagnóstico, só com ?debug=1 (ou flag
+          ainda válido, até 30min). Nunca aparece em uso normal. */}
+      {debugActive && debugSnapshot && (
+        <div className="mx-auto mb-6 w-full max-w-lg rounded-xl border border-dashed border-muted-foreground/40 bg-muted/30 p-4 text-[11px] leading-relaxed text-muted-foreground">
+          <p className="mb-2 font-medium text-foreground">Diagnóstico de entrada</p>
+          <p>Caminho atual: {debugSnapshot.pathNow}</p>
+          <p>
+            Query (agora): {debugSnapshot.currentQueryParamNames.join(", ") || "(nenhum)"} · Hash
+            (agora): {debugSnapshot.currentHashParamNames.join(", ") || "(nenhum)"}
+          </p>
+          <p>
+            access_token={String(debugSnapshot.currentFlags.hasAccessToken)} refresh_token=
+            {String(debugSnapshot.currentFlags.hasRefreshToken)} code=
+            {String(debugSnapshot.currentFlags.hasCode)} error=
+            {String(debugSnapshot.currentFlags.hasError)}
+          </p>
+          {debugSnapshot.currentFlags.errorText && (
+            <p>error: {debugSnapshot.currentFlags.errorText}</p>
+          )}
+          {debugSnapshot.currentFlags.errorDescriptionText && (
+            <p>error_description: {debugSnapshot.currentFlags.errorDescriptionText}</p>
+          )}
+          <p className="mt-2">
+            Query (carga inicial): {debugSnapshot.initialQueryParamNames.join(", ") || "(nenhum)"} ·
+            Hash (carga inicial): {debugSnapshot.initialHashParamNames.join(", ") || "(nenhum)"}
+          </p>
+          {debugSnapshot.initialFlags && (
+            <p>
+              access_token={String(debugSnapshot.initialFlags.hasAccessToken)} refresh_token=
+              {String(debugSnapshot.initialFlags.hasRefreshToken)} code=
+              {String(debugSnapshot.initialFlags.hasCode)} error=
+              {String(debugSnapshot.initialFlags.hasError)}
+            </p>
+          )}
+          <p className="mt-2">
+            Sessão: hasSession={String(debugSnapshot.hasSession)}
+            {debugSnapshot.sessionErrorMessage
+              ? ` — erro: ${debugSnapshot.sessionErrorMessage}`
+              : ""}
+          </p>
+          <p>
+            Eventos:{" "}
+            {debugSnapshot.authEvents.length === 0
+              ? "(nenhum ainda)"
+              : debugSnapshot.authEvents
+                  .map((e) => `${e.event}(sessão=${e.hasSession})`)
+                  .join(", ")}
+          </p>
+          <p className="mt-2">
+            localStorage={debugSnapshot.localStorageOk ? "ok" : "falhou"} · sessionStorage=
+            {debugSnapshot.sessionStorageOk ? "ok" : "falhou"} · cadastro em andamento=
+            {String(debugSnapshot.signupInProgress)} · aura_auth_next=
+            {String(debugSnapshot.hasAuthNext)}
+          </p>
+          <p>
+            cookies={String(debugSnapshot.cookieEnabled)} · iframe={String(debugSnapshot.inIframe)}{" "}
+            · standalone=
+            {String(debugSnapshot.standalone)}
+          </p>
+          <p>
+            Navegador: {debugSnapshot.userAgent.browserFamily}
+            {debugSnapshot.userAgent.browserVersion
+              ? ` ${debugSnapshot.userAgent.browserVersion}`
+              : ""}
+            {debugSnapshot.userAgent.iosVersion
+              ? ` — iOS ${debugSnapshot.userAgent.iosVersion}`
+              : ""}
+          </p>
+          <p className="mt-2">
+            Última tentativa:{" "}
+            {debugSnapshot.lastAttempt
+              ? `${debugSnapshot.lastAttempt.provider} em ${debugSnapshot.lastAttempt.atIso} — redirected=${debugSnapshot.lastAttempt.redirected} hadError=${debugSnapshot.lastAttempt.hadError}${debugSnapshot.lastAttempt.errorMessage ? ` (${debugSnapshot.lastAttempt.errorMessage})` : ""}`
+              : "(nenhuma)"}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-3 h-8 rounded-lg text-xs"
+            onClick={copyDebugDiagnostic}
+          >
+            Copiar diagnóstico
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
